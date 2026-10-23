@@ -65,7 +65,7 @@ class BusEngine:
 
     def read(self, profile: Profile, addressing: Addressing, start: int, count: int) -> dict[int, int]:
         if getattr(self.transport, "physical", False) and not profile.protocol_documented:
-            raise PermissionError("Physical FID protocol specification is missing")
+            raise PermissionError(f"Physical {profile.family} register-page/protocol definition is unverified")
         mapping = validate_read(profile, start, count)
         address = addressing.packet_address
         pdu = addressing.pdu(start)
@@ -115,3 +115,23 @@ class BusEngine:
         with self._lock:
             self.transport.close()
             self.closed = True
+
+    def simulated_command(self,address,code,role,*,pdu=7):
+        from prevex_hmi.simulator.bus import SimulatedBus
+        if not isinstance(self.transport,SimulatedBus):
+            raise PermissionError("No physical write implementation")
+        if not 1 <= address <= 255: raise PermissionError("Broadcast prohibited")
+        with self._lock:
+            if self.closed: raise RuntimeError("Bus closed")
+            deadline=max(self.clock(),(self._last_start or 0)+self.minimum_interval,(self._last_end or 0)+35/self.baud)
+            self.sleep(max(0,deadline-self.clock()))
+            self._last_start=self.clock()
+            self._active={"address":address,"register":8,"count":1,"family":"SIMULATED_COMMAND"}
+            packet=frame(struct.pack(">BBHH",address,6,pdu,code))
+            self._trace(True,packet)
+            try:
+                result=self.transport.command(address,code,role=role,confirmed=True)
+                self._trace(False,packet)
+                return result
+            finally:
+                self._last_end=self.clock()

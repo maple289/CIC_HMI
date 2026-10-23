@@ -26,7 +26,7 @@ class JsonFormatter(logging.Formatter):
 
 
 def main() -> int:
-    parser=argparse.ArgumentParser(description="PREVEX HMI - offline simulation monitoring. No physical connection supported by this GUI.")
+    parser=argparse.ArgumentParser(description="PREVEX HMI - one active analyzer. Physical access remains gated pending authorization.")
     parser.add_argument("--data-dir",type=Path,help="Override the user-writable data directory")
     parser.add_argument("--smoke-test",action="store_true",help="Run offscreen monitoring checks and exit")
     args=parser.parse_args()
@@ -64,15 +64,17 @@ def main() -> int:
             try:
                 if window.update_count < 2:
                     raise RuntimeError("No worker updates received")
-                if not window.snapshots or any(s["quality"] != "GOOD" for s in window.snapshots.values() if s["config"]["enabled"]):
-                    raise RuntimeError("Not all enabled simulated analyzers are current")
-                for index,name in [(0,"overview"),(1,"detail"),(2,"trends"),(5,"diagnostics")]:
+                if not window.snapshot or window.snapshot["quality"] != "GOOD":
+                    raise RuntimeError("Single simulated analyzer is not current")
+                if not window.identity.get("controls_verified"):
+                    raise RuntimeError("Automatic instrument identification failed")
+                for index,name in [(0,"overview"),(0,"detail"),(1,"trends"),(4,"diagnostics")]:
                     window.navigation.setCurrentRow(index)
                     app.processEvents()
                     if not window.grab().save(str(data_path/f"{name}.png")):
                         raise RuntimeError("Window rendering failed")
-                (data_path/"smoke-report.json").write_text(json.dumps({"result":"PASS","mode":"simulation","updates":window.update_count,"devices":len(window.snapshots),"physical_access":False},indent=2),encoding="utf-8")
-                print(f"PASS: monitoring GUI, worker updates={window.update_count}, analyzers={len(window.snapshots)}")
+                (data_path/"smoke-report.json").write_text(json.dumps({"result":"PASS","mode":"simulation","updates":window.update_count,"devices":1,"detected_family":window.identity.get("family"),"gauge_parameters":len(window.readouts),"physical_access":False},indent=2),encoding="utf-8")
+                print(f"PASS: single-analyzer GUI, updates={window.update_count}, detected={window.identity.get('family')}")
             except Exception as error:
                 errors.append(str(error))
                 print(f"FAIL: {error}")

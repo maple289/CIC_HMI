@@ -2,6 +2,8 @@
 
 ## Authority and scope
 
+**700-series update:** `H7FTA700_RevD_PrevEx_instruction_manual.pdf` is authoritative for LEL700-series models and the reviewed7.xx firmware. Its independent inventory is included in REGISTER_TABLES.md. See LEL_700_REVIEW.md for menus and revised conversions, numeric identification, lock state, relay/service bits and command restrictions. The legacy LEL protocol/page/conversion descriptions below apply to the older extract only; they must not be carried into700-series handling automatically.
+
 The authoritative sources are `LEL Menu registers.pdf` (7 PDF pages, printed85..91), `BTU menu registers.pdf` (7 pages, printed69..75, H7SNR690 Rev C) and `FID_Menu_registers.pdf` (5 pages, printed37..41), all in this folder. Page-separated extracted text is retained in `extracted/`. The inventory in REGISTER_TABLES.md records every numbered register shown in those extracts, including internal/prohibited entries excluded from polling. Gaps are unsupported, not zero-valued supported registers. FID UNITS and LEL/BTU menu VERSION have no separate numbered register; identification blocks carry VERSION.
 
 ## Protocol and pages

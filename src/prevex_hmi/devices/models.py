@@ -25,6 +25,9 @@ class DeviceConfig:
     address_mode: str = "direct"
     pdu_offset: int = -1
     logging_enabled: bool = True
+    range_mode: str = "auto"
+    manual_maximum: float | None = None
+    gauge_minimum: float = -30.0
 
     def __post_init__(self) -> None:
         if not self.id.strip() or not self.name.strip() or self.family not in PROFILES:
@@ -35,6 +38,14 @@ class DeviceConfig:
         self.addressing.pdu(1)
         if self.units not in (None, "US", "METRIC"):
             raise ValueError("Unknown unit context")
+        if self.range_mode not in ("auto", "manual"):
+            raise ValueError("Range mode must be auto or manual")
+        if self.manual_maximum is not None and (not math.isfinite(self.manual_maximum) or self.manual_maximum <= 0):
+            raise ValueError("Manual maximum must be finite and positive")
+        if self.range_mode == "manual" and self.manual_maximum is None:
+            raise ValueError("Manual range requires a maximum")
+        if not math.isfinite(self.gauge_minimum) or self.gauge_minimum > -30:
+            raise ValueError("Negative gauge endpoint must be -30 or lower")
 
     @property
     def addressing(self) -> Addressing:
@@ -69,6 +80,7 @@ class DeviceState:
     error: str = "Waiting for first response"
     failures: int = 0
     identification: str = ""
+    register_times: dict[int, float] = field(default_factory=dict)
 
     def snapshot(self, now: float) -> dict:
         age = None if self.last_success is None else max(0, now - self.last_success)
@@ -78,6 +90,7 @@ class DeviceState:
             "config": asdict(self.config), "raw": self.raw.copy(), "quality": quality,
             "age": age, "last_success": self.last_success_utc, "error": self.error,
             "identification": self.identification,
+            "register_ages": {n:max(0,now-t) for n,t in self.register_times.items()},
         }
 
 

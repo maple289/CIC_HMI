@@ -43,7 +43,7 @@ class Register:
     def scale(self, family: str, context: Context) -> tuple[Decimal, Decimal, str]:
         if self.conversion == "reading":
             if family == "LEL":
-                if not re.fullmatch(r"SNR67[1245](?:D|K|P|PL)?", context.assembly.upper()) or not context.version:
+                if not re.fullmatch(r"SNR(?:67[1245](?:D|K|P|PL)?|70[1245]D?)", context.assembly.upper()) or not context.version:
                     raise UnverifiedDefinition("LEL reading requires assembly and software version")
                 try:
                     parts = tuple(int(n) for n in context.version.split("."))
@@ -77,6 +77,9 @@ class Register:
             "flow": ("0.00172936", "0"), "voltage": ("0.0024426", "0"),
             "current": ("0.000625", "4"), "current_trim": ("0.1", "0"),
             "btu_vacuum": ("0.351734", "0"), "btu_pressure": ("0.105862", "0"),
+            "temperature700": ("0.2442", "0"), "pressure_hpa": ("0.01", "0"),
+            "pressure_kpa": ("0.01", "0"), "pressure_bar": ("0.0001", "0"),
+            "version": ("0.01", "0"), "tenths_seconds": ("0.1", "0"), "percent": ("0.01", "0"),
         }
         factor, offset = factors[self.conversion]
         return Decimal(factor), Decimal(offset), self.unit
@@ -131,6 +134,7 @@ class Profile:
     statuses: dict[int, str]
     identification_end: int
     protocol_documented: bool
+    revision: str = "legacy"
 
     def register(self, number: int) -> Register:
         try:

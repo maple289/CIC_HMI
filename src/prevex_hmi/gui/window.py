@@ -1,581 +1,339 @@
 from __future__ import annotations
-
 from collections import deque
-from dataclasses import asdict
 from datetime import datetime
+import copy
 import csv
-import math
 from pathlib import Path
 import time
-
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget, QMainWindow, QMessageBox, QPushButton, QScrollArea, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt,Signal
+from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
 import pyqtgraph as pg
-
 from prevex_hmi.devices.configuration import save_settings
 from prevex_hmi.devices.models import DeviceConfig
-from prevex_hmi.gui.device_dialogs import DeviceManager
-from prevex_hmi.gui.presentation import format_reading, measurement, severity
-from prevex_hmi.gui.worker import MonitoringWorker
+from prevex_hmi.gui.connection_dialog import AnalyzerChoice,LoginDialog
 from prevex_hmi.gui.gauge import CircularGauge
-from prevex_hmi.profiles import PROFILES
-from prevex_hmi.registers.schema import decode_relays, decode_service
+from prevex_hmi.gui.indicators import IndicatorPanel
+from prevex_hmi.gui.presentation import measurement,severity
+from prevex_hmi.gui.worker import MonitoringWorker
+from prevex_hmi.profiles import PROFILES,profile_for,commands_for
+from prevex_hmi.profiles.common import COMMANDS
+from prevex_hmi.profiles.gauges import GAUGE_REGISTERS,precision,gauges_for
+from prevex_hmi.security.users import UserStore
 
 
-def table(headers: list[str]) -> QTableWidget:
-    widget=QTableWidget(0,len(headers))
-    widget.setHorizontalHeaderLabels(headers)
-    widget.setEditTriggers(QAbstractItemView.NoEditTriggers)
-    widget.setAlternatingRowColors(True)
-    widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-    widget.horizontalHeader().setStretchLastSection(True)
-    widget.verticalHeader().hide()
-    return widget
+def table(headers):
+    w=QTableWidget(0,len(headers));w.setHorizontalHeaderLabels(headers)
+    w.setEditTriggers(QAbstractItemView.NoEditTriggers);w.setAlternatingRowColors(True)
+    w.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents);w.horizontalHeader().setStretchLastSection(True);w.verticalHeader().hide()
+    return w
 
 
-def fill_table(widget: QTableWidget, rows) -> None:
-    widget.setUpdatesEnabled(False)
-    widget.setRowCount(len(rows))
+def fill_table(widget,rows):
+    widget.setUpdatesEnabled(False);widget.setRowCount(len(rows))
     for i,row in enumerate(rows):
-        for j,value in enumerate(row):
-            widget.setItem(i,j,QTableWidgetItem(str(value)))
+        for j,value in enumerate(row):widget.setItem(i,j,QTableWidgetItem(str(value)))
     widget.setUpdatesEnabled(True)
 
 
 class MainWindow(QMainWindow):
-    received = Signal()
+    received=Signal()
 
-    def __init__(self, settings: dict, settings_path: Path, data_path: Path, *, start_worker=True):
+    def __init__(self,settings,settings_path:Path,data_path:Path,*,start_worker=True):
         super().__init__()
         self.settings,self.settings_path,self.data_path=settings,settings_path,data_path
-        self.snapshots: dict[str,dict]={}
-        self.series: dict[str,deque]={}
-        self.last_sample: dict[str,tuple]={}
-        self.worker: MonitoringWorker | None=None
-        self.restarting=False
-        self.closing=False
-        self.history_rows=[]
-        self.update_count=0
-        self.setWindowTitle("PREVEX HMI | Simulation monitoring")
-        self.resize(1360,880)
-        self.setMinimumSize(1000,700)
-        central=QWidget()
-        root=QVBoxLayout(central)
-        root.setContentsMargins(20,16,20,16)
-        title_row=QHBoxLayout()
-        brand=QLabel("PREVEX  /  HMI")
-        brand.setObjectName("brand")
-        title_row.addWidget(brand)
-        title_row.addStretch()
-        self.summary=QLabel("Starting simulator...")
-        title_row.addWidget(self.summary)
-        self.theme_button=QPushButton("Switch theme")
-        self.theme_button.clicked.connect(self.toggle_theme)
-        title_row.addWidget(self.theme_button)
-        root.addLayout(title_row)
-        banner=QLabel("SIMULATION MODE  |  Synthetic analyzer data  |  No physical connection  |  Controls unavailable")
-        banner.setObjectName("simulationBanner")
-        root.addWidget(banner)
-        selection_row=QHBoxLayout()
-        selection_row.addWidget(QLabel("SELECT ANALYZER"))
-        self.selected=QComboBox()
-        self.selected.setMinimumWidth(340)
-        selection_row.addWidget(self.selected,1)
-        root.addLayout(selection_row)
-        body=QHBoxLayout()
-        self.navigation=QListWidget()
-        self.navigation.setFixedWidth(190)
-        self.navigation.addItems(["Analyzer","Analyzer details","Live trends","History / CSV","Alarm / event history","Diagnostics"])
-        body.addWidget(self.navigation)
-        self.pages=QStackedWidget()
-        body.addWidget(self.pages,1)
-        root.addLayout(body,1)
-        self.navigation.currentRowChanged.connect(self.pages.setCurrentIndex)
-        self.setCentralWidget(central)
-        self.build_overview()
-        self.build_details()
-        self.build_trends()
-        self.build_history()
-        self.build_events()
-        self.build_diagnostics()
-        self.selected.currentIndexChanged.connect(self.select_analyzer)
-        self.navigation.setCurrentRow(0)
-        self.apply_theme()
-        self.refresh_devices()
-        self.statusBar().showMessage(f"Simulation only | 9600 baud equivalent | Data: {data_path}")
-        if start_worker:
-            self.start_worker()
+        self.worker=None;self.snapshot=None;self.identity={};self.diagnostics={}
+        self.snapshot_family=None;self.readouts={};self.history_rows=[];self.series=deque(maxlen=1800)
+        self.last_sample=None;self.update_count=0;self.closing=False;self.next_action=None
+        self.command_dispatching=False;self.session='';self.users=UserStore(data_path/'users.sqlite3')
+        self.setWindowTitle('PREVEX HMI | Single analyzer');self.resize(1540,1020);self.setMinimumSize(1100,780)
+        central=QWidget();root=QVBoxLayout(central);root.setContentsMargins(18,12,18,12)
+        header=QHBoxLayout();brand=QLabel('PREVEX / HMI');brand.setObjectName('brand');header.addWidget(brand)
+        self.summary=QLabel('Disconnected');header.addWidget(self.summary,1)
+        self.login_button=QPushButton('Sign in / create account');self.login_button.clicked.connect(self.login);header.addWidget(self.login_button)
+        theme=QPushButton('Switch theme');theme.clicked.connect(self.toggle_theme);header.addWidget(theme);root.addLayout(header)
+        self.banner=QLabel();self.banner.setObjectName('banner');root.addWidget(self.banner)
+        toolbar=QHBoxLayout()
+        self.choose_button=QPushButton('Choose Analyzer Type');self.choose_button.clicked.connect(self.choose_type);toolbar.addWidget(self.choose_button)
+        self.connect_button=QPushButton('Connect');self.connect_button.clicked.connect(lambda:self.begin('connect'));toolbar.addWidget(self.connect_button)
+        self.disconnect_button=QPushButton('Disconnect');self.disconnect_button.clicked.connect(lambda:self.begin('disconnect'));toolbar.addWidget(self.disconnect_button)
+        self.test_button=QPushButton('Test Connection');self.test_button.clicked.connect(lambda:self.begin('test'));toolbar.addWidget(self.test_button)
+        self.selection_label=QLabel();toolbar.addWidget(self.selection_label,1);root.addLayout(toolbar)
+        self.identity_label=QLabel('Instrument identification: not connected');self.identity_label.setWordWrap(True);root.addWidget(self.identity_label)
+        self.warning=QLabel();self.warning.setObjectName('warning');self.warning.setWordWrap(True);self.warning.hide();root.addWidget(self.warning)
+        body=QHBoxLayout();self.navigation=QListWidget();self.navigation.setFixedWidth(170)
+        self.navigation.addItems(['Gauge','Live trends','History / CSV','Alarm history','Diagnostics','Command audit']);body.addWidget(self.navigation)
+        self.pages=QStackedWidget();body.addWidget(self.pages,1);root.addLayout(body,1);self.setCentralWidget(central)
+        self.build_gauge();self.build_trends();self.build_history();self.build_events();self.build_diagnostics();self.build_audit()
+        self.navigation.currentRowChanged.connect(self.pages.setCurrentIndex);self.navigation.setCurrentRow(0)
+        self.apply_theme();self.refresh_connection_labels();self.build_readouts(self.config.family)
+        self.statusBar().showMessage(f'Data: {data_path} | No safety function depends on the HMI')
+        if start_worker:self.start_worker()
 
-    def page(self,title: str,subtitle: str) -> tuple[QWidget,QVBoxLayout]:
-        page=QWidget()
-        layout=QVBoxLayout(page)
-        layout.setContentsMargins(18,12,0,0)
-        heading=QLabel(title)
-        heading.setObjectName("heading")
-        layout.addWidget(heading)
-        label=QLabel(subtitle)
-        label.setWordWrap(True)
-        layout.addWidget(label)
-        self.pages.addWidget(page)
-        return page,layout
+    @property
+    def config(self):return DeviceConfig(**self.settings['devices'][0])
 
-    def build_overview(self):
-        _,outer=self.page("Analyzer monitoring","One selected analyzer at a time. Use the selector above to switch instruments; background polling continues for all enabled devices.")
-        scroll=QScrollArea()
-        scroll.setWidgetResizable(True)
-        content=QWidget()
-        content.setMinimumHeight(600)
-        layout=QVBoxLayout(content)
-        layout.setContentsMargins(0,0,0,0)
-        scroll.setWidget(content)
-        outer.addWidget(scroll)
-        row=QHBoxLayout()
-        manage=QPushButton("Manage analyzers")
-        manage.clicked.connect(self.manage_devices)
-        row.addWidget(manage)
-        row.addStretch()
-        layout.addLayout(row)
-        hero=QHBoxLayout()
-        self.gauge=CircularGauge()
-        hero.addWidget(self.gauge,3)
-        info=QVBoxLayout()
-        self.monitor_name=QLabel("No analyzer selected")
-        self.monitor_name.setObjectName("heading")
-        self.monitor_name.setWordWrap(True)
-        info.addWidget(self.monitor_name)
-        self.monitor_model=QLabel()
-        self.monitor_model.setWordWrap(True)
-        info.addWidget(self.monitor_model)
-        self.monitor_status=QLabel("Waiting for first update")
-        self.monitor_status.setObjectName("monitorStatus")
-        self.monitor_status.setWordWrap(True)
-        info.addWidget(self.monitor_status)
-        self.monitor_updated=QLabel()
-        self.monitor_updated.setWordWrap(True)
-        info.addWidget(self.monitor_updated)
-        self.monitor_parameters=QLabel()
-        self.monitor_parameters.setWordWrap(True)
-        info.addWidget(self.monitor_parameters)
-        details=QPushButton("Open analyzer details")
-        details.clicked.connect(lambda:self.open_device(self.selected.currentData()))
-        info.addWidget(details)
-        info.addStretch()
-        hero.addLayout(info,2)
-        layout.addLayout(hero,3)
-        self.overview_plot=self.make_plot()
-        self.overview_plot.setMinimumHeight(180)
-        self.overview_curve=self.overview_plot.plot(pen=pg.mkPen("#3ccbb1",width=2),connect="finite")
-        layout.addWidget(self.overview_plot,2)
+    def page(self,title,subtitle):
+        page=QWidget();layout=QVBoxLayout(page);layout.setContentsMargins(14,4,0,0)
+        heading=QLabel(title);heading.setObjectName('heading');layout.addWidget(heading)
+        label=QLabel(subtitle);label.setWordWrap(True);layout.addWidget(label);self.pages.addWidget(page)
+        return layout
 
-    def build_details(self):
-        _,layout=self.page("Analyzer details","Only documented parameters for the selected family are shown. -- means unavailable.")
-        hero=QHBoxLayout()
-        self.detail_reading=QLabel("--")
-        self.detail_reading.setObjectName("reading")
-        hero.addWidget(self.detail_reading)
-        self.detail_status=QLabel("Waiting")
-        hero.addWidget(self.detail_status,1)
-        layout.addLayout(hero)
-        self.detail_meta=QLabel()
-        self.detail_meta.setWordWrap(True)
-        layout.addWidget(self.detail_meta)
-        self.parameters=table(["Register","Parameter","Raw","Engineering value","Units"])
-        layout.addWidget(self.parameters,2)
-        self.relays=QLabel()
-        self.relays.setWordWrap(True)
-        layout.addWidget(self.relays)
-        self.service=QLabel()
-        self.service.setWordWrap(True)
-        layout.addWidget(self.service)
-        self.detail_plot=self.make_plot()
-        self.detail_curve=self.detail_plot.plot(pen=pg.mkPen("#3ccbb1",width=2),connect="finite")
-        layout.addWidget(self.detail_plot,2)
+    def build_gauge(self):
+        layout=self.page('Gauge','One active analyzer. Digital parameters follow its manufacturer GAUGES menu.')
+        self.indicators=IndicatorPanel();layout.addWidget(self.indicators)
+        body=QHBoxLayout();layout.addLayout(body,1)
+        scroll=QScrollArea();scroll.setWidgetResizable(True);content=QWidget();content.setMinimumWidth(600)
+        readings=QVBoxLayout(content);readings.setContentsMargins(4,4,10,4)
+        hero=QHBoxLayout();self.gauge=CircularGauge();hero.addWidget(self.gauge,3)
+        info=QVBoxLayout();self.monitor_name=QLabel();self.monitor_name.setObjectName('heading');self.monitor_name.setWordWrap(True);info.addWidget(self.monitor_name)
+        self.monitor_model=QLabel();self.monitor_model.setWordWrap(True);info.addWidget(self.monitor_model)
+        self.monitor_status=QLabel('Disconnected');self.monitor_status.setWordWrap(True);info.addWidget(self.monitor_status)
+        self.monitor_updated=QLabel();self.monitor_updated.setWordWrap(True);info.addWidget(self.monitor_updated)
+        self.range_help=QLabel('Blue: negative section\nBold marker: zero\nAlarm bands use instrument thresholds');self.range_help.setWordWrap(True);info.addWidget(self.range_help);info.addStretch();hero.addLayout(info,2);readings.addLayout(hero)
+        self.readout_container=QWidget();self.readout_grid=QGridLayout(self.readout_container);self.readout_grid.setContentsMargins(0,0,0,0);readings.addWidget(self.readout_container)
+        self.overview_plot=self.make_plot();self.overview_plot.setMinimumHeight(180);self.overview_curve=self.overview_plot.plot(pen=pg.mkPen('#45cbb0',width=2),connect='finite');readings.addWidget(self.overview_plot)
+        scroll.setWidget(content);body.addWidget(scroll,1)
+        commands=QFrame();commands.setObjectName('panel');commands.setFixedWidth(220);column=QVBoxLayout(commands)
+        label=QLabel('Commands');label.setObjectName('heading');column.addWidget(label)
+        self.role_label=QLabel('Guest / Viewer');column.addWidget(self.role_label)
+        self.command_buttons={}
+        for code,name in COMMANDS.items():
+            button=QPushButton(name);button.setMinimumHeight(33);button.clicked.connect(lambda checked=False,code=code:self.send_command(code));column.addWidget(button);self.command_buttons[code]=button
+        self.command_message=QLabel('Sign in and verify connection to authorize simulated commands.');self.command_message.setWordWrap(True);column.addWidget(self.command_message);column.addStretch()
+        command_scroll=QScrollArea();command_scroll.setWidgetResizable(True);command_scroll.setFixedWidth(236);command_scroll.setWidget(commands);body.addWidget(command_scroll)
+
+    def build_readouts(self,family,config=None):
+        config=config or self.config
+        profile=profile_for(config) if config.family==family else PROFILES[family]
+        self.snapshot_family=(family,profile.revision)
+        while self.readout_grid.count():
+            item=self.readout_grid.takeAt(0)
+            if item.widget():item.widget().deleteLater()
+        self.readouts={}
+        numbers=list(gauges_for(config) if config.family==family else GAUGE_REGISTERS[family])
+        if family=='BTU':numbers.append(42)
+        for i,n in enumerate(numbers):
+            r=profile.register(n);frame=QFrame();frame.setObjectName('readout');box=QVBoxLayout(frame)
+            name=QLabel(f'{r.name}  [{n}]');name.setWordWrap(True);box.addWidget(name)
+            value=QLabel('--');value.setWordWrap(True);value.setObjectName('digitalValue');box.addWidget(value)
+            quality=QLabel('WAITING');quality.setWordWrap(True);box.addWidget(quality)
+            self.readout_grid.addWidget(frame,i//3,i%3);self.readouts[n]=(value,quality)
+        self.indicators.build(family,config if config.family==family else None)
+        self.monitor_name.setText(f'PREVEX {family}')
 
     def make_plot(self):
-        plot=pg.PlotWidget(axisItems={"bottom":pg.DateAxisItem()},background="#111c2b")
-        plot.showGrid(x=True,y=True,alpha=0.15)
-        plot.setLabel("bottom","Time (local display)")
-        plot.setLabel("left","Measurement")
-        return plot
+        plot=pg.PlotWidget(axisItems={'bottom':pg.DateAxisItem()},background='#111c2b');plot.showGrid(x=True,y=True,alpha=.15);plot.setLabel('bottom','Time (local)');return plot
 
     def build_trends(self):
-        _,layout=self.page("Live trends","Zoom with the mouse wheel; drag to pan. The latest 1800 points are retained in memory; communication gaps break the line.")
-        self.trend_device=QComboBox()
-        self.trend_device.currentIndexChanged.connect(lambda:self.activate_from(self.trend_device))
-        layout.addWidget(self.trend_device)
-        self.trend_plot=self.make_plot()
-        self.trend_curve=self.trend_plot.plot(pen=pg.mkPen("#3ccbb1",width=2),connect="finite")
-        layout.addWidget(self.trend_plot)
+        layout=self.page('Live trends','Signed engineering values. Mouse-wheel zoom and drag to pan; communication gaps break the line.')
+        self.trend_plot=self.make_plot();self.trend_curve=self.trend_plot.plot(pen=pg.mkPen('#45cbb0',width=2),connect='finite');layout.addWidget(self.trend_plot)
 
     def build_history(self):
-        _,layout=self.page("History and CSV export","Simulation historian only. Displays and exports up to the latest 5000 primary readings in the selected range. Measurement retention: 90 days; events retained separately.")
-        row=QHBoxLayout()
-        self.history_device=QComboBox()
-        self.history_device.currentIndexChanged.connect(self.clear_history)
-        self.history_device.currentIndexChanged.connect(lambda:self.activate_from(self.history_device))
-        row.addWidget(self.history_device,1)
-        self.history_hours=QComboBox()
-        for text,hours in [("Last hour",1),("Last 24 hours",24),("Last 7 days",168),("Last 90 days",2160)]:
-            self.history_hours.addItem(text,hours)
-        self.history_hours.setCurrentIndex(1)
-        row.addWidget(self.history_hours)
-        load=QPushButton("Load history")
-        load.clicked.connect(self.load_history)
-        row.addWidget(load)
-        export=QPushButton("Export displayed CSV")
-        export.clicked.connect(self.export_history)
-        row.addWidget(export)
-        layout.addLayout(row)
-        self.history_plot=self.make_plot()
-        self.history_curve=self.history_plot.plot(pen=pg.mkPen("#5fa7ed",width=2),connect="finite")
-        layout.addWidget(self.history_plot)
-        self.history_table=table(["Timestamp (UTC)","Value","Unit","Quality","Status code"])
-        layout.addWidget(self.history_table)
+        layout=self.page('History / CSV','Current instrument stream. Up to5000 primary records per query; UTC timestamps retained in CSV.')
+        row=QHBoxLayout();self.history_hours=QComboBox()
+        for text,hours in [('Last hour',1),('Last day',24),('Last7 days',168),('Last90 days',2160)]:self.history_hours.addItem(text,hours)
+        row.addWidget(self.history_hours);load=QPushButton('Load history');load.clicked.connect(self.load_history);row.addWidget(load)
+        export=QPushButton('Export displayed CSV');export.clicked.connect(self.export_history);row.addWidget(export);row.addStretch();layout.addLayout(row)
+        self.history_plot=self.make_plot();self.history_curve=self.history_plot.plot(pen=pg.mkPen('#69a7ed',width=2),connect='finite');layout.addWidget(self.history_plot)
+        self.history_table=table(['UTC timestamp','Value','Unit','Quality','Status']);layout.addWidget(self.history_table)
 
     def build_events(self):
-        _,layout=self.page("Alarm and event history","Operating-state and communication transitions are recorded even when measurement logging is disabled. Latest 500 events shown.")
-        self.event_table=table(["Timestamp (UTC)","Instrument","Transition","Quality"])
-        layout.addWidget(self.event_table)
+        layout=self.page('Alarm and status history','STATUS transitions and communication changes; retained independently of measurement logging.')
+        self.event_table=table(['UTC timestamp','Instrument','Transition','Quality']);layout.addWidget(self.event_table)
+
+    def build_audit(self):
+        layout=self.page('Command audit','Confirmed commands, rejections and verified/unknown outcomes. Physical writes are not implemented.')
+        self.audit_table=table(['UTC timestamp','Instrument','User','Command word','Result','Detail']);layout.addWidget(self.audit_table)
 
     def build_diagnostics(self):
-        _,layout=self.page("Communication diagnostics","In-memory Modbus RTU simulation. No COM port is open. Raw traffic is limited to 500 entries; latest 100 shown below.")
-        self.diagnostics_summary=QLabel("Waiting for first poll")
-        self.diagnostics_summary.setWordWrap(True)
-        layout.addWidget(self.diagnostics_summary)
-        self.device_stats=table(["Address","Polls","Successes","Timeouts","CRC errors","Protocol errors","Last reply (ms)"])
-        self.device_stats.setMaximumHeight(180)
-        layout.addWidget(self.device_stats)
-        fault_row=QHBoxLayout()
-        self.fault_device=QComboBox()
-        self.fault_device.currentIndexChanged.connect(self.refresh_inspector)
-        self.fault_device.currentIndexChanged.connect(lambda:self.activate_from(self.fault_device))
-        self.fault_kind=QComboBox()
-        self.fault_kind.addItems(["none","timeout","crc","protocol"])
-        fault_row.addWidget(self.fault_device,1)
-        fault_row.addWidget(self.fault_kind)
-        inject=QPushButton("Apply simulated fault / recovery")
-        inject.clicked.connect(self.inject_fault)
-        fault_row.addWidget(inject)
-        layout.addLayout(fault_row)
-        inspect_row=QHBoxLayout()
-        self.inspect_register=QComboBox()
-        inspect_row.addWidget(self.inspect_register,1)
-        inspect_button=QPushButton("Inspect register (read only)")
-        inspect_button.clicked.connect(self.inspect)
-        inspect_row.addWidget(inspect_button)
-        self.inspection_result=QLabel("No manual read requested")
-        inspect_row.addWidget(self.inspection_result,2)
-        layout.addLayout(inspect_row)
-        self.traffic=table(["Time (UTC)","Direction","Address","Register","Hexadecimal bytes"])
-        layout.addWidget(self.traffic)
+        layout=self.page('Diagnostics','One connection, serialized transactions. Raw traffic limited to500 frames; latest100 displayed.')
+        self.diagnostics_summary=QLabel('Disconnected');self.diagnostics_summary.setWordWrap(True);layout.addWidget(self.diagnostics_summary)
+        row=QHBoxLayout();self.fault_kind=QComboBox();self.fault_kind.addItems(['none','timeout','crc','protocol','unknown_identity','ambiguous_command']);row.addWidget(self.fault_kind)
+        fault=QPushButton('Apply simulated fault / recovery');fault.clicked.connect(lambda:self.request('fault',self.fault_kind.currentText()));row.addWidget(fault);layout.addLayout(row)
+        row=QHBoxLayout();self.forced_value=QDoubleSpinBox();self.forced_value.setRange(-10000,32000);self.forced_value.setDecimals(3);self.forced_value.setValue(-20);row.addWidget(self.forced_value)
+        force=QPushButton('Set simulated reading');force.clicked.connect(lambda:self.request('reading',self.forced_value.value()));row.addWidget(force)
+        dynamic=QPushButton('Resume dynamic readings');dynamic.clicked.connect(lambda:self.request('reading',None));row.addWidget(dynamic);layout.addLayout(row)
+        row=QHBoxLayout();self.forced_status=QSpinBox();self.forced_status.setRange(0,255);row.addWidget(self.forced_status)
+        status=QPushButton('Set simulated STATUS');status.clicked.connect(lambda:self.request('status',self.forced_status.value()));row.addWidget(status)
+        dynamic_status=QPushButton('Resume dynamic status');dynamic_status.clicked.connect(lambda:self.request('status',None));row.addWidget(dynamic_status);layout.addLayout(row)
+        row=QHBoxLayout();self.inspect_register=QComboBox();row.addWidget(self.inspect_register)
+        inspect=QPushButton('Inspect register (FC03)');inspect.clicked.connect(lambda:self.request('inspect',self.inspect_register.currentData()));row.addWidget(inspect)
+        self.inspection_result=QLabel('No manual read');row.addWidget(self.inspection_result,1);layout.addLayout(row)
+        self.traffic=table(['UTC timestamp','Direction','Address','Register','Hexadecimal bytes']);layout.addWidget(self.traffic)
 
-    def refresh_devices(self):
-        previous=self.selected.currentData() or self.settings.get("selected_device")
-        self.devices=[DeviceConfig(**r) for r in self.settings["devices"]]
-        current_ids={d.id for d in self.devices}
-        self.series={id:points for id,points in self.series.items() if id in current_ids}
-        for combo in (self.selected,self.trend_device,self.history_device,self.fault_device):
-            combo.blockSignals(True)
-            combo.clear()
-            for device in self.devices:
-                combo.addItem(f"{device.name}  /  {device.family}  /  address {device.address}",device.id)
-            index=combo.findData(previous)
-            combo.setCurrentIndex(index if index >= 0 else 0)
-            combo.blockSignals(False)
-        self.select_analyzer()
-        self.refresh_inspector()
+    def refresh_connection_labels(self):
+        c=self.settings['connection'];d=self.config
+        self.selection_label.setText(f"{self.settings['analyzer_selection']} | Address {d.address} | {c['baud']} baud / 8N1 | {self.settings['mode'].upper()}")
+        self.banner.setText('SIMULATION MODE | One synthetic instrument | No physical port open' if self.settings['mode']=='simulation' else 'HARDWARE ACCESS BLOCKED | Explicit authorization and bench validation required')
 
-    def activate_from(self,combo):
-        index=self.selected.findData(combo.currentData())
-        if index >= 0:
-            self.selected.setCurrentIndex(index)
+    def invalidate(self,reason='Disconnected'):
+        self.snapshot=None;self.identity={};self.series.clear();self.last_sample=None;self.history_rows=[];self.command_dispatching=False
+        self.gauge.set_snapshot(None);self.indicators.update_snapshot(None)
+        self.monitor_status.setText(reason);self.monitor_updated.setText('No current measurement');self.identity_label.setText(reason)
+        for value,quality in self.readouts.values():value.setText('--');quality.setText('UNAVAILABLE')
+        for curve in (self.overview_curve,self.trend_curve,self.history_curve):curve.setData([],[])
+        self.history_table.setRowCount(0);self.event_table.setRowCount(0);self.audit_table.setRowCount(0);self.traffic.setRowCount(0)
+        self.summary.setText(reason);self.update_command_buttons()
 
-    def select_analyzer(self,*_):
-        id=self.selected.currentData()
-        for combo in (self.trend_device,self.history_device,self.fault_device):
-            if combo.currentData() != id:
-                combo.blockSignals(True)
-                combo.setCurrentIndex(combo.findData(id))
-                combo.blockSignals(False)
-        self.clear_history()
-        self.refresh_inspector()
-        self.refresh_monitor()
-        self.refresh_detail()
-        self.refresh_trend()
-        # Hide results from the previously selected instrument immediately.
-        self.event_table.setRowCount(0)
-        self.device_stats.setRowCount(0)
-        self.traffic.setRowCount(0)
-        self.inspection_result.setText("No manual read requested")
-        self.diagnostics_summary.setText("Waiting for selected analyzer diagnostics")
-        self.settings["selected_device"]=id
-        try:
-            save_settings(self.settings_path,self.settings)
-        except OSError as error:
-            self.statusBar().showMessage(f"Selection could not be saved: {error}")
+    def begin(self,action):
+        self.next_action=action;self.invalidate('Connection stopped; readings invalidated')
+        self.set_connection_buttons(False)
+        if self.worker and self.worker.isRunning():self.worker.stop()
+        else:self.worker_finished()
 
-    def refresh_monitor(self):
-        id=self.selected.currentData()
-        device=next((d for d in self.devices if d.id == id),None)
-        snapshot=self.snapshots.get(id)
-        self.gauge.set_snapshot(snapshot)
-        self.monitor_name.setText(device.name if device else "No analyzer configured")
-        self.monitor_model.setText(f"PREVEX {device.family}  |  {device.assembly}\nAddress {device.address}  |  Software {device.version}" if device else "Add an analyzer to begin monitoring")
-        if snapshot:
-            color,status=severity(snapshot)
-            self.monitor_status.setText(f"● {status}\nCommunication: {snapshot['quality']}")
-            self.monitor_status.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: 600;")
-            age="never" if snapshot["age"] is None else f"{snapshot['age']:.1f}s ago"
-            self.monitor_updated.setText(f"Last successful update: {age}\n{snapshot['error']}")
-            rows=[]
-            numbers=(9,11,15) if device.family == "LEL" else (9,10,11)
-            for number in numbers:
-                value,unit=measurement(snapshot,number)
-                rows.append(f"{PROFILES[device.family].register(number).name}: {float(value):.2f} {unit}" if value is not None else f"{PROFILES[device.family].register(number).name}: --")
-            self.monitor_parameters.setText("\n\n".join(rows))
-            self.summary.setText(f"{device.family}  |  {snapshot['quality']}  |  SIMULATION")
-        else:
-            self.monitor_status.setText("Waiting for first update" if device else "No analyzer selected")
-            self.monitor_status.setStyleSheet("color: #8290a5; font-size: 20px;")
-            self.monitor_updated.setText("Last successful update: never")
-            self.monitor_parameters.clear()
-            self.summary.setText("SIMULATION")
-        self.plot_series(self.overview_curve,self.overview_plot,id)
+    def set_connection_buttons(self,enabled):
+        for button in (self.choose_button,self.connect_button,self.test_button):button.setEnabled(enabled)
 
-    def start_worker(self):
-        self.worker=MonitoringWorker(self.devices,self.data_path,self)
-        self.worker.updated.connect(self.update_data)
-        self.worker.history_ready.connect(self.update_history)
-        self.worker.events_ready.connect(self.update_events)
-        self.worker.failed.connect(self.worker_error)
-        self.worker.inspection_ready.connect(self.inspection_result_ready)
-        self.worker.inspection_failed.connect(self.inspection_result.setText)
-        self.worker.finished.connect(self.worker_finished)
-        self.worker.start()
-
-    def update_data(self,snapshots,diagnostics):
-        self.update_count+=1
-        good=0
-        for snapshot in snapshots:
-            config=snapshot["config"]
-            id=config["id"]
-            self.snapshots[id]=snapshot
-            value,unit=measurement(snapshot)
-            good+=snapshot["quality"] == "GOOD"
-            marker=snapshot["last_success"],snapshot["quality"]
-            if marker != self.last_sample.get(id):
-                timestamp=datetime.fromisoformat(snapshot["last_success"]).timestamp() if value is not None else time.time()
-                self.series.setdefault(id,deque(maxlen=1800)).append((timestamp,float(value) if value is not None else float("nan")))
-                self.last_sample[id]=marker
-        self.refresh_monitor()
-        self.refresh_detail()
-        self.refresh_trend()
-        stats=diagnostics["bus"]
-        rate=stats["success_rate"]
-        self.diagnostics_summary.setText(f"9600 baud equivalent / 8N1 | Polls: {stats['polls']} | Success: {'--' if rate is None else f'{rate:.1f}%'} | Timeouts: {stats['timeouts']} | CRC errors: {stats['crc_errors']} | Last poll: {stats['last_poll']}\nLast response: {stats['last_response']} | Response time: {stats['last_response_ms']:.2f} ms | Shared bus cap: 8 requests/s; retries via bounded scheduler backoff")
-        active=next((d for d in self.devices if d.id == self.selected.currentData()),None)
-        address=active.addressing.packet_address if active else None
-        fill_table(self.device_stats,[(a,s["polls"],s["successes"],s["timeouts"],s["crc_errors"],s["protocol_errors"],f"{s['last_response_ms']:.2f}") for a,s in diagnostics["devices"].items() if a == str(address)])
-        fill_table(self.traffic,[(r["time"],r["direction"],r["address"],r["register"],r["hex"]) for r in diagnostics["traffic"] if r["address"] == address][-100:])
-        self.received.emit()
-
-    def update_events(self,rows):
-        fill_table(self.event_table,[r for r in rows if r[1] == self.selected.currentData()])
-
-    def open_device(self,id):
-        self.selected.setCurrentIndex(self.selected.findData(id))
-        self.navigation.setCurrentRow(1)
-        self.refresh_detail()
-
-    def refresh_detail(self,*_):
-        id=self.selected.currentData()
-        snapshot=self.snapshots.get(id)
-        if not snapshot:
-            self.detail_reading.setText("--")
-            self.detail_status.setText("Waiting for selected analyzer")
-            self.detail_meta.clear()
-            self.parameters.setRowCount(0)
-            self.relays.setText("RELAYS | unavailable")
-            self.service.setText("SERVICE | unavailable")
-            self.detail_curve.setData([],[])
-            return
-        config=snapshot["config"]
-        color,status=severity(snapshot)
-        value,unit=measurement(snapshot)
-        self.detail_reading.setText(f"{format_reading(snapshot)} {unit if value is not None else ''}")
-        self.detail_reading.setStyleSheet(f"color: {color};")
-        self.detail_status.setText(f"● {status}\n{snapshot['quality']}\n{snapshot['error']}")
-        self.detail_meta.setText(f"{config['family']} / {config['assembly']} / configured software {config['version']} / address {config['address']}\nIdentification (simulated): {snapshot['identification'] or 'not yet polled'}\nSerial number: unavailable unless contained in identification | Last successful update (UTC): {snapshot['last_success'] or 'never'}")
-        profile=PROFILES[config["family"]]
-        rows=[]
-        for number in sorted(snapshot["raw"]):
-            if number >= 257 or number in (1,2,4): continue
-            register=profile.register(number)
-            engineering,units=measurement(snapshot,number)
-            rows.append((number,register.name,snapshot["raw"][number] if snapshot["quality"] == "GOOD" else "--",f"{engineering:.3f}" if engineering is not None else "--",units))
-        fill_table(self.parameters,rows)
-        if snapshot["quality"] == "GOOD" and 4 in snapshot["raw"]:
-            self.relays.setText("RELAYS  |  "+"  ·  ".join(f"{n}: {'ON' if active else 'off'}" for n,active in decode_relays(snapshot["raw"][4]).items()))
-        else:
-            self.relays.setText("RELAYS  |  unavailable")
-        if config["family"] == "FID":
-            self.service.setText("SERVICE: unsupported by supplied FID documentation")
-        elif snapshot["quality"] == "GOOD" and 59 in snapshot["raw"]:
-            flags=decode_service(snapshot["raw"][59],config["family"])
-            self.service.setText("SERVICE  |  "+(", ".join(n for n,v in flags.items() if v) or "No active service flags"))
-        else:
-            self.service.setText("SERVICE: unavailable / not yet polled")
-        self.plot_series(self.detail_curve,self.detail_plot,id)
-
-    def plot_series(self,curve,plot,id):
-        samples=self.series.get(id,[])
-        curve.setData([t for t,v in samples],[v for t,v in samples])
-        snapshot=self.snapshots.get(id)
-        plot.setLabel("left","Measurement",units=measurement(snapshot)[1] if snapshot and snapshot["quality"] == "GOOD" else "")
-
-    def refresh_trend(self,*_):
-        self.plot_series(self.trend_curve,self.trend_plot,self.trend_device.currentData())
-
-    def load_history(self):
-        if self.worker and self.worker.isRunning() and self.history_device.currentData():
-            self.worker.request("history",self.history_device.currentData(),self.history_hours.currentData())
-
-    def clear_history(self,*_):
-        self.history_rows=[]
-        if hasattr(self,"history_table"):
-            self.history_table.setRowCount(0)
-            self.history_curve.setData([],[])
-
-    def update_history(self,id,rows):
-        if id != self.history_device.currentData(): return
-        self.history_rows=rows
-        fill_table(self.history_table,rows)
-        self.history_curve.setData([datetime.fromisoformat(r[0]).timestamp() for r in rows],[r[1] if r[1] is not None else float("nan") for r in rows])
-
-    def export_history(self):
-        if not self.history_rows:
-            QMessageBox.information(self,"History","Load history before exporting.")
-            return
-        path,_=QFileDialog.getSaveFileName(self,"Export displayed readings",str(self.data_path/"simulation-history.csv"),"CSV files (*.csv)")
-        if path:
-            try:
-                with open(path,"w",newline="",encoding="utf-8-sig") as stream:
-                    writer=csv.writer(stream)
-                    writer.writerow(["instrument_id","instrument_name","timestamp_utc","value","unit","quality","status"])
-                    writer.writerows([(self.history_device.currentData(),self.history_device.currentText(),*row) for row in self.history_rows])
-                self.statusBar().showMessage(f"Exported {len(self.history_rows)} readings to {path}")
-            except OSError as error:
-                QMessageBox.warning(self,"Export failed",str(error))
-
-    def inject_fault(self):
-        id=self.fault_device.currentData()
-        device=next((d for d in self.devices if d.id == id),None)
-        if device and device.enabled and self.worker and self.worker.isRunning():
-            self.worker.request("fault",device.addressing.packet_address,self.fault_kind.currentText())
-
-    def refresh_inspector(self,*_):
-        if not hasattr(self,"inspect_register"): return
-        self.inspect_register.clear()
-        device=next((d for d in self.devices if d.id == self.fault_device.currentData()),None)
-        if device:
-            for number,register in sorted(PROFILES[device.family].registers.items()):
-                if register.safe_read:
-                    self.inspect_register.addItem(f"{number} - {register.name}",number)
-
-    def inspect(self):
-        if self.worker and self.worker.isRunning() and self.inspect_register.currentData() is not None:
-            self.worker.request("inspect",self.fault_device.currentData(),self.inspect_register.currentData())
-
-    def inspection_result_ready(self,id,number,raw):
-        if id != self.selected.currentData():
-            return
-        snapshot=self.snapshots.get(id)
-        text=f"Register {number}: raw {raw} / 0x{raw:04X}"
-        if snapshot:
-            temporary=dict(snapshot,raw=dict(snapshot["raw"]),quality="GOOD")
-            temporary["raw"][number]=raw
-            value,unit=measurement(temporary,number)
-            if value is not None: text+=f" / {value:.3f} {unit}"
-        self.inspection_result.setText(text)
-
-    def manage_devices(self):
-        if self.restarting: return
-        dialog=DeviceManager(self.devices,self,selected_id=self.selected.currentData())
-        if dialog.exec() != QDialog.Accepted: return
-        if dialog.devices == self.devices:
-            if dialog.open_analyzer_id is not None:
-                self.selected.setCurrentIndex(self.selected.findData(dialog.open_analyzer_id))
-                self.navigation.setCurrentRow(0)
-            return
-        updated=dict(self.settings,devices=[asdict(d) for d in dialog.devices])
-        try:
-            save_settings(self.settings_path,updated)
-        except (OSError,ValueError) as error:
-            QMessageBox.warning(self,"Save failed",str(error))
-            return
-        self.settings=updated
-        self.restarting=True
-        if self.worker and self.worker.isRunning():
-            self.worker.stop()
-        else:
-            self.worker_finished()
+    def start_worker(self,*,test_only=False):
+        self.worker=MonitoringWorker(copy.deepcopy(self.settings),self.data_path,self,test_only=test_only)
+        owner=self.worker
+        def current():return self.worker is owner and not self.next_action and not self.closing
+        self.worker.updated.connect(self.update_data);self.worker.identified.connect(self.identification_result)
+        self.worker.history_ready.connect(lambda rows:self.update_history(rows) if current() else None);self.worker.events_ready.connect(lambda rows:fill_table(self.event_table,rows) if current() else None)
+        self.worker.audit_ready.connect(lambda rows:fill_table(self.audit_table,[(a,b,c,f'0x{d:04X}',e,f) for a,b,c,d,e,f in rows]) if current() else None)
+        self.worker.inspection_ready.connect(lambda text:self.inspection_result.setText(text) if current() else None);self.worker.command_result.connect(lambda text:self.command_feedback(text) if current() else None)
+        self.worker.failed.connect(self.worker_error);self.worker.finished.connect(self.worker_finished)
+        self.worker.start();self.set_connection_buttons(False)
 
     def worker_finished(self):
-        if self.closing:
-            self.close()
-        elif self.restarting:
-            self.restarting=False
-            self.snapshots.clear()
-            self.last_sample.clear()
-            self.history_rows=[]
-            self.history_curve.setData([],[])
-            self.history_table.setRowCount(0)
-            self.refresh_devices()
-            self.start_worker()
+        if self.closing:self.close();return
+        action=self.next_action;self.next_action=None
+        self.set_connection_buttons(True)
+        if action=='connect':self.start_worker()
+        elif action=='test':self.start_worker(test_only=True)
+        else:self.update_command_buttons()
 
-    def worker_error(self,message):
-        for id,snapshot in self.snapshots.items():
-            snapshot["quality"]="OFFLINE"
-            snapshot["error"]=message
-        self.refresh_monitor()
-        self.refresh_detail()
-        self.summary.setText("MONITORING STOPPED")
-        self.statusBar().showMessage(f"Monitoring stopped: {message}")
+    def identification_result(self,info):
+        if self.next_action or self.closing:return
+        self.identity=info
+        if info.get('config'):
+            family=info['config']['family']
+            config=DeviceConfig(**info["config"])
+            if (family,profile_for(config).revision)!=self.snapshot_family:self.build_readouts(family,config)
+        text=f"Detected: {info.get('family') or 'UNKNOWN'} | Assembly: {info.get('model') or 'unavailable'} | Software: {info.get('version') or 'unavailable'} | Serial: {info.get('serial') or 'unavailable'}"
+        if info.get('test_only'):text+=' | TEST ONLY: monitoring and controls remain inactive'
+        self.identity_label.setText(text);self.warning.setText(info.get('warning',''));self.warning.setVisible(bool(info.get('warning')))
+        self.monitor_model.setText(info.get('text',''))
+        self.inspect_register.clear()
+        family=info.get('config',{}).get('family',self.config.family)
+        profile=profile_for(DeviceConfig(**info["config"])) if info.get("config") else profile_for(self.config)
+        for n,r in sorted(profile.registers.items()):
+            if r.safe_read:self.inspect_register.addItem(f'{n} - {r.name}',n)
+        self.set_connection_buttons(True);self.update_command_buttons()
+
+    def update_data(self,snapshot,diagnostics):
+        if self.next_action or self.closing:return
+        self.update_count+=1;self.snapshot=snapshot;self.diagnostics=diagnostics
+        config=DeviceConfig(**snapshot['config']);family=config.family
+        if (family,profile_for(config).revision)!=self.snapshot_family:self.build_readouts(family,config)
+        self.gauge.set_snapshot(snapshot);self.indicators.update_snapshot(snapshot)
+        color,status=severity(snapshot);self.monitor_name.setText(f'PREVEX {family}')
+        self.monitor_status.setText(f"{status}\n{snapshot['quality']}");self.monitor_status.setStyleSheet(f'color:{color};font-size:21px;font-weight:bold;')
+        self.monitor_updated.setText(f"Last update (UTC):\n{snapshot['last_success'] or 'never'}\n{snapshot['error']}")
+        self.summary.setText(f"{family} | {snapshot['quality']} | {config.assembly}")
+        for n,(widget,quality) in self.readouts.items():
+            if family=='BTU' and n==42:widget.setText('--');quality.setText('UNAVAILABLE: meaning not documented');continue
+            value,unit=measurement(snapshot,n)
+            if n==2 and value is not None:widget.setText(profile_for(config).status(int(value)))
+            else:widget.setText(f'{value:.{precision(family,n,snapshot["raw"].get(3,100))}f} {unit}' if value is not None else '--')
+            quality.setText('GOOD' if value is not None else snapshot['quality'] if snapshot['quality']!='GOOD' else unit.upper())
+        value,unit=measurement(snapshot)
+        marker=(snapshot['last_success'],snapshot['quality'])
+        if marker!=self.last_sample:
+            stamp=datetime.fromisoformat(snapshot['last_success']).timestamp() if value is not None else time.time()
+            self.series.append((stamp,float(value) if value is not None else float('nan')));self.last_sample=marker
+        for curve in (self.overview_curve,self.trend_curve):curve.setData([a for a,b in self.series],[b for a,b in self.series])
+        self.overview_plot.setLabel('left','Measurement',units=unit if value is not None else '')
+        self.trend_plot.setLabel('left','Measurement',units=unit if value is not None else '')
+        stats=diagnostics['bus'];rate=stats['success_rate']
+        self.diagnostics_summary.setText(f"Single bus | {diagnostics['baud']} baud / 8N1 | Polls {stats['polls']} | Success {rate if rate is not None else '--'}% | Timeouts {stats['timeouts']} | CRC {stats['crc_errors']} | Protocol {stats['protocol_errors']}\nLast reply {stats['last_response']} | {stats['last_response_ms']:.2f} ms")
+        fill_table(self.traffic,[(r['time'],r['direction'],r['address'],r['register'],r['hex']) for r in diagnostics['traffic'][-100:]])
+        self.update_command_buttons();self.received.emit()
+
+    def update_command_buttons(self):
+        name,role=self.users.resolve(self.session);self.role_label.setText(f'{name} / {role}')
+        snapshot=self.snapshot;control=snapshot.get('control',{}) if snapshot else {}
+        enabled=bool(snapshot and snapshot['quality']=='GOOD' and control.get('verified') and not control.get('pending') and not control.get('ambiguous') and role in ('Operator','Administrator') and not self.command_dispatching and self.worker and self.worker.isRunning() and self.settings['mode']=='simulation')
+        for code,button in self.command_buttons.items():
+            active_config=DeviceConfig(**snapshot["config"]) if snapshot else self.config
+            allow=enabled and code in commands_for(active_config)
+            if snapshot and code in range(0x300,0x900,0x100):
+                lock_register=27 if profile_for(active_config).revision=='700' else 60
+                allow=allow and lock_register in snapshot['raw'] and not snapshot['raw'][lock_register]&(1 if lock_register==27 else 3) and snapshot['raw'].get(2) not in (4,5,6,7,11,12)
+            button.setEnabled(bool(allow));button.setToolTip('Verified simulator identity, current communication and Operator/Administrator session required')
+            if code not in commands_for(active_config):button.setToolTip('700-series Rev D: Lock/Unlock have no effect over Modbus; Save Settings permits factory changes. Not available in operational controls.')
+        if control.get('pending'):self.command_message.setText('Command active: monitoring STATUS. Duplicate commands disabled.')
+        elif control.get('ambiguous'):self.command_message.setText('Unknown command outcome. No retry; reconnect and review state.')
+
+    def send_command(self,code):
+        if code not in COMMANDS or not self.command_buttons[code].isEnabled():return
+        config=self.snapshot['config']
+        answer=QMessageBox.question(self,'Confirm analyzer command',f"Target: {config['name']} / {config['family']} / address {config['address']}\n{COMMANDS[code]} (0x{code:04X})\nExecute this simulated command once?",QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
+        if answer!=QMessageBox.Yes:return
+        self.command_dispatching=True;self.update_command_buttons();self.request('command',code,self.session,True)
+
+    def command_feedback(self,text):
+        self.command_dispatching=False;self.command_message.setText(text);self.statusBar().showMessage(text);self.update_command_buttons()
+
+    def request(self,*message):
+        if self.worker and self.worker.isRunning() and not self.worker.test_only:self.worker.request(*message)
+
+    def choose_type(self):
+        dialog=AnalyzerChoice(self.settings,self)
+        if dialog.exec()!=QDialog.Accepted:return
+        settings=dialog.settings()
+        try:save_settings(self.settings_path,settings)
+        except (OSError,ValueError) as error:QMessageBox.warning(self,'Save failed',str(error));return
+        # Stop and invalidate immediately; new profile starts only after old worker closes.
+        self.settings=settings;self.refresh_connection_labels();self.begin('connect')
+
+    def login(self):
+        if self.session:
+            self.users.logout(self.session);self.session='';self.login_button.setText('Sign in');self.update_command_buttons();return
+        dialog=LoginDialog(self.users,self)
+        if dialog.exec()==QDialog.Accepted:self.session=dialog.token;self.login_button.setText('Sign out');self.update_command_buttons()
+
+    def load_history(self):self.request('history',self.history_hours.currentData())
+
+    def update_history(self,rows):
+        self.history_rows=rows;fill_table(self.history_table,rows)
+        self.history_curve.setData([datetime.fromisoformat(r[0]).timestamp() for r in rows],[r[1] if r[1] is not None else float('nan') for r in rows])
+
+    def export_history(self):
+        if not self.history_rows:QMessageBox.information(self,'History','Load history before exporting.');return
+        path,_=QFileDialog.getSaveFileName(self,'Export history',str(self.data_path/'history.csv'),'CSV (*.csv)')
+        if path:
+            try:
+                with open(path,'w',newline='',encoding='utf-8-sig') as stream:
+                    writer=csv.writer(stream);writer.writerow(['instrument','timestamp_utc','value','unit','quality','status']);writer.writerows([(self.config.id,*r) for r in self.history_rows])
+            except OSError as error:QMessageBox.warning(self,'Export failed',str(error))
+
+    def worker_error(self,text):
+        self.invalidate('OFFLINE');self.warning.setText(text);self.warning.show();self.statusBar().showMessage(text)
 
     def apply_theme(self):
-        dark=self.settings.get("theme","dark") == "dark"
-        self.gauge.dark=dark
-        self.gauge.update()
-        bg,panel,text,muted=("#0d1625","#172335","#e7edf7","#adbbcf") if dark else ("#f1f4f9","#ffffff","#172335","#425570")
-        self.setStyleSheet(f"""
-            QWidget {{ background: {bg}; color: {text}; font-family: 'Segoe UI'; font-size: 13px; }}
-            QLabel#brand {{ font-size: 23px; font-weight: 700; padding: 8px 0; }}
-            QLabel#heading {{ font-size: 25px; font-weight: 600; margin-bottom: 6px; }}
-            QLabel#reading {{ font-size: 42px; font-weight: 600; padding: 12px 0; }}
-            QLabel#simulationBanner {{ background: #eab65b; color: #251c10; padding: 11px; font-weight: 700; }}
-            QPushButton, QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox {{ background: {panel}; border: 1px solid {muted}; border-radius: 6px; padding: 8px; }}
-            QPushButton:hover {{ border-color: #45c9ae; }}
-            QListWidget, QTableWidget {{ background: {panel}; alternate-background-color: {bg}; border: 0; }}
-            QListWidget::item {{ padding: 15px 10px; border-radius: 6px; }}
-            QListWidget::item:selected {{ background: #245a69; color: white; }}
-            QHeaderView::section {{ background: {panel}; color: {text}; padding: 8px; border: 0; }}
-            QScrollArea {{ border: 0; }}
+        dark=self.settings.get('theme','dark')=='dark';self.gauge.dark=dark;self.gauge.update()
+        bg,panel,text=('#0d1625','#182538','#e7edf7') if dark else ('#eef3f8','#ffffff','#172335')
+        self.setStyleSheet(f"""QWidget {{background:{bg};color:{text};font-family:'Segoe UI';font-size:13px;}}
+        QLabel#brand {{font-size:24px;font-weight:bold;}} QLabel#heading {{font-size:23px;font-weight:600;}}
+        QLabel#digitalValue {{font-size:21px;font-weight:600;}} QLabel#banner {{background:#e7b55e;color:#251c10;padding:9px;font-weight:bold;}}
+        QLabel#warning {{background:#763d2e;color:#ffe3c2;padding:9px;}}
+        QFrame#panel,QFrame#readout,QFrame#indicatorPanel {{background:{panel};border:1px solid #40516a;border-radius:7px;}}
+        QPushButton,QComboBox,QLineEdit,QSpinBox,QDoubleSpinBox {{background:{panel};border:1px solid #526780;border-radius:5px;padding:7px;}}
+        QPushButton:hover {{border-color:#44cab0;}} QPushButton:disabled {{color:#7f8ba0;border-color:#36435a;}}
+        QListWidget,QTableWidget {{background:{panel};alternate-background-color:{bg};border:0;}}
+        QListWidget::item {{padding:14px 8px;}} QListWidget::item:selected {{background:#245a69;color:white;}}
+        QHeaderView::section {{background:{panel};color:{text};padding:7px;border:0;}} QScrollArea {{border:0;}}
         """)
 
     def toggle_theme(self):
-        self.settings["theme"]="light" if self.settings.get("theme","dark") == "dark" else "dark"
-        try:
-            save_settings(self.settings_path,self.settings)
-        except OSError as error:
-            self.statusBar().showMessage(f"Theme could not be saved: {error}")
+        self.settings['theme']='light' if self.settings.get('theme','dark')=='dark' else 'dark'
+        try:save_settings(self.settings_path,self.settings)
+        except OSError as error:self.statusBar().showMessage(str(error))
         self.apply_theme()
 
     def closeEvent(self,event):
         if self.worker and self.worker.isRunning():
-            self.closing=True
-            self.worker.stop()
-            self.setEnabled(False)
-            self.statusBar().showMessage("Stopping polling and closing the database...")
-            event.ignore()
+            self.closing=True;self.worker.stop();self.setEnabled(False);event.ignore()
         else:
-            event.accept()
+            self.users.close();event.accept()

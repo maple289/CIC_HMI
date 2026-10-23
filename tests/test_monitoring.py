@@ -1,200 +1,149 @@
-from dataclasses import asdict, replace
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from dataclasses import asdict,replace
+from datetime import datetime,timedelta,timezone
+import copy
 import json
 import os
-from pathlib import Path
 import time
-
-os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
-
+os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import pytest
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtTest import QTest
-
-from prevex_hmi.communication.engine import BusEngine
-from prevex_hmi.communication.protocol import Addressing
-from prevex_hmi.devices.configuration import default_devices, load_settings, save_settings
+from prevex_hmi.devices.configuration import default_devices,load_settings,save_settings
 from prevex_hmi.devices.models import DeviceConfig
-from prevex_hmi.gui.presentation import format_reading, measurement, severity
+from prevex_hmi.gui.presentation import format_reading,measurement,severity
 from prevex_hmi.gui.window import MainWindow
-from prevex_hmi.gui.device_dialogs import DeviceEditor, DeviceManager
-from prevex_hmi.logging_db.store import Historian
+from prevex_hmi.gui.connection_dialog import AnalyzerChoice
 from prevex_hmi.profiles import PROFILES
-from prevex_hmi.simulator.bus import SimulatedBus
+from prevex_hmi.profiles.gauges import GAUGE_REGISTERS,gauges_for
+from prevex_hmi.logging_db.store import Historian
 
-
-@pytest.fixture(scope="session")
+@pytest.fixture(scope='session')
 def app():
     instance=QApplication.instance() or QApplication([])
     instance.setQuitOnLastWindowClosed(False)
     yield instance
 
-
-def until(app,condition,timeout=6):
+def until(app,condition,timeout=8):
     deadline=time.monotonic()+timeout
     while time.monotonic()<deadline:
         app.processEvents()
-        if condition(): return
-        time.sleep(0.01)
-    pytest.fail("Timed out waiting for asynchronous monitoring state")
+        if condition():return
+        time.sleep(.01)
+    pytest.fail('Timed out waiting for asynchronous state')
 
+def snapshot(quality='GOOD',family='LEL'):
+    d=next(d for d in default_devices() if d.family==family)
+    return dict(config=asdict(d),raw={1:25600,2:0,3:d.fullscale,4:128},quality=quality,age=0,last_success=datetime.now(timezone.utc).isoformat(),error='',identification='test')
 
-def snapshot(quality="GOOD",family="LEL"):
-    config=next(d for d in default_devices() if d.family == family)
-    return {"config":asdict(config),"raw":{1:25600,2:0,3:100,4:128},"quality":quality,"age":1,"last_success":datetime.now(timezone.utc).isoformat(),"error":"","identification":"simulated"}
-
-
-@pytest.mark.parametrize("quality",["OFFLINE","STALE","DISABLED"])
+@pytest.mark.parametrize('quality',['OFFLINE','STALE','DISABLED'])
 def test_old_reading_never_presented_as_current(quality):
     data=snapshot(quality)
-    assert measurement(data)[0] is None
-    assert format_reading(data) == "--"
-    assert severity(data)[1] == quality
+    assert measurement(data)[0] is None and format_reading(data)=='--'
+    assert severity(data)[1]==quality
 
-
-def test_fid_uses_live_fullscale_and_missing_context_stays_unknown():
-    data=snapshot(family="FID")
-    data["raw"][3]=1000
-    assert measurement(data) == (Decimal("1000"),"PPM")
-    data["config"]["units"]=None
+def test_individual_register_staleness():
+    data=snapshot();data['register_ages']={1:20}
     assert measurement(data)[0] is None
 
+def test_configuration_migration_preserves_backup_and_reduces_to_one(tmp_path):
+    path=tmp_path/'settings.json'
+    old=dict(schema_version=1,mode='simulation',theme='dark',selected_device='fid-3',devices=[asdict(d) for d in default_devices()])
+    path.write_text(json.dumps(old))
+    settings=load_settings(path)
+    assert settings['schema_version']==2 and len(settings['devices'])==1
+    assert settings['devices'][0]['family']=='FID' and settings['analyzer_selection']=='Auto Detect'
+    assert json.loads(path.with_suffix('.v1-backup.json').read_text())==old
+    settings['devices'].append(asdict(default_devices()[0]))
+    with pytest.raises(ValueError):save_settings(path,settings)
 
 def test_settings_roundtrip_and_corruption_preserved(tmp_path):
-    path=tmp_path/"settings.json"
-    settings=load_settings(path)
-    settings["devices"]=list(reversed(settings["devices"]))
-    save_settings(path,settings)
-    assert load_settings(path) == settings
-    path.write_text("broken json",encoding="utf-8")
-    with pytest.raises(ValueError): load_settings(path)
-    assert path.read_text() == "broken json"
+    path=tmp_path/'settings.json';settings=load_settings(path)
+    save_settings(path,settings);assert load_settings(path)==settings
+    path.write_text('bad json')
+    with pytest.raises(ValueError):load_settings(path)
+    assert path.read_text()=='bad json'
 
+def test_choice_has_four_options_and_preserves_manual_range(app,tmp_path):
+    settings=load_settings(tmp_path/'settings.json');dialog=AnalyzerChoice(settings)
+    assert [dialog.types.item(i).text() for i in range(4)]==['Auto Detect','LEL','BTU','FID']
+    dialog.range_mode.setCurrentText('manual');dialog.manual.setValue(250)
+    dialog.logging_enabled.setChecked(False)
+    result=dialog.settings();assert result['devices'][0]['manual_maximum']==250
+    assert not result['devices'][0]['logging_enabled']
+    dialog.close()
 
-def test_edit_family_or_units_starts_independent_history_identity(app):
-    original=default_devices()[0]
-    editor=DeviceEditor(original)
-    assert editor.config().id == original.id
-    editor.family.setCurrentText("FID")
-    assert editor.config().id != original.id
-    editor.close()
+def test_historian_quality_events_retention_and_audit(tmp_path):
+    db=Historian(tmp_path/'test.sqlite3')
+    stamp=datetime.now(timezone.utc).isoformat(timespec='milliseconds')
+    old=(datetime.now(timezone.utc)-timedelta(days=100)).isoformat(timespec='milliseconds')
+    db.measurement(old,'one',1,99,'%LFL','GOOD',0);db.measurement(stamp,'one',1,-20,'%LFL','GOOD',0)
+    db.measurement(stamp,'one',1,None,'','OFFLINE',0);db.event(old,'one','Alarm','GOOD')
+    db.command_audit('one','operator',0x300,'UNKNOWN','No retry');db.retain(90)
+    assert len(db.history('one',24*365))==2 and db.history('one')[0][1]==-20
+    assert len(db.events())==1 and db.audit_rows()[0][4]=='UNKNOWN';db.close()
 
-
-def test_historian_quality_events_ranges_and_retention(tmp_path):
-    db=Historian(tmp_path/"test.sqlite3")
-    stamp=datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-    old=(datetime.now(timezone.utc)-timedelta(days=100)).isoformat(timespec="milliseconds")
-    db.measurement(old,"device",1,99,"%LFL","GOOD",0)
-    db.measurement(stamp,"device",1,12.5,"%LFL","GOOD",0)
-    db.measurement(stamp,"other",1,25,"PPM","GOOD",0)
-    db.measurement(stamp,"device",1,None,"","OFFLINE",0)
-    db.event(old,"device","Initial alarm","GOOD")
-    db.commit()
-    rows=db.history("device",hours=24)
-    assert len(rows) == 2 and rows[0][1] == 12.5 and rows[1][1] is None
-    db.retain(90)
-    assert len(db.history("device",hours=365*24)) == 2
-    assert len(db.events()) == 1
-    db.close()
-
-
-def test_widgets_hide_stale_data_and_render_model_specific_values(app,tmp_path):
-    settings=load_settings(tmp_path/"settings.json")
-    window=MainWindow(settings,tmp_path/"settings.json",tmp_path,start_worker=False)
-    bus=BusEngine(SimulatedBus(default_devices()))
-    data=snapshot()
-    window.update_data([data],bus.diagnostics())
-    window.open_device(data["config"]["id"])
-    assert "100.00" in window.detail_reading.text()
-    assert window.gauge.state.reading == "100.00"
-    data["quality"]="OFFLINE"
-    window.update_data([data],bus.diagnostics())
-    assert window.detail_reading.text().strip() == "--"
-    assert window.gauge.state.reading == "--"
-    assert window.gauge.state.fraction is None
-    window.close()
-    bus.close()
-
-
-def test_threaded_monitoring_fault_history_and_clean_close(app,tmp_path):
-    settings=load_settings(tmp_path/"settings.json")
-    window=MainWindow(settings,tmp_path/"settings.json",tmp_path)
-    window.show()
+@pytest.mark.parametrize('family',['LEL','BTU','FID'])
+def test_detected_family_has_all_gauges_and_one_worker(app,tmp_path,family):
+    settings=load_settings(tmp_path/'settings.json');settings['simulated_family']=family
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path);w.show()
     try:
-        until(app,lambda:len(window.snapshots)==4 and all(s["quality"] == "GOOD" for s in window.snapshots.values()))
-        # A real Qt timer continues while worker-owned polling and DB I/O run.
-        assert window.update_count >= 1
-        window.worker.request("history","lel-1",24)
-        until(app,lambda:bool(window.history_rows))
-        window.worker.request("fault",1,"timeout")
-        until(app,lambda:window.snapshots["lel-1"]["quality"] == "OFFLINE")
-        assert window.gauge.state.reading == "--"
-        assert any(s["quality"] == "GOOD" for id,s in window.snapshots.items() if id != "lel-1")
+        until(app,lambda:w.snapshot is not None and w.snapshot['quality']=='GOOD')
+        assert w.identity['family']==family and w.identity['controls_verified']
+        assert len(w.worker.settings['devices'])==1
+        numbers=gauges_for(DeviceConfig(**w.snapshot['config']))
+        assert set(numbers)<=set(w.readouts)
+        until(app,lambda:all(n in w.snapshot['raw'] for n in numbers))
+        assert not any(b.isEnabled() for b in w.command_buttons.values())
+        w.worker.request('reading',-20)
+        until(app,lambda:w.gauge.state.value is not None and w.gauge.state.value<0)
+        assert w.gauge.state.minimum==-30
     finally:
-        window.close()
-        until(app,lambda:not window.worker.isRunning())
-        app.processEvents()
-    assert (tmp_path/"simulation.sqlite3").exists()
+        w.close();until(app,lambda:not w.worker.isRunning());app.processEvents()
 
+def test_test_connection_identifies_without_starting_controls(app,tmp_path):
+    settings=load_settings(tmp_path/'settings.json');settings['simulated_family']='FID'
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False)
+    w.begin('test')
+    try:
+        until(app,lambda:bool(w.identity) and not w.worker.isRunning())
+        assert w.identity['family']=='FID' and w.identity['test_only']
+        assert w.snapshot is None and not any(b.isEnabled() for b in w.command_buttons.values())
+    finally:w.close()
 
-def test_selection_switches_all_process_views_and_clears_previous_values(app,tmp_path):
-    settings=load_settings(tmp_path/"settings.json")
-    window=MainWindow(settings,tmp_path/"settings.json",tmp_path,start_worker=False)
-    bus=BusEngine(SimulatedBus(default_devices()))
-    lel=snapshot()
-    fid=snapshot(family="FID")
-    window.update_data([lel,fid],bus.diagnostics())
-    assert window.monitor_name.text() == lel["config"]["name"]
-    assert window.gauge.state.unit == "%LFL"
-    window.selected.setCurrentIndex(window.selected.findData("fid-3"))
-    assert window.monitor_name.text() == fid["config"]["name"]
-    assert window.gauge.state.unit == "PPM"
-    assert window.detail_reading.text().endswith("PPM")
-    assert all(c.currentData() == "fid-3" for c in (window.selected,window.trend_device,window.history_device,window.fault_device))
-    assert json.loads((tmp_path/"settings.json").read_text())["selected_device"] == "fid-3"
-    # Select a configured analyzer that has not replied: no FID value can linger.
-    window.selected.setCurrentIndex(window.selected.findData("btu-2"))
-    assert window.gauge.state.reading == "--"
-    assert window.detail_reading.text() == "--"
-    assert window.parameters.rowCount() == 0
-    assert window.overview_curve.xData is None or len(window.overview_curve.xData) == 0
-    window.close()
-    bus.close()
+def test_profile_switch_stops_invalidates_and_opens_only_new_device(app,tmp_path):
+    settings=load_settings(tmp_path/'settings.json');w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
+    try:
+        until(app,lambda:w.snapshot is not None)
+        previous=w.worker
+        w.settings=copy.deepcopy(w.settings);w.settings['simulated_family']='BTU'
+        w.begin('connect')
+        assert w.snapshot is None and w.gauge.state.reading=='--'
+        until(app,lambda:w.worker is not previous and w.snapshot is not None and w.snapshot['config']['family']=='BTU')
+        assert not previous.isRunning() and w.identity['family']=='BTU'
+        assert 15 not in w.readouts and 10 in w.readouts
+    finally:
+        w.close();until(app,lambda:not w.worker.isRunning());app.processEvents()
 
+def test_mismatch_and_hardware_access_gate(app,tmp_path):
+    settings=load_settings(tmp_path/'settings.json');settings['analyzer_selection']='FID'
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
+    try:
+        until(app,lambda:w.snapshot is not None)
+        assert 'MISMATCH' in w.warning.text() and not w.identity['controls_verified']
+        assert w.snapshot['config']['family']=='LEL'
+        w.settings=copy.deepcopy(w.settings);w.settings['mode']='hardware';w.begin('connect')
+        until(app,lambda:w.worker is not None and not w.worker.isRunning())
+        assert w.snapshot is None and 'No port was opened' in w.warning.text()
+    finally:
+        w.close();app.processEvents()
 
-def test_selected_events_are_filtered(app,tmp_path):
-    settings=load_settings(tmp_path/"settings.json")
-    window=MainWindow(settings,tmp_path/"settings.json",tmp_path,start_worker=False)
-    window.update_events([("now","lel-1","Warning","GOOD"),("now","fid-3","Danger","GOOD")])
-    assert window.event_table.rowCount() == 1
-    assert window.event_table.item(0,1).text() == "lel-1"
-    window.inspection_result_ready("fid-3",1,12345)
-    assert window.inspection_result.text() == "No manual read requested"
-    window.close()
-
-
-def test_click_in_manage_analyzers_opens_selected_screen_without_restart(app,tmp_path):
-    settings=load_settings(tmp_path/"settings.json")
-    window=MainWindow(settings,tmp_path/"settings.json",tmp_path,start_worker=False)
-    window.navigation.setCurrentRow(5)
-    clicked=[]
-
-    def choose():
-        dialog=QApplication.activeModalWidget()
-        if isinstance(dialog,DeviceManager):
-            item=next(dialog.chooser.item(i) for i in range(dialog.chooser.count()) if dialog.chooser.item(i).data(Qt.UserRole) == "fid-3")
-            QTest.mouseClick(dialog.chooser.viewport(),Qt.LeftButton,pos=dialog.chooser.visualItemRect(item).center())
-            clicked.append(True)
-            if dialog.isVisible(): dialog.reject()
-
-    QTimer.singleShot(30,choose)
-    window.manage_devices()
-    assert clicked
-    assert window.selected.currentData() == "fid-3"
-    assert window.navigation.currentRow() == 0
-    assert "FID" in window.monitor_model.text()
-    assert window.worker is None and not window.restarting
-    assert load_settings(tmp_path/"settings.json")["selected_device"] == "fid-3"
-    window.close()
+def test_communication_loss_clears_indicator_and_retains_events(app,tmp_path):
+    settings=load_settings(tmp_path/'settings.json');w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
+    try:
+        until(app,lambda:w.snapshot is not None and w.snapshot['quality']=='GOOD')
+        w.worker.request('fault','timeout')
+        until(app,lambda:w.snapshot is not None and w.snapshot['quality']=='OFFLINE')
+        assert w.gauge.state.reading=='--' and w.gauge.state.fraction is None
+        assert 'OFFLINE' in w.indicators.summary.text()
+        assert not any(b.isEnabled() for b in w.command_buttons.values())
+    finally:
+        w.close();until(app,lambda:not w.worker.isRunning());app.processEvents()

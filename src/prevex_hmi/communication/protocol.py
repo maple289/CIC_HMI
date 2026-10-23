@@ -83,6 +83,10 @@ def validate_read(profile: Profile, start: int, count: int) -> list[tuple[int, b
     if not 1 <= count <= 127:
         raise ValueError("FC03 length must be 1..127")
     windows = [(1, 64), (257, profile.identification_end)]
+    if profile.revision == '700':
+        # Rev D omits its page map. Single-word reads above64 avoid guessing
+        # a page boundary; the simulator is not physical validation.
+        windows += [(n,n) for n in range(65,106)]
     if profile.protocol_documented:
         windows += [(1025, 1040), (1281, 1344)]
     if not any(lo <= start <= start + count - 1 <= hi for lo, hi in windows):

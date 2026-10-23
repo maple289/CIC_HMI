@@ -1,34 +1,46 @@
-# Running the monitoring preview
+# Operating the single-analyzer preview
 
-## Start
+Start `scripts/launch_windows.cmd`, or run `.venv/Scripts/python.exe scripts/run_hmi.py`. PowerShell activation is optional. A new installation opens one simulated700-series LEL analyzer with Auto Detect selected. The amber simulation banner remains visible. Synthetic data must never be used for safety functions.
 
-Open `scripts/run_hmi.py` in VS Code with the project `.venv/Scripts/python.exe` selected, then click Run Python File. Alternatively double-click `scripts/launch_windows.cmd`. PowerShell activation is not required.
+## Choose and connect
 
-The application opens in **SIMULATION MODE**, with an amber banner on every page. There is no physical-port connection or operational-control UI. Synthetic values are not process readings. This preview must not be used for safety functions.
+**Choose Analyzer Type** offers Auto Detect(default), LEL, BTU and FID. Choose the actual simulated family separately to exercise mismatch handling. For LEL, choose700 or legacy simulation. Save settings to stop the old session, clear old readings and start one new connection. Existing multi-device settings migrate to one selected instrument; the original is backed up as `settings.v1-backup.json`.
 
-## Pages
+COM port, baud, timeout, nonzero address, address compatibility and register offset are saved. Physical connections remain blocked; selecting hardware opens no port. No real Modbus writes are implemented.
 
-- Analyzer: one selected instrument at a time, with a range-scaled circular gauge, status, supporting measurements and a live trend. The global selector lists each configured analyzer by name, family and address; switching also changes details, trends, history, events and device diagnostics. Background polling still monitors every enabled analyzer. The selected instrument is remembered between launches. On smaller windows the monitoring content scrolls to keep the gauge and chart legible.
-- Circular gauge: 0 to the instrument's FULLSCLE register, with current numeric reading and a position marker. LEL/FID use green normal, amber warning and red danger bands from registers5/6. BTU uses amber low-alarm, green normal and red high-alarm bands. Threshold bands are withheld until valid setpoints arrive. BTU's unverified engineering unit remains labeled explicitly. Out-of-range values retain their true numeric value with an ABOVE/BELOW RANGE label; only the marker is clamped. Offline/stale/disabled readings show `--` and hide the marker and active bands.
-- Analyzer details: family-specific cached registers, raw and engineering values, relay/service indications, identification and a live plot. Unsupported values are omitted or explicitly unavailable. FID UNITS are simulated context; BTU measurement unit remains unverified. Static settings and slow measurements may arrive later than process values.
-- Live trends: selected analyzer, mouse-wheel zoom and drag pan. Up to 1800 points per instrument; communication gaps break the line.
-- History / CSV: select instrument and time range, load up to the latest 5000 primary readings, export exactly those rows with instrument identification. UTC is preserved in tables/CSV; plots show local time. This is an initial historian UI, not an unlimited report exporter.
-- Alarm / event history: latest 500 operating-state and communication transitions; independent of measurement logging. Does not replace hardware alarms/interlocks.
-- Diagnostics: aggregate/per-device poll and error counts, response timing, TX/RX frames and safe read-only register inspection. Apply a simulated timeout/CRC/protocol fault, or `none` to restore responses. Recovery follows scheduler backoff and may take up to 60 seconds.
+**Test Connection** stops monitoring, performs identification and a read-only response check, then reports family/model/version/serial without enabling controls. Choose Connect to start polling. Unknown identity permits an explicit manual profile but keeps commands disabled. A mismatch uses the detected family's definitions and displays a warning; choose the matching type or Auto Detect to resolve it.
 
-Manage analyzers from the Analyzer screen: the default **Select analyzer** tab opens an instrument's monitoring screen with a single click. This switches the selected device without restarting background polling. Use **Manage configuration** to add, edit, enable/disable, remove, sort or reorder instruments. Save or cancel pending configuration changes before returning to selection; choosing an analyzer never implicitly applies edits. Duplicate enabled packet addresses are rejected. Disabled devices remain selectable. Poll intervals are requested intervals subject to bus load; 16 analyzers do not imply 1 Hz updates. Primary process/status reads have priority over ancillary parameters and identification. Under overload, slower fields can be delayed. Family, assembly and software version are explicit simulator settings.
+LEL700 numeric identification replaces the removed legacy ASCII page. See LEL_700_REVIEW.md. FID units remain explicit context because its supplied UNITS entry lacks an address. BTU units remain labeled unverified.
 
-Dark/light theme is saved per user. Toggle measurement logging in the simulated-device editor. This monitoring preview does not include user-account management, configuration writes, calibration controls or physical operation; those are Milestone 3 work.
+## Gauge and indicators
 
-## User files and offline operation
+The circular gauge shows a blue negative section down to -30, a bold zero marker, the positive full scale and instrument alarm bands. FULLSCLE3 supplies the positive range when available. Optional manual fallback or display override is in Choose Analyzer Type. It changes only the display, never the instrument or FID conversion. Values beyond either endpoint retain their actual numeric reading. Negative sign alone does not determine a fault; STATUS does.
 
-Qt's Windows AppLocalDataLocation stores settings.json, simulation.sqlite3 and rotating application.log files under the user's local application data folder. The exact path appears in the status bar. Nothing is written into the protected executable installation directory. All normal operation is local: no network requests, subscriptions or AI services. The simulation database is explicitly named and must never be mixed with future physical data.
+All documented Gauge-menu parameters for the selected revision appear as digital readouts with names, units, register numbers and validity. Scroll for additional tiles and the live plot. BTU's unnamed42 is marked unavailable and never polled. Unsupported registers are not invented. Missing/stale/offline measurements show `--`.
 
-Settings are saved atomically; malformed settings are reported and preserved. Measurements are retained 90 days; event history is retained independently. Live buffers and raw traffic are bounded; traffic holds 500 entries (latest 100 visible). Application logs rotate at 2 MB with 3 backups. SQLite disk-capacity handling, archival, richer retention controls and unlimited exports remain release work.
+The top panel shows one current STATUS enum and separate relay/service bits. Horizontal scrolling exposes all active and inactive indicators.700-series LEL has different relay/service labels from legacy LEL. FID SERVICE is unsupported by the supplied documentation. Text accompanies colors.
 
-## Build and verify
+## Commands and local accounts
 
-From Windows Python 3.12 x64 with requirements-lock.txt installed:
+Guest/Viewer is the initial role; controls remain disabled. Use **Sign in / create account** to create the first local Administrator with a password of at least12 characters. There is no default password. Sign out through the same button. Passwords use salted PBKDF2 hashes. The account store supports Viewer, Operator and Administrator; creating additional users is an Administrator-only API operation, with a management UI remaining future work.
+
+Operator/Administrator sessions may run approved simulator commands. Each action requires target confirmation, a current connection, fresh matching identification and applicable calibration-lock checks. Pending or unknown outcomes block duplicates. Commands are sent once, audited and evaluated using STATUS. Ambiguous timeouts are never retried; reconnect and review state. A write acknowledgment is not proof of execution. Ack/reset/save may report sent/unverified because no unique success signature is documented.
+
+For700 LEL, Save Settings and Modbus Lock/Unlock are unavailable under the revised manual. Calibration/tests use LOCK STATE27. Cold Start, internal commands, relay/gas tests, Zero Adjust and generic write bypasses are unavailable. Factory configuration is read-only. Measurement logging can be toggled in Choose Analyzer Type; events and command audit continue independently.
+
+## Other pages
+
+- Live trends: signed values, mouse-wheel zoom, drag pan; bounded1800 points. Communication gaps break the curve.
+- History / CSV: select time range, load up to5000 primary records, export those rows with instrument ID and UTC timestamps. Plots display local time.
+- Alarm history: latest500 status/communication transitions, independent of measurement logging.
+- Diagnostics: poll/error counts, response timing, bounded TX/RX data, documented read-only inspection. Inject simulated timeout/CRC/protocol/unknown-identity/lost-command-ack faults. Set fault to `none` for recovery; backoff can take up to60s. Forced readings and STATUS codes support offline testing.
+- Command audit: user, target, command, outcome and detail, including rejections and unknown results.
+
+## User data and deployment
+
+Settings, simulation.sqlite3, users.sqlite3 and rotating application.log are stored in Qt's Windows AppLocalDataLocation (shown in the status bar), normally `%LOCALAPPDATA%/CIC/PREVEX HMI`. Normal operation needs no Internet, subscription or AI service. Settings save atomically; malformed files are preserved. Measurements retain90 days, events/audits independently. Raw traffic holds500 frames, latest100 displayed. Application logs rotate at2MB with3 backups.
+
+Build on Windows Python3.12 x64 using requirements-lock.txt:
 
 ```powershell
 & .\.venv\Scripts\python.exe -m pytest -q
@@ -36,6 +48,4 @@ From Windows Python 3.12 x64 with requirements-lock.txt installed:
 & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm build_windows.spec
 ```
 
-Launch `dist/PREVEX-HMI/PREVEX-HMI.exe`. Distribute the entire PREVEX-HMI folder, including `_internal`, not just the EXE. The build is unsigned; signing and an installer package remain release tasks. Validate on a clean Windows machine before distribution; development-machine success is not Windows 10 certification or physical-device validation.
-
-CI runs dependency/test/render checks on Windows. No physical COM port is opened by tests. Hardware gates and future authorized bench procedure are in VERIFICATION.md; simulator limitations are in SIMULATOR.md.
+Launch `dist/PREVEX-HMI/PREVEX-HMI.exe`; distribute the entire folder, including `_internal`. The build is unsigned. Installer/signing, clean Windows10/11 testing, advanced retention/archival, user-management UI and hardware validation remain release work. No simulator test establishes physical compatibility; see VERIFICATION.md.

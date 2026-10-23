@@ -26,8 +26,13 @@ Activation is optional; these commands work without enabling PowerShell scripts.
 - [Progress, test evidence and next steps](PROGRESS.md)
 - [Launch, simulation operation and Windows build](Docs/OPERATING.md)
 
-The three PDFs in `Docs/` are the authority for analyzer behavior. Simulator assumptions must never be presented as proof of physical compatibility.
+Manufacturer PDFs in `Docs/` are the authority for analyzer behavior. The new full [LEL700 Rev D review](Docs/LEL_700_REVIEW.md) explains differences from the legacy LEL extract. Simulator assumptions must never be presented as proof of physical compatibility.
 
 ## Continuous integration
 
 GitHub Actions runs on pushes to `main`, pull requests and manual dispatch. The Windows/Python 3.12 job installs pinned dependencies, checks their consistency, compiles Python files, runs pytest, checks generated register tables and renders both setup and monitoring GUI smoke tests. Test reports and smoke-test images are retained as workflow artifacts for 14 days. CI requires Internet for dependency installation; normal HMI operation does not.
+## Current preview
+
+One active analyzer and one polling connection. **Choose Analyzer Type** offers Auto Detect, LEL, BTU and FID. New installations simulate a700-series LEL analyzer using the full Rev D manual; legacy LEL simulation remains selectable. The Gauge page has a signed circular scale, manufacturer-specific digital readouts, status/relay/service indicators and a confirmed command panel. Local Viewer/Operator/Administrator checks and command audit records protect simulator controls.
+
+Physical connections and writes remain disabled. Test Connection identifies the simulated unit without enabling controls. Live/history trends, CSV export, diagnostics, fault injection and SQLite recording remain available. See [operating instructions](Docs/OPERATING.md) and [replacement specification](Docs/SINGLE_ANALYZER_SPECIFICATION.md).

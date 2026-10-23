@@ -4,7 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from prevex_hmi.devices.models import DeviceConfig
-from prevex_hmi.profiles import PROFILES
+from prevex_hmi.profiles import PROFILES, profile_for
 from prevex_hmi.registers.schema import UnverifiedDefinition
 
 
@@ -12,6 +12,9 @@ def measurement(snapshot: dict, number: int = 1) -> tuple[Decimal | None, str]:
     if snapshot["quality"] != "GOOD":
         return None, "unavailable"
     raw = snapshot["raw"]
+    age=snapshot.get("register_ages",{}).get(number)
+    if age is not None and age > max(5,snapshot["config"]["interval"]*3):
+        return None,"stale"
     if number not in raw:
         return None, "not yet polled"
     device = DeviceConfig(**snapshot["config"])
@@ -19,7 +22,7 @@ def measurement(snapshot: dict, number: int = 1) -> tuple[Decimal | None, str]:
     if device.family == "FID":
         context = replace(context, fullscale=raw.get(3))
     try:
-        return PROFILES[device.family].register(number).decode(raw[number], device.family, context)
+        return profile_for(device).register(number).decode(raw[number], device.family, context)
     except UnverifiedDefinition as error:
         return None, str(error)
 
@@ -31,7 +34,7 @@ def severity(snapshot: dict) -> tuple[str, str]:
     if status is None:
         return "#8290a5", "Waiting for status"
     family = snapshot["config"]["family"]
-    text = PROFILES[family].status(status)
+    text = profile_for(DeviceConfig(**snapshot["config"])).status(status)
     if status == 0:
         return "#39c6a4", text
     if status == 1 or status in (4,5,6,7,11,12):

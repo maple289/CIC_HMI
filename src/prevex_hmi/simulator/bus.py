@@ -9,7 +9,7 @@ import time
 
 from prevex_hmi.communication.protocol import ProtocolError, canonical, decode_read, frame, validate_read
 from prevex_hmi.devices.models import DeviceConfig, validate_devices
-from prevex_hmi.profiles import PROFILES
+from prevex_hmi.profiles import PROFILES, profile_for, commands_for
 from prevex_hmi.profiles.common import COMMANDS
 
 
@@ -22,17 +22,30 @@ class SimulatedAnalyzer:
     calibration_span: bool = False
     calibration_full: bool = False
     calibration_failure: bool = False
+    forced_reading: float | None = None
+    forced_status: int | None = None
+    peak_initialized: bool = False
 
     def __post_init__(self) -> None:
-        self.profile = PROFILES[self.config.family]
+        self.profile = profile_for(self.config)
         self.raw = {n: 0 for n in self.profile.registers}
         self.raw[3] = self.config.fullscale
-        for number, value in ((5, 40 if self.config.family != "BTU" else 300), (6,50 if self.config.family != "BTU" else 700), (9,120), (11,500), (24,120), (28,1), (15,1.8), (10,-40 if self.config.family == "FID" else 40), (23,1.4 if self.config.family == "LEL" else -40 if self.config.family == "FID" else 40), (33,20), (56,2 if self.config.family == "FID" else 125)):
+        for number, value in ((5, 40 if self.config.family != "BTU" else 300), (6,50 if self.config.family != "BTU" else 700), (9,120), (11,500), (24,120), (28,1), (15,1.8), (10,0 if self.profile.revision == "700" else -40 if self.config.family == "FID" else 40), (23,1.4 if self.config.family == "LEL" else -40 if self.config.family == "FID" else 40), (33,20), (56,2 if self.config.family == "FID" else 125)):
             if number in self.raw:
                 self.raw[number] = self.profile.register(number).encode(value, self.config.family, self.config.context)
         self.raw[4] = 0x80
         self.raw[16] = 506
-        identity = f"{self.config.family:<8}VER{self.config.version:<5}{self.config.assembly:<8}2026"
+        if self.profile.revision == "700":
+            self.raw[3]=100
+            self.raw[40]=int(Decimal(self.config.version)*100)
+            self.raw[63]=101;self.raw[65]=2026
+            self.raw[29]=self.profile.register(29).encode(500,"LEL",self.config.context)
+            self.raw[30]=self.profile.register(30).encode(80,"LEL",self.config.context)
+        from prevex_hmi.devices.identification import LEL_TYPES
+        if self.config.family == "LEL":
+            self.raw[62]=next((code for code,model in LEL_TYPES.items() if model == self.config.assembly),0)
+        identity = f"{self.config.family} VER {self.config.version} {self.config.assembly} 2026"
+        if self.config.family == "FID": identity += " S/N SIM0001"
         length = (self.profile.identification_end - 256) * 2
         identity_bytes = identity.encode("ascii", errors="replace")[:length].ljust(length, b" ")
         for offset in range(0, length, 2):
@@ -42,7 +55,15 @@ class SimulatedAnalyzer:
         family = self.config.family
         baseline, amplitude = (450, 110) if family == "BTU" else (25, 18)
         reading = baseline + amplitude * math.sin(now / 12 + self.config.address)
+        if self.forced_reading is not None: reading=self.forced_reading
         self.raw[1] = self.profile.register(1).encode(reading, family, self.config.context)
+        signed=lambda word: word-65536 if word & 0x8000 else word
+        if not self.peak_initialized:
+            self.raw[38]=self.raw[39]=self.raw[1]
+            self.peak_initialized=True
+        self.raw[38]=max((self.raw[38],self.raw[1]),key=signed)
+        self.raw[39]=min((self.raw[39],self.raw[1]),key=signed)
+        if 12 in self.raw: self.raw[12]=self.profile.register(12).encode(0.4,family,self.config.context)
         if 50 in self.raw:
             self.raw[50] = self.raw[1]
         if self.calibration_started is not None:
@@ -56,11 +77,15 @@ class SimulatedAnalyzer:
                 self.calibration_started = None
         elif self.raw[2] not in (8, 9):
             if family == "BTU":
-                self.raw[2] = 1 if self.raw[1] < self.raw[5] else 2 if self.raw[1] > self.raw[6] else 0
+                self.raw[2] = 1 if signed(self.raw[1]) < signed(self.raw[5]) else 2 if signed(self.raw[1]) > signed(self.raw[6]) else 0
             else:
-                self.raw[2] = 2 if self.raw[1] > self.raw[6] else 1 if self.raw[1] > self.raw[5] else 0
+                self.raw[2] = 2 if signed(self.raw[1]) > signed(self.raw[6]) else 1 if signed(self.raw[1]) > signed(self.raw[5]) else 0
+        if self.forced_status is not None: self.raw[2]=self.forced_status
         code = self.raw[2]
-        self.raw[4] = 0x80 | (1 if code == 1 else 2 if code == 2 else 4 if code in (8,9) else 0)
+        self.raw[4] = 0x80 | (1 if code == 1 else 2 if code == 2 else 4 if code in (3,8,9,10,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27) else 0)
+        if self.profile.revision == "700":
+            if code in (4,5,6,7):self.raw[4] |= 1<<8
+            if self.raw[59]:self.raw[4] |= 1<<9
         if code in (4, 5):
             self.raw[4] |= 0x10 if code == 4 else 0x20
 
@@ -94,11 +119,16 @@ class SimulatedBus:
             if device is None or device.fault == "timeout":
                 raise TimeoutError("Simulated analyzer did not reply")
             start = pdu - device.config.pdu_offset
+            if device.profile.revision == "700" and start == 257 and count == 16:
+                # Rev D p127 returns ASCII blanks for legacy identification.
+                self.trace(False,frame(bytes((address,3,32))+struct.pack('>16H',*([0x2020]*16))))
+                return [0x2020]*16
             mapping = validate_read(device.profile, start, count)
             device.update(self.clock())
             words = []
             for number, swapped in mapping:
                 word = device.raw[number]
+                if device.fault == "unknown_identity" and (number >= 257 or (device.profile.revision == '700' and number == 62)): word=0
                 words.append(((word & 255) << 8 | word >> 8) if swapped else word)
             response = frame(bytes((address, 3, count * 2)) + struct.pack(f">{count}H", *words))
             if device.fault == "crc":
@@ -135,12 +165,12 @@ class SimulatedBus:
     def command(self, address: int, code: int, *, role: str, confirmed: bool) -> str:
         if role not in ("Operator", "Administrator") or not confirmed:
             raise PermissionError("Confirmed Operator/Administrator action required")
-        if code not in COMMANDS:
-            raise PermissionError("Unsupported or prohibited command")
         device = self.devices[address]
-        if device.fault != "none":
+        if code not in commands_for(device.config):
+            raise PermissionError("Unsupported or prohibited command")
+        if device.fault not in ("none","ambiguous_command"):
             raise TimeoutError("Communication not verified; command not issued")
-        if device.raw[60] and code in range(0x300, 0x900, 0x100):
+        if (device.raw[27] & 1 if device.profile.revision == "700" else device.raw[60]) and code in range(0x300, 0x900, 0x100):
             raise PermissionError("Calibration is locked")
         if device.calibration_started is not None:
             raise PermissionError("A calibration sequence is already active")
@@ -158,10 +188,12 @@ class SimulatedBus:
             device.raw[59] = 0
         device.raw[8] = 0
         self.events.append({"type": "command", "address": address, "code": code, "name": COMMANDS[code]})
+        if device.fault == "ambiguous_command":
+            raise TimeoutError("Simulated lost command acknowledgment; execution unknown")
         return "Accepted by software simulator; monitor STATUS (not physical verification)"
 
     def set_fault(self, address: int, fault: str) -> None:
-        if fault not in ("none", "timeout", "crc", "protocol"):
+        if fault not in ("none", "timeout", "crc", "protocol", "unknown_identity", "ambiguous_command"):
             raise ValueError("Unsupported simulated fault")
         self.devices[address].fault = fault
 

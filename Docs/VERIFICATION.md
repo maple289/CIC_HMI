@@ -25,3 +25,17 @@ All physical-device compatibility remains PENDING. No physical instruments have 
 ## Future authorized read-only bench procedure
 
 Record analyzer family, assembly, software, displayed address and serial settings before connecting. Use one instrument initially, obtain permission to open the named COM port, read only nonzero packet-address candidates, and record raw TX/RX. Establish register PDU offset using multiple identifiable values, not only STATUS0. Validate byte order, identification lengths, signed values, engineering unit selection and register-page limits. Repeat by supported family/version. No calibration, output testing, setting changes, or command writes are part of this procedure. A simulator is not evidence for any hardware gate.
+
+## Full LEL700 Rev D findings (2026-10-23)
+
+The prior LEL findings A1/A2/A13/A14 describe the legacy extract. They must not be applied automatically to the new700-series firmware. See LEL_700_REVIEW.md for reviewed page references and implementation decisions.
+
+| ID | Evidence / question | Current behavior / verification |
+| --- | --- | --- |
+| A18 | Rev D p127 removes257+ identity; p125 gives numeric62/40/63/65. | Numeric fallback only after recognized700 TYPE. Legacy40 remains forbidden. Firmware/serial/year consistency required. Read-only physical identification still pending. |
+| A19 | Rev D p115 omits page map, address-offset rule and reply-rate limits. | No legacy aliases inferred; conservative pacing retained, single-word simulation reads above64, physical700 adapter blocked pending page/address/timing validation.38400 not offered. |
+| A20 | Rev D p125 defines106; p127 says no valid register above105. |106 recorded but unsafe to read/poll until clarified. |
+| A21 | STATUS upper bound23 conflicts with explicit0..27 list; code2 repeated Danger/Flooded. | Explicit enum list used; code2 displayed combined, no invented distinction. |
+| A22 | p118 Lock/Unlock have no Modbus effect; Save permits factory setting changes. | All three disabled for700; calibration lock checked through27. No output-test/zero-adjust bypass. |
+| A23 | p123 analog override descriptions use%LFL; p116 lists tenths-mA lookup without assignment;25 unit labels conflict. | Explicit register reading descriptions retained, editing blocked. Verify conversion on hardware with manufacturer before configuration procedures. |
+| A24 | Alarm-test duration one hour vs15 minutes; speed references50 vs20/100; pressure units/limits conflict. | Conflicts recorded in LEL_700_REVIEW.md. Alarm tests and ambiguous edits unavailable. |

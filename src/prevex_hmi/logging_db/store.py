@@ -21,6 +21,9 @@ class Historian:
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY, timestamp TEXT NOT NULL, instrument TEXT NOT NULL,
                 description TEXT NOT NULL, quality TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS command_audit (
+                id INTEGER PRIMARY KEY, timestamp TEXT NOT NULL, instrument TEXT NOT NULL,
+                actor TEXT NOT NULL, code INTEGER NOT NULL, result TEXT NOT NULL, detail TEXT NOT NULL);
         """)
 
     def measurement(self, timestamp: str, instrument: str, number: int, value: float | None, unit: str, quality: str, status: int | None) -> None:
@@ -31,6 +34,14 @@ class Historian:
 
     def commit(self) -> None:
         self.db.commit()
+
+    def command_audit(self,instrument,actor,code,result,detail):
+        from prevex_hmi.devices.models import utc_now
+        self.db.execute("INSERT INTO command_audit(timestamp,instrument,actor,code,result,detail) VALUES (?,?,?,?,?,?)",(utc_now(),instrument,actor,code,result,detail))
+        self.db.commit()
+
+    def audit_rows(self):
+        return self.db.execute("SELECT timestamp,instrument,actor,code,result,detail FROM command_audit ORDER BY id DESC LIMIT 500").fetchall()
 
     def history(self, instrument: str, hours: int = 24, limit: int = 5000) -> list[tuple]:
         since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="milliseconds")

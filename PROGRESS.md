@@ -1,3 +1,32 @@
+# Current checkpoint — single-analyzer update and full LEL manual (2026-10-23)
+
+## Completed
+
+- Replaced multi-device application management with one configured analyzer, one worker/transport, Auto Detect(default) or LEL/BTU/FID selection, saved serial settings and Test Connection. Original schema1 settings receive a backup before migration.
+- Added read-only ASCII identification and a separately validated numeric700-series fallback. Profile mismatch/unknown identity blocks commands. Full manual H7FTA700 Rev D now drives700 menus, units, status/relay/service maps and command restrictions; legacy LEL remains separate.
+- Added signed gauge minimum-30, prominent zero, preserved out-of-range numbers, live FULLSCLE preference and optional manual display range. Fixed unsigned simulator comparisons that incorrectly generated danger for negative LEL/FID values.
+- Added all applicable Gauge-menu digital readouts, per-register age/quality, horizontally scrollable status/relay/service panel, right command panel, refreshed profile-specific polling and live/history plots.
+- Added salted PBKDF2 local accounts/sessions with Viewer/Operator/Administrator checks, confirmed worker-side simulation commands, fresh target identity checks, calibration lock checks, duplicate/ambiguity guards, STATUS monitoring and persistent command audit.700 Lock/Unlock/Save excluded according to revised manual.
+- Preserved history/CSV, alarm events, diagnostics, bounded traffic, dark/light themes, fault injection and read-only transport library. No physical port opened; no physical write API exists. Added revised operating instructions,700 manual review and verification gates.
+- Windows CI updated for single-analyzer smoke testing; generated inventory includes independent700 definitions. New PDF and full extracted source retained.
+
+## Validation
+
+- Full local pytest regression:584 passed (latest completed full run15.05s); all I/O simulated/mocked. Includes60 new700 revision cases plus existing detection, switching, negative values, stale/offline behavior, permissions, prohibited commands and ambiguous timeout tests.
+- Source GUI smoke passed for LEL700(13 updates), BTU(14), FID(14), with one detected instrument each. LEL screenshot visually reviewed; manufacturer tables119/127 rendered and checked.
+- PyInstaller Windows build completed. Packaged smoke passed with exit0,13 updates, one detected LEL,10 Gauge readouts and physical_access=false. Final rebuilt executable passed again (exit0,13 updates,one LEL,10 readouts,physical_access=false).
+- Dependency consistency, source compilation and the desktop environment check passed. Git whitespace check passed; hosted CI awaits push.
+
+## Outstanding
+
+- Physical compatibility, addressing/PDU offset,700 page map/timing, FID protocol/unit address and all manufacturer contradictions remain pending in Docs/VERIFICATION.md. Register106 is recorded but blocked due conflicting manual statements.38400 is not offered until timing validation.
+- Real-hardware operation remains disabled; test results establish software behavior only. No calibration/test command is automatically retried after an unknown outcome.
+- Configuration-writing UI, additional-user management UI, advanced archival/retention controls, installer/signing and clean-machine Windows10/11 acceptance remain release work.700 inventory is read-only outside the approved simulation command subset.
+
+---
+
+# Historical checkpoints (superseded application workflows)
+
 # PREVEX HMI progress
 
 ## Scope and safety

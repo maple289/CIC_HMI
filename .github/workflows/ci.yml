@@ -45,7 +45,7 @@ jobs:
           git diff --exit-code -- Docs/REGISTER_TABLES.md
       - name: Run desktop environment smoke test
         run: python scripts/check_environment.py --check
-      - name: Run multi-analyzer monitoring GUI smoke test
+      - name: Run single-analyzer monitoring GUI smoke test
         run: python scripts/run_hmi.py --smoke-test --data-dir tmp/monitoring-smoke
       - name: Build Windows executable
         run: python -m PyInstaller --noconfirm build_windows.spec

@@ -23,7 +23,8 @@ def test_gauge_span_is_fullscale_not_raw_word_limit(family,maximum,value,fractio
     state=gauge_state(reading(family,value,maximum))
     assert state.maximum == maximum
     assert state.value == pytest.approx(value)
-    assert state.fraction == pytest.approx(fraction)
+    assert state.fraction == pytest.approx((value+30)/(maximum+30))
+    assert state.minimum == -30
     assert state.unit == unit
 
 
@@ -44,7 +45,7 @@ def test_unavailable_readings_hide_the_gauge_indicator(quality):
     assert state.reading == "--" and state.bands == ()
 
 
-@pytest.mark.parametrize("value,expected_fraction,note",[(-5,0,"BELOW RANGE"),(120,1,"ABOVE RANGE")])
+@pytest.mark.parametrize("value,expected_fraction,note",[(-40,0,"BELOW RANGE"),(120,1,"ABOVE RANGE")])
 def test_out_of_range_clamps_marker_without_clamping_display(value,expected_fraction,note):
     state=gauge_state(reading(value=value))
     assert state.value == value
@@ -68,7 +69,29 @@ def test_legacy_dilution_span_and_fid_unit_changes():
     data["config"]=asdict(device)
     data["raw"].update({1:6400,3:200})
     assert gauge_state(data).value == 50
-    assert gauge_state(data).fraction == 0.25
+    assert gauge_state(data).fraction == pytest.approx(80/230)
     data=reading("FID",25,100)
     data["config"]["units"]="METRIC"
     assert gauge_state(data).unit == "MG"
+
+
+@pytest.mark.parametrize('value',[-30,-20,-1,0])
+def test_negative_values_have_distinct_positions_and_do_not_invent_faults(value):
+    state=gauge_state(reading(value=value))
+    assert state.value == pytest.approx(value,abs=.004)
+    assert state.fraction == pytest.approx((value+30)/130,abs=.0001)
+    assert state.status == 'Normal'
+
+
+def test_manual_display_override_and_fallback_do_not_change_fid_reading():
+    data=reading('FID',25,100)
+    data['config'].update(range_mode='manual',manual_maximum=200)
+    state=gauge_state(data)
+    assert state.maximum==200 and state.value==25
+    assert state.range_source=='Manual display override'
+    data['config']['range_mode']='auto'
+    assert gauge_state(data).maximum==100
+    data['raw'].pop(3)
+    state=gauge_state(data)
+    assert state.maximum==200 and state.value is None
+    assert state.range_source=='Manual fallback'

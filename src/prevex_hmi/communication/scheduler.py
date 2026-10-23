@@ -6,7 +6,8 @@ import time
 from prevex_hmi.communication.engine import BusEngine
 from prevex_hmi.communication.protocol import ProtocolError, block_reads
 from prevex_hmi.devices.models import DeviceConfig, DeviceState, utc_now, validate_devices
-from prevex_hmi.profiles import PROFILES
+from prevex_hmi.profiles import PROFILES, profile_for
+from prevex_hmi.profiles.gauges import GAUGE_REGISTERS, gauges_for
 
 
 @dataclass
@@ -31,11 +32,17 @@ class PollingScheduler:
                 continue
             now = self.clock()
             self.jobs.append(PollJob(device.id, 1, 4, device.interval, 0, now))
-            profile = PROFILES[device.family]
-            ancillary = [n for n in (5,6,7,9,10,11,12,15,23,24,28,29,30,33,38,39,43,56,59,60) if n in profile.registers]
+            profile = profile_for(device)
+            gauge_numbers=set(gauges_for(device)) | {5,6,60} | ({27} if profile.revision == "700" else set())
+            if 59 in profile.registers: gauge_numbers.add(59)
+            gauge_numbers-= {1,2}
+            for start,count in block_reads(profile,sorted(gauge_numbers)):
+                self.jobs.append(PollJob(device.id,start,count,device.interval,1,now+0.1))
+            ancillary = [n for n in (7,28,29,30,43,56) if n in profile.registers and n not in gauge_numbers]
             for start, count in block_reads(profile, ancillary):
                 self.jobs.append(PollJob(device.id, start, count, max(5, device.interval * 5), 1, now + 1))
-            self.jobs.append(PollJob(device.id, 257, profile.identification_end - 256, 60, 2, now + 2))
+            if profile.identification_end >= 257:
+                self.jobs.append(PollJob(device.id, 257, profile.identification_end - 256, 60, 2, now + 2))
 
     def run_once(self) -> bool:
         now = self.clock()
@@ -48,8 +55,9 @@ class PollingScheduler:
         state = self.states[job.device_id]
         config = state.config
         try:
-            values = self.bus.read(PROFILES[config.family], config.addressing, job.start, job.count)
+            values = self.bus.read(profile_for(config), config.addressing, job.start, job.count)
             state.raw.update(values)
+            state.register_times.update({n:self.clock() for n in values})
             state.failures = 0
             self.backoff_until.pop(config.id, None)
             if job.start == 1:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import json
 from pathlib import Path
 import os
@@ -19,18 +19,42 @@ def default_devices() -> list[DeviceConfig]:
 
 def load_settings(path: Path) -> dict:
     if not path.exists():
-        settings = {"schema_version": 1, "mode": "simulation", "theme": "dark", "devices": [asdict(d) for d in default_devices()]}
+        initial=replace(default_devices()[0],assembly="SNR705",version="7.01")
+        settings = {"schema_version": 2, "mode": "simulation", "theme": "dark", "analyzer_selection":"Auto Detect", "simulated_family":"LEL", "simulated_lel_revision":"700", "connection":{"port":"", "baud":19200,"timeout":0.5,"identification_page":"standard"}, "devices": [asdict(initial)]}
         save_settings(path, settings)
         return settings
     data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schema_version") != 1 or data.get("mode") != "simulation":
-        raise ValueError("Only schema version 1 / simulation mode is supported")
-    validate_devices([DeviceConfig(**row) for row in data["devices"]])
+    if data.get("schema_version") == 1:
+        original=path.read_text(encoding="utf-8")
+        devices=[DeviceConfig(**row) for row in data["devices"]]
+        active=next((d for d in devices if d.id == data.get("selected_device")), devices[0] if devices else default_devices()[0])
+        data.update(schema_version=2,analyzer_selection="Auto Detect",simulated_family=active.family,connection={"port":"","baud":9600,"timeout":0.5,"identification_page":"standard"},devices=[asdict(replace(active,enabled=True))])
+        backup=path.with_suffix(".v1-backup.json")
+        if not backup.exists(): backup.write_text(original,encoding="utf-8")
+        save_settings(path,data)
+    validate_settings(data)
     return data
 
 
-def save_settings(path: Path, settings: dict) -> None:
+def validate_settings(settings):
+    if settings.get("schema_version") != 2 or settings.get("mode") not in ("simulation","hardware"):
+        raise ValueError("Unsupported configuration schema or connection mode")
+    if settings.get("analyzer_selection") not in ("Auto Detect","LEL","BTU","FID") or settings.get("simulated_family") not in ("LEL","BTU","FID"):
+        raise ValueError("Invalid analyzer type")
+    if settings.get("simulated_lel_revision","legacy") not in ("legacy","700"):
+        raise ValueError("Invalid simulated LEL revision")
+    if len(settings["devices"]) != 1:
+        raise ValueError("Exactly one active analyzer is supported")
     validate_devices([DeviceConfig(**row) for row in settings["devices"]])
+    connection=settings["connection"]
+    if connection["baud"] not in (300,600,1200,2400,4800,9600,19200) or not 0.05 <= connection["timeout"] <= 5:
+        raise ValueError("Invalid serial settings")
+    if connection.get("identification_page","standard") not in ("standard","alternate"):
+        raise ValueError("Invalid identity page")
+
+
+def save_settings(path: Path, settings: dict) -> None:
+    validate_settings(settings)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(settings, indent=2), encoding="utf-8")
