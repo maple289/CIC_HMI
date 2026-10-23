@@ -1,3 +1,10 @@
+# Chooser correction (2026-10-23)
+
+- Manual LEL/BTU/FID selection now switches both the profile defaults and simulated instrument together. Reopening inconsistent saved selections repairs previous-family default names/models; custom instrument names remain intact.
+- FID units/full-scale fields appear only for FID. LEL simulation generation appears only for LEL. Auto Detect retains a separate simulated-family choice. Cancel leaves stored settings untouched; OK confirms the selection.
+- Replaced Save with OK. Address compatibility dynamically enforces displayed ADDRESS>=2 for minus-one mode (packet>=1), while direct mode permits1. The resulting packet address is displayed; underlying address-zero protections remain enforced.
+- Regression:586 tests passed in15.08s, including actual Qt mouse selections and OK confirmation. LEL/FID chooser layouts visually inspected. Windows rebuild and packaged smoke passed (exit0,15 updates,one LEL,physical_access=false; existing test settings also exercised legacy migration). Whitespace check passed. No physical access or writes.
+
 # Current checkpoint — single-analyzer update and full LEL manual (2026-10-23)
 
 ## Completed

@@ -4,9 +4,9 @@ Start `scripts/launch_windows.cmd`, or run `.venv/Scripts/python.exe scripts/run
 
 ## Choose and connect
 
-**Choose Analyzer Type** offers Auto Detect(default), LEL, BTU and FID. Choose the actual simulated family separately to exercise mismatch handling. For LEL, choose700 or legacy simulation. Save settings to stop the old session, clear old readings and start one new connection. Existing multi-device settings migrate to one selected instrument; the original is backed up as `settings.v1-backup.json`.
+**Choose Analyzer Type** offers Auto Detect(default), LEL, BTU and FID. Manual type selection also selects the matching simulated instrument; Auto Detect offers a separate simulated-family choice. Only fields applicable to the selected family are shown. For LEL, choose700 or legacy simulation. Click OK to confirm the choice, stop the old session, clear old readings and start one new connection. Cancel preserves the previous settings. Existing multi-device settings migrate to one selected instrument; the original is backed up as `settings.v1-backup.json`.
 
-COM port, baud, timeout, nonzero address, address compatibility and register offset are saved. Physical connections remain blocked; selecting hardware opens no port. No real Modbus writes are implemented.
+COM port, baud, timeout, nonzero address, address compatibility and register offset are saved. Minus-one addressing requires a displayed address of at least2; the dialog shows the resulting nonzero packet address. Physical connections remain blocked; selecting hardware opens no port. No real Modbus writes are implemented.
 
 **Test Connection** stops monitoring, performs identification and a read-only response check, then reports family/model/version/serial without enabling controls. Choose Connect to start polling. Unknown identity permits an explicit manual profile but keeps commands disabled. A mismatch uses the detected family's definitions and displays a warning; choose the matching type or Auto Detect to resolve it.
 
