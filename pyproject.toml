@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prevex-hmi"
+version = "0.1.0"
+description = "Offline PREVEX multi-analyzer monitoring HMI"
+requires-python = ">=3.12,<3.14"
+dynamic = ["dependencies"]
+
+[project.scripts]
+prevex-hmi = "prevex_hmi.main:main"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

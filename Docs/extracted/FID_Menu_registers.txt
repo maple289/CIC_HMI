@@ -1,0 +1,317 @@
+
+--- PAGE 1 ---
+13.      Menus and Registers
+Device settings and readings are organized as registers. The following tables show the registers by name and
+number, organized by menu. Registers that can be written are indicated by this symbol: . Others are read-only and
+cannot be changed through the MENU or serial communications. Some registers can be accessed only through serial
+communications.
+
+          Register                                                 Register Contents
+         Name          #
+                            Execute a command to control the device
+                            -                     0                  (no commands, inactive)
+                            Reset                 200H               Reset alarms
+C                           Acknowledge           100H               Silence the horn, clear “service needed” relay
+O                           Calibrate analyzer with gas, adjust settings, activate faults if response unacceptable
+M                           Zero Cal              300H               Perform zero calibration and adjust zero
+M                           Span Cal              400H               Perform span calibration and adjust span
+A                           Full Cal              500H               Perform zero and span calibration and adjust
+N                           Test analyzer response with gases, but do not adjust the settings, ignore faults
+D      COMMANDS        8    Zero Test             600H               Test zero with gas, do not adjust
+S                          Span Test             700H               Test span with gas, do not adjust
+
+M                           Full Test             800H               Test zero and span, do not adjust
+E                           Commands not on menu – serial port only
+N                           Save Data          900H                 Write settings to nonvolatile EERPOM to save.
+U                           Cold Start         0A00H                Load default values and write to EEPROM.
+                            Commands for security – not on menu
+                            Lock                  0F00H              Locks out calibrations, software lock.
+                            Unlock               1000H               Unlocks calibrations.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                           37
+
+--- PAGE 2 ---
+            Register                                                 Register Contents
+          Name           #
+       READING          1      The hydrocarbon reading in parts per million carbon by volume (PPM) or milligrams
+                               carbon per normal cubic meter (MG)
+                               Device status messages, codes, and their meanings
+                               Message                 Code         Meaning
+                               Normal                  0            Normal operation, no alarms
+                               Warning                 1            Warning alarm, reading above warning level
+                               Danger                  2            Danger alarm, reading above danger level
+                               Downscale               3            Fault, reading lower than –10%LFL
+                               Zero Cal                4            Zero calibration in progress
+                               Span Cal                5            Span calibration in progress
+                               Purging                 6            Purging calibration gases
+                               Cal ends                7            Calibration ending
+                               Zero fail               8            Zero calibration failed, result unacceptable
+                               Span fail, low          9            Span calibration failed, result too low
+       STATUS           2      Span fail, high         10           Span calibration failed, result too high
+                               Warmup                  11           Power-on time delay for self diagnostics
+                               RAM test                12           Self diagnostic of RAM
+                               RAM fail                13           RAM has failed self diagnostic test
+                               Data lost               14           Checksum for nonvolatile data in EEPROM failed
+                               EE fail                 15           Self diagnostic check of EEPROM failed
+G                              Vac Low                 16           Flame cell vacuum too low
+A
+U                              Vac High                17           Flame cell vacuum too high
+G                              Temp low                18           Temperature of analyzer is too low
+E                              Temp high               19           Temperature of analyzer is too high
+S                              A/D fail                24           Self check of A/D converter failed.
+                               TC2 Fail                25           Thermocouple for temperature control failed.
+M                              Flameout                26           Sensing flame is out.
+E                              ROM fail                27           Continuous self diagnostic of ROM has failed.
+N                       38     Highest reading taken since last reset command
+U      PEAK HI
+       PEAK LOW         39     Lowest reading taken since last reset command
+       HSG TEMP         9      Actual flame cell housing temperature in Degrees Centigrade
+       SET TEMP                Flame cell housing temperature                                Min          Max            Default
+                       24     set point in Degrees Centigrade                               60C         210C          200C
+
+       CELL VAC         10     Flame cell vacuum measured in inches of water or kilopascals
+                               Flame cell vacuum set point measured in                  Min               Max            Default
+       SET VAC         23     inches of water or kilopascals                           -45”              -30”           -40”
+                                                                                        -11.2kPa          -7.4kPa        -10kPa
+       ASP PRES         33     Calculated pressure needed to maintain flame cell vacuum set point expressed in
+                               psi or kPa.
+       FLAME            11     Flame temperature (Thermocouple TC1 reading) in Degrees Centigrade
+       RAW RDNG         12     Continuously updated hydrocarbon reading expressed as VDC
+
+
+
+
+
+
+
+
+
+
+
+                                                                           38
+
+--- PAGE 3 ---
+           REGISTER                                                      REGISTER CONTENTS
+              NAME                #
+       RAW ZERO                 29      Hydrocarbon reading from zero calibration in VDC
+       RAW SPAN                 30      Hydrocarbon reading from span cal minus the raw zero, in VDC
+       CAL TIME                28      Duration of each calibration interval in minutes from 1 to 4
+       CAL RDNG                7       Setting to adjust to, which final reading gets adjusted by during span
+C                                       calibration
+ A     SPAN VDC                56      Setting for expected RAW SPAN voltage rise during span calibration
+ L                                      Speed of response of the sensor
+                                        Speed        Code
+M      SPEED                   20      Low             1                 Slowest setting
+ E                                      Med             2
+N                                       High             3                Fastest setting
+U
+                                        Indication of calibration lock. Read only.
+       CAL LOCK                 60      Hardware Lock           Bit 0
+                                        Software Lock           Bit 1
+
+       WARNING                 5       The warning alarm level, in the same format as reading
+       DANGER                  6       The danger alarm level, in the same format as reading
+                                        Maximum reading in PPM or MG                       Min.           Max.             Default
+       FULLSCLE                3       represented by 20mA
+                                                                                           10             32000            100
+                                                                                                            US CUST         METRIC
+                                        Controls units of measure for the                                        00              01
+ A     UNITS                            reading, cell vac, set vac and                   Reading               PPM              MG
+ L                                      aspirator pressure                               CELL VAC                IN             KPA
+ A                                                                                       ASP PRES               PSI             KPA
+R      LATCHES                 17      Alarms that will latch until manually reset, versus those that will autoreset
+M                                       Format is identical to RELAYS register.
+ S                                      Relays that are failsafe (normally energized) and which de-energize upon
+       FAILSAFE                18      activation of the alarm. Format is identical to RELAYS register.
+                                        Device identification, in ASCII text string.
+                                257     „TYPE FID‟                     Analyzer Model
+       VERSION                  to      „ VER 4.80‟                    Software version
+                                288     „ SNR650 „                     Analyzer assembly number
+                                        ‟ 99 999 „                     Analyzer serial number
+       RLY TEST                45      Relays activated for test. Format is identical to RELAYS register.
+       MA TEST                 44      Circuit test of milliamp output, in milliamps, increases output only, deactivates
+                                        upon leaving menu.
+       4 MA ADJ                25      Circuit adjustment of milliamp output at the 0%FS (4 milliamp) point – factory set
+
+O      20 MA ADJ               31      Circuit adjustment of milliamp output at the full scale (20 milliamp) point –
+ U                                      factory set
+ T     MA CAL                  26      Value for milliamp output during calibrations
+ P
+ U     MA FAULT                32      Value for milliamp output during faults
+ T
+ S                                      Command assigned to control input #1. Can be any from COMMANDS menu
+       CONTROL1                36      except 9,10.
+M
+ E                                      Commands assigned to control input #2. Can be any from COMMANDS
+ N     CONTROL2                37      menu except 9,10.
+ U
+                                        Configuration setting for the HORN relay
+                                              00    Default setting.  The relay is used for the HORN function.
+       RLY CNFG                58            01    AIR/FUEL function.  The relay energizes (contact closed) when
+                                                    flamecell is at proper operating temperature.
+                                              02    OVERRIDE function.  Relay is always energized (contact always
+                                                    closed).
+
+                                                                              39
+
+
+--- PAGE 4 ---
+          REGISTER                                                   REGISTER CONTENTS
+             NAME               #
+
+
+      SET BAUD               22      Default Baud Rate Setting
+                                      Device Baud Rate Currently In Use. Can differ from the default setting if
+                                      autobaud is “on”
+C                                     0010H              19200
+O                                     0011H              9600
+M                                     0012H              4800
+      BAUD RATE              47
+P                                     0013H              2400
+O                                     0014H              1200
+R                                     0015H              600
+ T                                    0016H              300
+
+M                                     Control for automatic baud rate detection feature (vs. fixed baud rate setting)
+E     AUTOBAUD               48             0              Off            Baud rate fixed, equals “SET BAUD” value
+N                                            1              On            Device automatically seeks proper baud rate
+U     ADDRESS                21      Port address of device from 1 to 255
+
+      ID NBR                 19      User-assigned identification number from 0 to 65535
+
+
+    REGISTER                                                      Register Contents
+   NAME            #                      Note: These registers are not accessible through any menu
+                         Logical state of the control relays. This data matches the corresponding LED indicators.
+                         A bit of 1 = “active”, 0 = “inactive”
+                         Data is in binary format. Packed flags:  0000 0000 TISZ HFDW
+                             T        Heater
+                             I        Ignition
+RELAYS            4          S        Span solenoid valve
+                             Z        Zero solenoid valve
+                             H        Horn relay
+                             F        Fault relay
+                             D        Danger relay
+                             W        Warning relay
+DUMMY             46     A register that performs no function, but can be used to debug serial communications
+A/D REF           16     The reference voltage of the A/D converter. Should be 506 ± 25.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                          40
+
+--- PAGE 5 ---
+13.1.     Register Conversion Factors
+          After it is acquired, the serial port data is converted into engineering units using a conversion factor. For the
+          following registers, the data is a signed 16 bit word. Negative numbers are in two‘s complement form. To convert
+          the register data, multiply by the conversion factor in the table.
+
+                       REGISTERS           Format                        Conversion Factor
+                       READING
+                       PEAK HI
+                       PEAK LO                                           Multiply by 0.0000390625 multiplied by FULLSCLE
+                       CAL RDNG
+                       WARNING             Reading                       If FULLSCLE is less than 101 Then
+                       DANGER                                                Reading has one decimal point
+                       MA TEST                                           If FULLSCLE is greater than 100 Then
+                       MA CAL                                               Reading has no decimal point
+                       MA FAULT
+                       MA TEST             Reading format
+                       MA CAL              expressed as milliamps        Multiply by 0.000625, then add + 4.0 Milliamps
+                       MA FAULT
+                       HSG TEMP
+                       SET TEMP            Temperature                    Multiply by 0.24426 C
+                       FLAME
+                       RAW RDNG
+                       RAW ZERO            Voltage                       Multiply by 0.0024426 VDC
+                       RAW SPAN
+                       SPAN VDC
+                       CELL VAC                                          Multiply by 0.0351734 inches of water column
+                       SET VAC             Flame cell vacuum             Or
+                                                                         Multiply by 0.00879336 kiloPascals
+                                                                         Multiply by 0.105882 psi
+                       ASP PRES            Aspirator air pressure        Or
+                                                                         Multiply by 0.729412 kPa
+                       4 MA ADJ            Milliamps                     Multiply by 0.1 Milliamps
+                       20 MA ADJ
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                 41

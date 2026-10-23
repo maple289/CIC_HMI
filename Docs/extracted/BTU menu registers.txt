@@ -1,0 +1,457 @@
+
+--- PAGE 1 ---
+                                                                         SERIAL COMMUNICATIONS
+
+
+
+
+
+
+12.      Serial Communications
+Data can be transferred between one or more analyzers, and a single host device, using the Modbus
+Remote Terminal Unit (RTU) protocol. The host device sends polls, to which the analyzer replies.
+
+12.1.   Serial Communications Specifications
+
+          Specification                                               Description
+
+          Supported commands           Command 3                             “Read Output (Holding) Registers”
+                                       Command 6                             “Preset Single Register”
+                                       Command 16                            “Preset Multiple Registers.”
+          Command 16 limit             Limited to one register in length (special case).
+          Command 3 limit              Limited to 127 registers in length.
+          Broadcast mode               Supported for commands 6 and 16.
+          Serial port hardware         Half-duplex RS485
+          Data format                  8 bits, no parity, 1 stop bit
+          Baud rates                   Baud rates from 300 to 19,200 are supported
+          Standard baud rate           9600
+          Maximum poll rate            Eight per second at 9600 Baud, sixteen per second at 19200 Baud
+          Receive-transmit delay       Minimum: 5 characters between receipt of poll and reply.
+                                       Maximum: 250 milliseconds, if maximum poll rate is reached
+          Error handling               Invalid start register address        Command ignored, no reply
+                                       Read more than 127 registers          Command ignored, no reply
+                                       CRC error, poll corrupted             Command ignored, no reply
+                                       Read over page boundary               Command ignored, no reply
+                                       Read invalid page                     Command ignored, no reply
+                                       Data written outside valid limits     Reply is made but data is ignored
+                                       Read of unsupported register          00H Data returned in reply
+
+12.2.    Serial Communications Notes
+The modbus master should be secured from unauthorized or unintentional changes. Networked
+access is not recommended.
+WARNING! Serial communications must not be used for critical safety functions such as process
+              shutdown.
+Writing illegal data outside the register‘s acceptable limits is acknowledged with a reply, but the data
+is ignored. The modbus master should verify completion of write commands by a subsequent read of
+the register.
+Data written to the COMMANDS register is cleared as soon as the command is executed. Reading the
+COMMANDS register most likely returns 00H data, even if the register has just been written. The host
+should verify COMMANDS by reading the STATUS register.
+Data written to non-volatile registers are saved to the EEPROM sixty seconds later. When several
+write commands are received consecutively, that is, with less than 60 seconds between them, the
+EEPROM is written 60 seconds after the last command. The SAVE ALL command saves to the
+EEPROM immediately.
+
+
+
+
+Instruction Manual H7SNR690 Rev C
+                                                                                                                         69
+
+--- PAGE 2 ---
+SERIAL COMMUNICATIONS
+
+
+
+Some modbus master devices prefer to receive a reply with the register data formatted with the low
+order byte transmitted first. Read registers at pages 4 or 5 to get register data formatted ―lo:hi.‖
+
+          Page#       Hexadecimal addresses            Accessible contents
+          00          0000H through 00xxH              Registers 1 through 64
+          01          0100H through 01xxH              Registers 257 through 272
+          04          0400H through 04xxH              Copy of registers 257 through 272, lo:hi format,
+                                                       effective register numbers 1025 through 1040
+          05          0500H through 05xxH              Copy of registers 1 through 64, lo:hi format,
+                                                       effective register numbers 1281 through 1344
+
+12.3.   Register Conversion Factors
+After it is acquired, the serial port data is converted into engineering units using a conversion factor.
+For the following registers, the data is a signed 16-bit word. Negative numbers are in two‘s
+complement form. To convert the register data, multiply by the conversion factor in the table.
+
+   REGISTERS           Format                        Conversion Factor
+   READING
+   PEAK HI
+   PEAK LO
+   CAL RDNG
+   LO ALARM                                          Multiply by 0.0390625
+   HI ALARM            Reading
+   MA TEST
+   MA CAL
+   MA FAULT
+   4MA RDNG
+   20MA RDNG
+   MA TEST             Reading format
+   MA CAL              expressed as milliamps        Multiply by 0.000625, then add + 4.0 Milliamps
+   MA FAULT
+   HSG TEMP
+   SET TEMP
+   FLAME               Temperature                    Multiply by 0.24426 C
+   RAW ZERO
+   RAW SPAN
+   SPAN °C
+   CELL VAC            Cell Vacuum                   Multiply by 0.351734
+   SET VAC
+   4 MA ADJ            Milliamps                     0.1 Milliamps
+   20 MA ADJ
+   ASP PRES            Pressure                      Multiply by 0.105862 PSIG
+   VARIOUS             ON/off                        ON = 1, active;  off = 0, inactive
+
+
+
+
+
+
+
+
+
+
+
+70                                                                                         Control Instruments Corp.
+
+--- PAGE 3 ---
+                                                                               SERIAL COMMUNICATIONS
+
+
+
+
+12.4.   Registers
+           Register                                                   Register Contents
+          Name          #                      Registers that can be written are indicated by this symbol: .
+                       1      The reading
+       READING                Register 50 is a copy of READING that includes the effect of MA CAL, MA FAULT and MA
+                       50     TEST register functions.
+                              Device status messages, codes, and their meanings
+                              Message                   Code         Meaning
+                              Normal                    0            Normal operation, no alarms
+                              Lo Alarm                  1            Low alarm, reading below level
+                              Hi Alarm                  2            High alarm, reading above level
+                              Downscale                 3            Fault, reading lower than –10%LFL
+                              Zero On                   4            Zero calibration or zero test in progress
+                              Span On                   5            Span calibration or span test in progress
+                              Purging                   6            Purging calibration gases
+                              Cal ends                  7            Calibration ending
+                              Zero fail                 8            Zero calibration failed, result unacceptable
+                              Span fail, low            9            Span calibration failed, result too low
+       STATUS          2      Span fail, high           10           Span calibration failed, result too high
+                              Warm-up                   11           Power-on time delay for self diagnostics
+                              RAM test                  12           Self diagnostic of RAM
+                              RAM fail                  13           RAM has failed self diagnostic test
+                              Data lost                 14           Checksum for nonvolatile data in EEPROM failed
+                              EE fail                   15           Self diagnostic check of EEPROM failed
+                              Vac low                   16           Sample vacuum too low
+                              Vac high                  17           Sample vacuum too high
+                              Temp Low                  18           Temperature of analyzer is too low.
+                              Temp Hi                   19           Temperature of analyzer is too high.
+G                             A/D fail                  24           Self check of A/D converter failed.
+A                             TC2 Fail                  25           Thermocouple for temperature control failed.
+U                             Flameout                  26           Sensing flame is out.
+G                             ROM fail                  27           Continuous self-diagnostic of ROM has failed.
+E      PEAK HI         38     Highest reading taken since last reset command
+S      PEAK LOW        39     Lowest reading taken since last reset command
+       HSG TEMP        9      Actual flame cell housing temperature in Degrees Centigrade
+M                                                                                              Min          Max            Default
+E                             Flame cell housing temperature
+N      SET TEMP        24     set point in Degrees Centigrade               SNR692             100C        153C          120C
+U      
+
+
+       CELL VAC        10     Sample vacuum in inches of water
+
+
+       SET VAC         23     Setting for control of sample vacuum, typically 40 inches of water..
+       
+
+
+                       42     Do not write to this register via modbus.
+       FLAME           11     Flame temperature (Thermocouple TC1 reading) in Degrees Centigrade
+
+       ASP PRES        33     E/P controller, PSIG required to obtain sample vacuum setting
+
+
+
+
+Instruction Manual H7SNR690 Rev C
+                                                                                                                               71
+
+--- PAGE 4 ---
+SERIAL COMMUNICATIONS
+
+
+
+
+          REGISTER                                                         REGISTER CONTENTS
+             NAME               #
+                                      Flame temperature from zero calibration in degrees Centigrade
+       RAW ZERO                29     Minimum value is 200C
+                                      Maximum value is 300C
+                                      Default value is 250C.
+       RAW SPAN                30     Flame temperature from span cal minus the raw zero, in degrees Centigrade.
+C      CAL TIME               28     Duration of each calibration interval in minutes
+A                                     Minimum setting 1 minute, maximum 4 minutes. Default is 1 minute.
+ L                             7      Reading for span calibration.
+       CAL RDNG                      Minimum value is ___
+M                                     Maximum value is ___
+E                              43     Register 43 is a copy of CAL RDNG from the last successful calibration.
+N
+U      SPAN C                56     Setting for expected RAW SPAN temperature rise during span calibration
+
+                                       Speed of response and noise filter
+                                       Off                   0                   Slowest setting.
+       SPEED                  20      Low                   1
+                                       Med                   2
+                                       High                  3                   Fastest setting
+
+
+
+
+                                      Indication of calibration lock. Read only.
+       CAL LOCK                60     Hardware Lock          Bit 0
+                                      Software Lock           Bit 1
+                                      Execute a command to control the device
+                                      -               0               (no commands, inactive)
+                                      Reset           200H            Reset alarms
+                                      Acknowle        100H            Silence the horn, clear “service needed” relay
+                                      dge
+C                                     Calibrate analyzer with gas, adjust settings, activate faults if response unacceptable
+O                                     Zero Cal        300H            Perform zero calibration and adjust zero
+M                                     Span Cal        400H            Perform span calibration and adjust span
+M                                     Full Cal        500H            Perform zero and span calibration and adjust
+A                                     Test analyzer response with gases, but do not adjust the settings, ignore faults
+N                                     Zero Test       600H            Test zero with gas, do not adjust
+D        COMMANDS              8      Span Test       700H            Test span with gas, do not adjust
+S                                    Full Test       800H            Test zero and span, do not adjust
+                                      Commands affecting EEPROM
+M                                     Save All        900H            Save all settings to EEPROM
+                                      Cold Start      0A00            Force device into COLD START condition. Do not use.
+E                                     Commands for remote control - not on menu
+N                                                     0B00H           Emulates “Menu” pushbutton
+U                                                     0C00H           Emulates “Select”  pushbutton
+                                                      0D00H           Emulates “Flashlight” activation
+                                      Commands for security - not on menu
+                                      -               0E00H           “Momentary lock” - internal use only. Do not use.
+                                      Lock            0F00H           Locks out calibration, software lock.
+                                      Unlock          1000H           Unlocks calibration.
+
+
+
+
+
+
+
+
+
+
+72                                                                                              Control Instruments Corp.
+
+--- PAGE 5 ---
+                                                                               SERIAL COMMUNICATIONS
+
+
+
+
+          REGISTER               #                                      REGISTER CONTENTS
+             NAME
+                                       Relays activated for test. Format is identical to RELAYS register. Test is run
+       RLY TEST                 45     through menu access only - do not write to this register with modbus (serial
+                                       communication).
+                                       Circuit test of milliamp output, in milliamps, increases output only, deactivates
+       MA TEST                  44     upon leaving menu. Test is run through menu access only - do not write to this
+                                       register with modbus (serial communication).
+       4 MA RDNG               13     Reading for which 4 milliamps is output.
+       20 MA RDNG              14     Reading for which 20 milliamps is output.
+O      4 MA ADJ                25     Circuit adjustment of milliamp output at the 0%LFL (4 milliamp) point – factory set
+ U                                     Range is +/- 2 milliamps. Default value is 0.
+ T                                     Circuit adjustment of milliamp output at the full scale (20 milliamp) point –
+ P     20 MA ADJ               31     factory set.
+ U
+ T                                     Range is +/- 2 milliamps. Default value is 0.
+ S                                     Value for milliamp output during calibrations
+       MA CAL                  26     Minimum is 2.5 milliamps, maximum 22.7 milliamps, default is 22.1 milliamps.
+M
+ E     MA FAULT                32     Value for milliamp output during faults
+ N                                     Minimum is 2.5 milliamps, maximum 22.7 milliamps, default is 21.0 milliamps.
+ U
+       CONTROL1                36     Assigns a COMMAND to the CONTROL1 input. (See COMMANDS register)
+
+       CONTROL2                37     Assigns a COMMAND to the CONTROL2 input. (See COMMANDS register)
+                                       Configuration setting for the HORN relay
+                                       00    Default setting. The relay is used for the HORN function.
+       RLY CNFG                58     01    AIR/FUEL function. The relay energizes (contacts close) when flame cell
+                                             is at proper operating temperature.
+                                       02    OVERRIDE function. Relay is always energized (contacts always closed)
+       SET BAUD                22     Default Baud Rate Setting
+                                       (See below for allowable settings and Baud rates)
+                                       Baud Rate Currently In Use. Can differ from the default setting if AUTOBAUD is
+                                       “on.” The allowable settings are:
+                                       0010H               19200
+C                                      0011H               9600          Standard value is 9600 Baud
+O      BAUD RATE               47     0012H               4800
+M                                      0013H               2400
+                                       0014H               1200
+P                                      0015H               600
+O                                      0016H               300
+R
+ T                                     Control for automatic baud rate detection feature (vs. fixed baud rate setting)
+       AUTOBAUD                48            0                Off            Baud rate fixed, equals “SET BAUD” value
+M                                             1                On            Device automatically seeks proper baud rate
+E                                      Port address of device
+N
+U      ADDRESS                 21     Valid settings are 1 to 255, Default setting is 1.
+                                       Note: the address in the modbus data packet is one less than that stored in
+                                       the address register “address 1 = 0000H”
+       ID NBR                  19     User-assigned identification number.
+                                       Valid settings are 0 to 99. Default setting is 0.
+
+
+
+
+
+
+
+
+Instruction Manual H7SNR690 Rev C
+                                                                                                                               73
+
+--- PAGE 6 ---
+SERIAL COMMUNICATIONS
+
+
+
+
+          REGISTER               #                                      REGISTER CONTENTS
+             NAME
+                                       The alarm level, in the same format as reading
+       LO ALARM                5      Default setting is _____
+                                       Adjustable from ____ to ____
+
+                                       The alarm level, in the same format as reading
+       HI ALARM                6      Default setting is _____
+                                       Adjustable from ____ to ____.
+       LATCHES                 17     Alarms that will latch until manually reset, versus those that will auto reset
+                                       Format is identical to RELAYS register.
+ A                                     Relays that are failsafe (normally energized) and which de-energize upon
+ L     FAILSAFE                18     activation of the alarm. FAULT is always failsafe. Format is identical to RELAYS
+ A                                     register. Do not write to this register via modbus - change only through the
+R                                      operator panel.
+M                                      Automatic Re-ignition setting
+ S                                     0 = None, single attempt to ignite is made upon flameout, after reset.
+       AUTO IGN                35
+M                                      1 to 120 = Number of re-ignition attempts at 15 second intervals.
+ E                                     Default setting is 0, disabled.
+N      VERSION                         Software version (for complete Version header see below registers 257 - 272)
+U                                      Analyzer type - This register is written once at factory
+       TYPE                     62
+
+                                       Serial number – displayed as year of production and serial, eg, 02-101 for year
+       SERIAL                   63     2002 serial 101. Data in this register is the serial only. The year of production
+                                       is stored in the ASCII text string registers 257 to 272.
+                                       This register is written once, at the factory upon shipment.
+                                       Display language
+       LANGUAGE                64     0 = English (default)
+                                       1 = German
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+74                                                                                               Control Instruments Corp.
+
+--- PAGE 7 ---
+                                                                              SERIAL COMMUNICATIONS
+
+
+
+
+
+     REGISTER                                                       Register Contents
+    NAME             #                      Note: These registers are accessible through the serial port
+                                      In some prior software versions LINEAR and MA SCALE were on menus.
+FULLSCLE           3       Full scale measurement range. 1000 for standard units.
+                           Logical state of the control relays. This data matches the corresponding LED indicators.
+                           A bit of 1 = “active”, 0 = “inactive”
+                           Data is in binary format. Packed flags:  0000 0000 TISZ HFDW
+                               T       Heater
+                   4           I       Ignition
+RELAYS                         S       Span solenoid valve
+                               Z       Zero solenoid valve
+                               H       Horn relay
+                               F       Fault relay
+                               D       Hi Alarm relay
+                              W        Low Alarm relay
+                   49      Copy of RELAYS in low byte position and FAILSAFE register in high byte position.
+DUMMY             46      A register that performs no function, but can be used to debug serial communications
+A/D REF            16      The reference voltage of the A/D converter. Should be 506 ± 25.
+                           SERVICE NEEDED indication. A bit of 1 = “active”, 0 = “inactive”
+                           Data is in binary format. Packed flags:  0000 0000 A0RD LSZF
+                               F       N/A
+                               Z       CHK_ZERO
+SERVICE            59          S       CHK_SPAN
+                               L       CHK_LED - controls flashing of fault LED when any CHK_ bit is set
+                               D       CHK_DATA
+                               R       CHK_RDNG
+                               A       AIR_FUEL
+                           Device identification, in ASCII text string.
+                   257     „  BTU  „          Analyzer Model
+VERSION            thru    „ VER 5.xx‟        Software version
+                   272     „ SNR69x „         Analyzer assembly number
+                           ‟   2007    „      Analyzer serial number – year of production
+                   40      Internal pointer used for display of version - do not use.
+                   51
+DISPLAY            thru    Copy of the LCD display buffer in ASCII.
+                   55
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Instruction Manual H7SNR690 Rev C
+                                                                                                                              75

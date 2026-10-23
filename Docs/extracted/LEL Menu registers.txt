@@ -1,0 +1,446 @@
+
+--- PAGE 1 ---
+                                                                                                                                                                                                               SERIAL COMMUNICATIONS
+
+
+
+
+
+
+12.                                                                                  Serial Communications
+Data can be transferred between  one or more analyzers, and a single host device, using the Modbus
+Remote Terminal Unit (RTU) protocol. The host devi   ce sends polls, to which the analyzer replies.
+
+
+12.1.                                                          Serial Communications Specifications
+
+                             Specification Description
+
+                             Supported commands                                           Command 3                                                                                                                                                                                                                                                                                                       “Read Output (Holding) Registers”
+                                                                                                              Command 6                                                                                                                                                                                                                                                                                                       “Preset Single Register”
+                                                                                                              Command 16                                                                                                                                                                                                                                                                                     “Preset Multiple Registers.”
+                             Command 16 limit                                                                                                  Limited to one register in length (special case).
+                             Command 3 limit                                                                                                                    Limited to 127 registers in length.
+                             Broadcast mode                                                                                                                           Supported for commands 6 and 16.
+                             Serial port hardware                                                                   Half-duplex RS485
+                             Data format                                                                                                                                                                                     8 bits, no parity, 1 stop bit
+                             Baud rates                                                                                                                                                                                                         Baud rates from 300 to 19,200 are supported
+                             Standard baud rate                                                                                  9600
+                             Maximum poll rate                                                                                              Eight per second at 9600 Baud, sixteen per second at 19200 Baud
+                             Receive-transmit delay                              Minimum: 5 characters between receipt of poll and reply.
+                                                                                                              Maximum: 250 milliseconds, if maximum poll rate is reached
+                             Error handling                                                                                                                                                           Invalid start register address                                                                   Command ignored, no reply
+                                                                                                                                                                                                                                                                                                                                                                                                 Read more than 127 registers                                              Command ignored, no reply
+                                                                                                                                                                                                                                                                                                                                                                                                 CRC error, poll corrupted                                                                                                                Command ignored, no reply
+                                                                                                                                                                                                                                                                                                                                                                                                 Read over page boundary                                                                                                   Command ignored, no reply
+                                                                                                                                                                                                                                                                                                                                                                                                 Read invalid page                                                                                                                                                                                                                     Command ignored, no reply
+                                                                                                                                                                                                                                                                                                                                                                                                 Data written outside valid limits                              Reply is made but data is ignored
+                                                                                                                                                                                                                                                                                                                                                                                                 Read of unsupported register                                                       00H Data returned in reply
+
+
+12.2.                                                           Serial Communications Notes
+The modbus master should be secured from unauthor   ized or unintentional changes. Networked
+access is not recommended.
+
+WARNING!            Serial communications must not be used fo  r critical safety functions such as process
+                                       shutdown.
+Writing illegal data outside the register’s acceptable li   mits is acknowledged with a reply, but the data
+is ignored. The modbus master should verify comple  tion of write commands by a subsequent read of
+the register.
+Data written to the COMMANDS register is cleared as soon as th e command is executed. Reading the
+COMMANDS register most likely returns 00H data, even   if the register has just been written. The host
+should verify  COMMANDS by reading the STATUS register.
+Data written to non-volatile registers are saved   to the EEPROM sixty seconds later. When several
+write commands are received consecutively, that is , with less than 60 seconds between them, the
+EEPROM is written 60 seconds after the last command. The    SAVE ALL command saves to the
+EEPROM immediately.
+
+
+
+
+PrevEx®InstructionManual                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   85
+
+--- PAGE 2 ---
+SERIAL COMMUNICATIONS
+
+
+
+Some modbus master devices prefer to receive a reply   with the register data formatted with the low
+order byte transmitted first. Read registers at pages   4 or 5 to get register data formatted “lo:hi.”
+
+                  Page# Hexadecimal addresses Accessible contents
+                  00                                                                                                              0000H through 00xxH                                                                                                  Registers 1 through 64
+                  01                                                                                                              0100H through 01xxH                                                                                                  Registers 257 through 272
+                  04                                                                                                              0400H through 04xxH                                                                                                  Copy of registers 257 through 272, lo:hi format,
+                                                                                                      effective register numbers 1025 through 1040
+                  05                                                                                                              0500H through 05xxH                                                                                                  Copy of registers 1 through 64, lo:hi format,
+                                                                                                      effective register numbers 1281 through 1344
+
+
+12.3.                                                          Register Conversion Factors
+After it is acquired, the serial port data is converted   into engineering units using a conversion factor.
+For the following registers, the data is a si  gned 16-bit word. Negative numbers are in two’s
+complement form. To convert the register data, mu   ltiply by the conversion factor in the table.
+
+       REGISTERS Format                             Conversion Factor
+       READING
+       PEAK HI
+       PEAK LO
+       CAL RDNG
+       WARNING                             Reading                                               Standard unit27 with 100%LFL measurement range, multiply
+       DANGER                                                                                    by 0.00390625 %LFL
+       MA TEST
+       MA CAL
+       MA FAULT
+       MA TEST                             Reading format
+       MA CAL                              expressed as milliamps                              Multiply by 0.000625, then add + 4.0 Milliamps
+       MA FAULT
+       HSG TEMP
+       SET TEMP
+       FLAME                               Temperature                                                                                                                                                                                     Multiply by 0.24426 °C
+       RAW ZERO
+       RAW SPAN
+       SPAN °C
+       FLOW
+       CHK FLOW                            Flow Rate                                                                                                                                                                                                                       Multiply by 0.00172936 Liters per minute
+       LOW FLOW
+       4 MA ADJ                            Milliamps 0.1 Milliamps
+       20 MA ADJ
+       VARIOUS                                                                                                                            ON/off                                                                                                                                                                                                                                                                               ON = 1, active;  off = 0, inactive
+
+
+
+
+
+
+
+27 Analyzers with air dilution options using software Version 5.08 and earlier have a 200%LFL range. For
+these analyzers multiply by 0.0078125.
+
+
+86                                                                                                                                                                    Control Instruments Corp.
+
+--- PAGE 3 ---
+                                                                                                                                                                                                                                                 SERIAL COMMUNICATIONS
+
+
+
+
+
+
+12.4.                                                          Registers
+       Register Register Contents
+                              Name #                                                                                                           Registers that can be written are indicated by this symbol:   .
+                                                                       1                    The flammability reading in Percent Lower Flammable Limit (%LFL)
+                     READING                                                                Register 50 is a copy of READING that includes the effect of MA CAL, MA FAULT and MA
+                                                                       50                   TEST register functions.
+                                                                                            Device status messages, codes, and their meanings
+                                                                                            Message Code Meaning
+                                                                                            Normal                                                                                                                                                                                                 0                                                                                                                      Normal operation, no alarms
+                                                                                            Warning                                                                                                                                                                                1                                                                                                                      Warning alarm, reading above warning level
+                                                                                            Danger                                                                                                                                                                                               2                                                                                                                      Danger alarm, reading above danger level
+                                                                                            Downscale                                                                                                                                           3                                                                                                                      Fault, reading lower than –10%LFL
+                                                                                            Zero On                                                                                                                                                                                  4                                                                                                                      Zero calibration or zero test in progress
+                                                                                            Span On                                                                                                                                                                         5                                                                                                                      Span calibration or span test in progress
+                                                                                            Purging                                                                                                                                                                                         6                                                                                                                      Purging calibration gases
+                                                                                            Cal ends                                                                                                                                                                         7                                                                                                                      Calibration ending
+                                                                                            Zero fail                                                                                                                                                                                    8                                                                                                                      Zero calibration failed, result unacceptable
+                                                                                            Span fail, low                                                                                                         9                                                                                                                      Span calibration failed, result too low
+                     STATUS                                                        2        Span fail, high                                                                                             10                                                                                                    Span calibration failed, result too high
+                                                                                            Warm-up                                                                                                                                                                    11                                                                                                    Power-on time delay for self diagnostics
+                                                                                            RAM test                                                                                                                                                                    12                                                                                                    Self diagnostic of RAM
+                                                                                            RAM fail                                                                                                                                                                               13                                                                                                    RAM has failed self diagnostic test
+                                                                                            Data lost                                                                                                                                                                         14                                                                                                    Checksum for nonvolatile data in EEPROM failed
+                                                                                            EE fail                                                                                                                                                                                                           15                                                                                                    Self diagnostic check of EEPROM failed
+                                                                                            Temp low                                                                                                                                                             18                                                                                                    Temperature of analyzer is too low
+                                                                                            Temp high                                                                                                                                                19                                                                                                    Temperature of analyzer is too high
+                                                                                            Flow Low                                                                                                                                                                20                                                                                                    Sample flow rate too low.
+                                                                                            Flow Hi                                                                         21                                   Sample flow rate too high.
+  G                                                                                         A/D fail                                                                        24                                   Self check of A/D converter failed.
+   A                                                                                        TC2 Fail                                                                                                                                                                               25                                                                                                    Thermocouple for temperature control failed.
+  U                                                                                         Flameout                                                                                                                                                                  26                                                                                                    Sensing flame is out.
+  G                                                                                         ROM fail                                                                                                                                                                           27                                                                                                    Continuous self-diagnostic of ROM has failed.
+   E                 PEAK HI                                                                      38                                    Highest reading taken since last reset command
+   S                 PEAK LOW                                  39                                    Lowest reading taken since last reset command
+                     HSG TEMP                                  9                                                      Actual flame cell housing temperature in Degrees Centigrade
+  M                                                                                                                                                                                                                                   Assembly Min Max Default
+   E                                                                                        Flame cell housing temperature                                                                                                            SNR671                                                                                                50°C 65°C 60°C
+  N                  SET TEMP                                                               set point in Degrees Centigrade                                                                                                           SNR672                                                                                                100°C 153°C 120°C
+  U                                                                                                                                                                            24                                                    SNR674                                                                                                100°C 210°C 200°C
+
+                                                                                                                                                                                                                                      SNR675                                                                                                100°C 280°C 250°C
+                     FLOW                                                                                                     15                                    Sample flow rate in Standard Liters per Minute
+                                                                                                                                                                                                                                      Assembly Min    Max Default
+                                                                                            Sample flow rate at which “Low                                                                                                            SNR671 1.4   3.0   1.4
+                     LOW                                                                    Flow” fault is activated, in                                                                                                              SNR672 1.4 2.7 1.4
+                     FLOW                                                             23   standard liters per minute.                                                                                                               SNR674 1.4 2.5 1.4
+
+                                                                                                                                                                                                                                      SNR675 1.4 2.3 1.4
+                     CHK
+                     FLOW                                                                                                   42                                    Level at which the CHK FLOW “service needed” message and relay will activate. Do not write to this register via modbus.
+                     FLAME                                                                           11                                    Flame temperature (Thermocouple TC1 reading) in Degrees Centigrade
+
+
+
+
+PrevEx®InstructionManual                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  87
+
+--- PAGE 4 ---
+SERIAL COMMUNICATIONS
+
+
+
+
+             REGISTER                                                                                                                                                                                                                                                                                                                                                                                                              REGISTER CONTENTS NAME #
+
+                                                                                                Flame temperature from zero calibration in degrees Centigrade
+                 RAW ZERO     29 Minimum value is 450°C
+                                                                                                Maximum value is 550°C
+                                                                                                Default value is 500°C.
+                 RAW SPAN                                                                                       30                                    Flame temperature from span cal minus the raw zero, in degrees Centigrade.
+                 CAL TIME        28 Duration of each calibration interval in minutes
+  C                                                                                             Minimum setting 1 minute, maximum 4 minutes. Default is 1 minute.
+  A                                                                            7                %LFL reading for span calibration.
+  L              CAL RDNG                                                                      Minimum value is 40%LFL except P type,which allows 25%LFL.
+                                                                               43               Maximum value is 80%LFL. Default value is 60%LFL.
+ M                                                                                              Register 43 is a copy of CAL RDNG from the last successful calibration.
+  E                                                                                                                 Setting for expected RAW SPAN temperature rise during span calibration
+  N                                                                                             Type                                                      Standard                                    P-type                                   D- and K-type
+  U              SPAN °C                                                                 56    Minimum                                                   105°C                                         68                                                     50
+                                                                                                Maximum                                                   140°C                                       140                                                      70
+                                                                                                Default                                                   125°C                                         80                                                     60
+                                                                                                Speed of response and noise filter
+                                                                                                Off                                                                                                                                             0                                                                                                                                                      Slowest setting. Available with K type only.
+                 SPEED             20 Low                                                                                                                             1                                                                                                                                                      Default setting for D type
+                                                                                                Med                                                                                                                         2                                                                                                                                                      Default setting for all but D type
+                                                                                                High 3   Fastest setting
+                                                                                                Indication of calibration lock. Read only.
+                                                         CAL LOCK 60 Hardware Lock          Bit 0
+                                                                                                Software Lock           Bit 1
+                                                                                                Execute a command to control the device
+                                                                                                -                                                                                                                                                                             0                                                                                                                                                                       (no commands, inactive)
+                                                                                                Reset 200H Reset alarms
+                                                                                                Acknowle
+                                                                                                dge                                                                                                                                  100H                                                                                                            Silence the horn, clear “service needed” relay
+C                                                                                               Calibrate analyzer with gas, adjust settings, activate faults if response unacceptable
+O                                                                                               Zero Cal                                                             300H                                                                                                            Perform zero calibration and adjust zero
+M                                                                                               Span Cal                                                    400H                                                                                                            Perform span calibration and adjust span
+M                                                                                               Full Cal                                                                           500H                                                                                                            Perform zero and span calibration and adjust
+A                                                                                               Test analyzer response with gases, but do not adjust the settings, ignore faults
+N                                                                                               Zero Test                                               600H                                                                                                            Test zero with gas, do not adjust
+D                       COMMANDS                                               8                Span Test                                      700H                                                                                                            Test span with gas, do not adjust
+S                                                                                              Full Test                                                             800H                                                                                                            Test zero and span, do not adjust
+                                                                                                Commands affecting EEPROM
+                                                                                                Save All                                                                  900H                                                                                                            Save all settings to EEPROM
+M                                                                                               Cold Start                                         0A00                                                                                                              Force device into COLD START condition. Do not use.
+E                                                                                               Commands for remote control - not on menu
+N                                                                                                                                                                                                                                                                                       0B00H                                                                                      Emulates “Menu” pushbutton
+U                                                                                                                                                                                                                                                                                       0C00H                                                                                     Emulates “Select”  pushbutton
+                                                                                                                                                                                                                                                                                        0D00H                                                                                     Emulates “Flashlight” activation
+                                                                                                Commands for security - not on menu
+                                                                                                -                                                                                                                                                                             0E00H                                                                                      “Momentary lock” - internal use only. Do not use.
+                                                                                                Lock                                                                                                                    0F00H                                                                                        Locks out calibration, software lock.
+                                                                                                Unlock                                                                            1000H                                                                                        Unlocks calibration.
+
+
+
+
+
+
+
+88                                                                                                                                                                                                                                               Control Instruments Corp.
+
+--- PAGE 5 ---
+                                                                                                               SERIAL COMMUNICATIONS
+
+
+
+
+                                                                                                  REGISTER     NAME    # REGISTER CONTENTS
+
+                                                      Relays activated for test. Format is identical to RELAYS register. Test is run
+          RLY TEST        45 through menu access only - do not write to this register with modbus (serial
+                                                      communication).
+                                                      Circuit test of milliamp output, in milliamps, increases output only, deactivates
+          MA TEST         44 upon leaving menu. Test is run through menu access only - do not write to this
+                                                      register with modbus (serial communication).
+          4 MA ADJ         25 Circuit adjustment of milliamp output at the 0%LFL (4 milliamp) point – factory set
+ O                                                    Range is +/- 2 milliamps. Default value is 0.
+ U                                                    Circuit adjustment of milliamp output at the full scale (20 milliamp) point –
+ T        20 MA ADJ       31 factory set.
+ P                                                    Range is +/- 2 milliamps. Default value is 0.
+ U
+ T        MA CAL           26 Value for milliamp output during calibrations
+ S                                                    Minimum is 2.5 milliamps, maximum 22.7 milliamps, default is 22.1 milliamps.
+ M        MA FAULT       32 Value for milliamp output during faults
+ E                                                    Minimum is 2.5 milliamps, maximum 22.7 milliamps, default is 21.0 milliamps.
+ N
+ U        CONTROL1     36 Assigns a COMMAND to the CONTROL1 input. (See COMMANDS register)
+
+          CONTROL2     37 Assigns a COMMAND to the CONTROL2 input. (See COMMANDS register)
+                                                      Configuration setting for the HORN relay
+                                                      00                         Default setting. The relay is used for the HORN function.
+          RLY CNFG       58 01                         AIR/FUEL function. The relay energizes (contacts close) when flame cell
+                                                               is at proper operating temperature.
+                                                      02                         OVERRIDE function. Relay is always energized (contacts always closed)
+          SET BAUD       22 Default Baud Rate Setting
+                                                      (See below for allowable settings and Baud rates)
+                                                      Baud Rate Currently In Use. Can differ from the default setting if AUTOBAUD is
+                                                      “on.” The allowable settings are:
+                                                      0010H 19200
+ C                                                    0011H                                                                                                                                         9600                                                                                Standard value is 9600 Baud
+ O        BAUD RATE    47 0012H 4800
+ M                                                    0013H 2400
+ P                                                    0014H 1200
+ O                                                    0015H 600
+ R                                                    0016H 300
+ T                                                    Control for automatic baud rate detection feature (vs. fixed baud rate setting)
+ M        AUTOBAUD     48                                       0                                                                                                                                                                 Off                                                                                                                             Baud rate fixed, equals “SET BAUD” value
+ E                                                               1                                                                                                                                                                 On                                                                                                              Device automatically seeks proper baud rate
+ N                                                    Port address of device
+ U        ADDRESS       21 Valid settings are 1 to 255, Default setting is 1.
+                                                      Note: the address in the modbus data packet is one less than that stored in
+                                                      the address register “address 1 = 0000H”
+          ID NBR             19 User-assigned identification number.
+                                                      Valid settings are 0 to 99. Default setting is 0.
+
+
+
+
+
+
+
+
+
+
+PrevEx®InstructionManual                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            89
+
+--- PAGE 6 ---
+SERIAL COMMUNICATIONS
+
+
+
+
+                                                                          REGISTER NAME   # REGISTER CONTENTS
+
+                                    The warning alarm level, in the same format as reading
+      WARNING       5 Default setting is 40% LFL
+                                    Adjustable from 5% LFL to 60% LFL.
+                                    Should be set below the DANGER level.
+                                    The danger alarm level, in the same format as reading
+      DANGER         6 Default setting is 50% LFL
+                                    Adjustable from 10% LFL to 60% LFL
+                                    Enables and disables the rate-of-rise alarm.
+      RATE         61 ON  = Rate-of-rise alarm is enabled
+                                    OFF = Rate-of-rise alarm is disabled
+                                    Alarms that will latch until manually reset, versus those that will auto reset
+      LATCHES        17 Format is identical to RELAYS register.
+                                    Default is WARNING, DANGER AND FAULT set to latching.
+                                    Relays that are failsafe (normally energized) and which de-energize upon
+      FAILSAFE          18 activation of the alarm. WARNING, DANGER AND FAULT relays are always
+                                    failsafe. Format is identical to RELAYS register. Do not write to this register via
+                                    modbus - change only through the operator panel.
+                                    Automatic Re-ignition setting
+      AUTO IGN    35 0 = None, single attempt to ignite is made upon flameout, after reset.
+A                                   1 to 120 = Number of re-ignition attempts at 15 second intervals.
+ L                                  Default setting is 0, disabled.
+A     VERSION                                                                                                                                                                                                                Software version (for complete Version header see below registers 257 - 272)
+R                                   Analyzer type - This register is written once at factory
+M                                   0                                                                                                                                                                                                                                                        Undefined – this value will cause DATA LOST fault
+S                                   1 SNR671
+                                    2 SNR671D
+M                                   3 SNR672P
+E                                   4 SNR672
+N                                   5 SNR672D
+U                                   6 SNR672K
+                                    7 SNR674P
+                                    8 SNR674PL
+      TYPE 62 9 SNR674
+                                    10 SNR674D
+                                    11 SNR675
+                                    12 SNR675D
+                                    13 SNR675K
+
+                                    Options:
+                                    D = Air dilution option
+                                    P = Allows 0.6% volume Propane calibration gas
+                                    K = Air dilution with ability to set SPEED to OFF
+                                    L = Low flow adjustment option (now standard on all types)
+
+                                    Serial number – displayed as year of production and serial, eg, 02-101 for year
+      SERIAL 63 2002 serial 101. Data in this register is the serial only. The year of production
+                                    is stored in the ASCII text string registers 257 to 272.
+                                    This register is written once, at the factory upon shipment.
+                                    Display language
+      LANGUAGE     64 0 = English (default)
+                                    1 = German
+
+
+
+90                                                                                          Control Instruments Corp.
+
+--- PAGE 7 ---
+                                                                                                                           SERIAL COMMUNICATIONS
+
+
+
+
+        REGISTER Register Contents
+      NAME #                                                         Note: These registers are accessible through the serial port
+                                                            In some prior software versions LINEAR and MA SCALE were on menus.
+FULLSCLE                                                         3                                                                      Full scale measurement range. 100 for standard28 units.
+                                           Logical state of the control relays. This data matches the corresponding LED indicators.
+                                           A bit of 1 = “active”, 0 = “inactive”
+                                           Data is in binary format. Packed flags:  0000 0000 TISZ HFDW
+                                                T Heater
+                                                 I Ignition
+RELAYS                                                                                              4 S                                                                         Span solenoid valve
+                                                Z                                                                          Zero solenoid valve
+                                                H Horn relay
+                                                F Fault relay
+                                                D Danger relay
+                                                W Warning relay
+                              49 Copy of RELAYS in low byte position and FAILSAFE register in high byte position.
+DUMMY                                                            46                                                    A register that performs no function, but can be used to debug serial communications
+A/D REF                                                                                               16                                                    The reference voltage of the A/D converter. Should be 506 ± 25.
+                                           SERVICE NEEDED indication. A bit of 1 = “active”, 0 = “inactive”
+                                           Data is in binary format. Packed flags:  0000 0000 A0RD LSZF
+                                                F CHK_FLOW
+                                                Z CHK_ZERO
+SERVICE 59                                      S CHK_SPAN
+                                                L                                                                           CHK_LED - controls flashing of f ault LED when any CHK_ bit is set
+                                                D CHK_DATA
+                                                R CHK_RDNG
+                                                A AIR_FUEL
+                                           Device identification, in ASCII text string.
+                              257          ‘ PREVEX ‘                                                      Analyzer Model
+VERSION                       thru         ‘ VER 5.11’                                                        Software version
+                              272          ‘ SNR67x ‘                                                                Analyzer assembly number
+                                           ’   2005    ‘                                                                    Analyzer serial number – year of production
+                              40                                                    Internal pointer used for display of version - do not use.
+                              51
+DISPLAY                       thru         Copy of the LCD display buffer in ASCII.
+                              55
+
+MA SCALE       57                                   The %LFL reading equal to 20 milliamps. Always 100%LFL. Older air dilution types D or K  at version 5.08 or lower adjusted to 100%LFL or 200% LFL.
+
+                                           For sensor with Air Dilution Option, type D or K, sets the linear range.
+LINEAR                                     41 OFF                 40% LFL           Standard setting without Air Dilution.
+                                           ON                   80% LFL           Air Dilution installed and active.
+
+
+
+
+
+
+
+
+
+28 For analyzers with air dilution option - D or K in the TYPE (eg SNR675K, SNR674D. etc.) at software
+
+      VERSION 5.08 and earlier, the full scale is 200.
+
+
+
+
+PrevEx®InstructionManual                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       91
