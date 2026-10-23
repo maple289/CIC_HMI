@@ -123,3 +123,25 @@ def test_nonfinite_inverse_rejected():
     for value in ("NaN", "Infinity", "-Infinity"):
         with pytest.raises(ValueError):
             PROFILES["BTU"].register(1).encode(value, "BTU", CONTEXT["BTU"])
+
+
+# Independent register-group transcription from the three conversion tables.
+# These expectations catch a wrong factor assigned to a valid register, which
+# an encode/decode round trip alone would not detect.
+GOLDEN = []
+for family, groups in {
+    "LEL": [([1,5,6,7,38,39,43,50],"3.90625"),([9,11,24,29,30,56],"244.26"),([15,23,42],"1.72936"),([25,31],"100"),([26,32,44],"4.625")],
+    "BTU": [([1,5,6,7,13,14,38,39,43,50],"39.0625"),([9,11,24,29,30,56],"244.26"),([10,23],"351.734"),([33],"105.862"),([25,31],"100"),([26,32,44],"4.625")],
+    "FID": [([1,5,6,7,38,39],"3.90625"),([9,11,24],"244.26"),([12,29,30,56],"2.4426"),([10,23],"35.1734"),([33],"105.882"),([25,31],"100"),([26,32,44],"4.625")],
+}.items():
+    for numbers, expected in groups:
+        GOLDEN.extend((family,number,expected) for number in numbers)
+
+
+@pytest.mark.parametrize("family,number,expected",GOLDEN)
+def test_every_scaled_definition_against_manufacturer_factor(family,number,expected):
+    assert PROFILES[family].register(number).decode(1000,family,CONTEXT[family])[0] == Decimal(expected)
+
+
+def test_independent_factor_cases_cover_every_scaled_register():
+    assert {(f,n) for f,n,_ in GOLDEN} == set(SCALED)

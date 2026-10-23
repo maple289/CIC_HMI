@@ -32,7 +32,7 @@ class PollingScheduler:
             now = self.clock()
             self.jobs.append(PollJob(device.id, 1, 4, device.interval, 0, now))
             profile = PROFILES[device.family]
-            ancillary = [n for n in (9, 10, 11, 12, 15, 33, 59, 60) if n in profile.registers]
+            ancillary = [n for n in (5,6,7,9,10,11,12,15,23,24,28,29,30,33,38,39,43,56,59,60) if n in profile.registers]
             for start, count in block_reads(profile, ancillary):
                 self.jobs.append(PollJob(device.id, start, count, max(5, device.interval * 5), 1, now + 1))
             self.jobs.append(PollJob(device.id, 257, profile.identification_end - 256, 60, 2, now + 2))
@@ -42,8 +42,9 @@ class PollingScheduler:
         candidates = [job for job in self.jobs if max(job.next_due, self.backoff_until.get(job.device_id, 0)) <= now]
         if not candidates:
             return False
-        # Oldest deadline first prevents low-priority starvation; priority breaks ties.
-        job = min(candidates, key=lambda j: (j.next_due, j.priority))
+        # Primary process/status reads precede diagnostics. An overloaded bus may
+        # defer slow jobs: never promise uniform refresh for sixteen analyzers.
+        job = min(candidates, key=lambda j: (j.priority, j.next_due))
         state = self.states[job.device_id]
         config = state.config
         try:

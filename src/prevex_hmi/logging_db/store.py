@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import sqlite3
+
+
+class Historian:
+    """Owned by the polling worker; no SQLite connection crosses threads."""
+    def __init__(self, path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(path)
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS measurements (
+                id INTEGER PRIMARY KEY, timestamp TEXT NOT NULL, instrument TEXT NOT NULL,
+                register_number INTEGER NOT NULL, value REAL, unit TEXT NOT NULL,
+                quality TEXT NOT NULL, status INTEGER);
+            CREATE INDEX IF NOT EXISTS measurement_lookup
+                ON measurements(instrument, register_number, timestamp);
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY, timestamp TEXT NOT NULL, instrument TEXT NOT NULL,
+                description TEXT NOT NULL, quality TEXT NOT NULL);
+        """)
+
+    def measurement(self, timestamp: str, instrument: str, number: int, value: float | None, unit: str, quality: str, status: int | None) -> None:
+        self.db.execute("INSERT INTO measurements(timestamp,instrument,register_number,value,unit,quality,status) VALUES (?,?,?,?,?,?,?)", (timestamp,instrument,number,value,unit,quality,status))
+
+    def event(self, timestamp: str, instrument: str, description: str, quality: str) -> None:
+        self.db.execute("INSERT INTO events(timestamp,instrument,description,quality) VALUES (?,?,?,?)", (timestamp,instrument,description,quality))
+
+    def commit(self) -> None:
+        self.db.commit()
+
+    def history(self, instrument: str, hours: int = 24, limit: int = 5000) -> list[tuple]:
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="milliseconds")
+        return list(reversed(self.db.execute("SELECT timestamp,value,unit,quality,status FROM measurements WHERE instrument=? AND register_number=1 AND timestamp>=? ORDER BY timestamp DESC,id DESC LIMIT ?", (instrument,since,limit)).fetchall()))
+
+    def events(self) -> list[tuple]:
+        return self.db.execute("SELECT timestamp,instrument,description,quality FROM events ORDER BY id DESC LIMIT 500").fetchall()
+
+    def retain(self, days: int = 90) -> None:
+        if not 1 <= days <= 3650:
+            raise ValueError("Retention must be 1..3650 days")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="milliseconds")
+        self.db.execute("DELETE FROM measurements WHERE timestamp < ?", (cutoff,))
+        # Alarm/event history is deliberately retained independently.
+        self.db.commit()
+
+    def close(self) -> None:
+        self.db.commit()
+        self.db.close()

@@ -45,6 +45,16 @@ jobs:
           git diff --exit-code -- Docs/REGISTER_TABLES.md
       - name: Run desktop environment smoke test
         run: python scripts/check_environment.py --check
+      - name: Run multi-analyzer monitoring GUI smoke test
+        run: python scripts/run_hmi.py --smoke-test --data-dir tmp/monitoring-smoke
+      - name: Build Windows executable
+        run: python -m PyInstaller --noconfirm build_windows.spec
+      - name: Verify packaged executable
+        run: |
+          $app = Start-Process -FilePath "$PWD/dist/PREVEX-HMI/PREVEX-HMI.exe" -ArgumentList @('--smoke-test', '--data-dir', "$PWD/tmp/packaged-smoke") -WindowStyle Hidden -PassThru -Wait
+          if ($app.ExitCode -ne 0) { exit $app.ExitCode }
+          $report = Get-Content -Raw tmp/packaged-smoke/smoke-report.json | ConvertFrom-Json
+          if ($report.result -ne 'PASS') { throw 'Packaged monitoring smoke test failed' }
       - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,4 +63,13 @@ jobs:
           path: |
             tmp/test-results.xml
             tmp/environment-check/
+            tmp/monitoring-smoke/*.png
+            tmp/monitoring-smoke/smoke-report.json
+            tmp/packaged-smoke/smoke-report.json
+          retention-days: 14
+      - name: Upload Windows monitoring preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: PREVEX-HMI-Windows-preview
+          path: dist/PREVEX-HMI/
           retention-days: 14

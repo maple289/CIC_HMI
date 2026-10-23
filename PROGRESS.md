@@ -1,9 +1,16 @@
 # PREVEX HMI progress
 
 ## Scope and safety
-Milestone 1 software foundation complete; monitoring GUI next. No physical instruments accessed. Physical transport is read-only, unavailable from the initial simulation GUI, and requires explicit authorization to open a port. Offline operation is mandatory. Missing/ambiguous hardware behavior remains gated, not claimed complete.
+Milestone 1 software foundation and Milestone 2 simulation monitoring preview implemented. No physical instruments accessed. Physical transport is read-only, unavailable from the GUI, and requires explicit authorization to open a port. Offline operation is mandatory. Missing/ambiguous hardware behavior remains gated, not claimed complete. This is not the full production release.
 
 ## Completed
+- Added Qt monitoring overview, independent analyzer detail screens, family-specific engineering values, relay/service indicators and live PyQtGraph trends.
+- Added saved simulation-device management (add/edit/disable/remove/sort/reorder), duplicate-address prevention and dark/light themes.
+- Added threaded polling and database ownership, signal-based GUI updates, asynchronous shutdown and explicit GOOD/STALE/OFFLINE/DISABLED state. Old process values are hidden when not current.
+- Added SQLite simulation historian and independent alarm/communication transition events, bounded history view and CSV export with instrument IDs. Live/history plots break at recorded communication gaps.
+- Added bounded TX/RX diagnostics, per-device stats, safe manual read-only register inspection and simulated fault/recovery controls.
+- Added launch scripts, operating instructions and PyInstaller Windows build configuration. No physical connection or command/control screen exists in this preview.
+- CI now includes source and packaged GUI smoke tests, Windows executable build and downloadable preview artifacts.
 - Implemented single-owner bus engine with transaction lock, total-bus pacing, interframe spacing, bounded raw traffic and per-device diagnostics.
 - Implemented explicit addressing modes/PDU offsets, safe contiguous block reads, page boundaries and documented alternate-page byte order.
 - Implemented centralized primary/ancillary/identification scheduler, cached state, stale/offline quality and bounded per-device failure backoff.
@@ -28,6 +35,8 @@ Milestone 1 software foundation complete; monitoring GUI next. No physical instr
 - See forthcoming Docs/REGISTER_SPECIFICATION.md and Docs/VERIFICATION.md.
 
 ## Test results
+Monitoring checkpoint: 481 tests passed locally in 2.19s. Independent expected-factor cases cover every scaled register, beyond inverse-round-trip tests. Includes settings persistence/corruption, independent history stream identity, SQLite retention/quality, widgets suppressing stale values and threaded fault isolation/clean shutdown.
+Source GUI smoke passed with four simulated analyzers, and overview/detail/trend/diagnostics screenshots visually inspected. Final PyInstaller rebuild passed, and packaged EXE exited0 with a PASS smoke report (7 updates,4 devices,physical_access=false). Final local regression: 481 passed in2.14s; pip check and source compilation passed. Hosted monitoring CI run is pending push at this entry.
 Communication/profile foundation: 404 tests passed locally (0.76s), including thread-concurrency serialization, aggregate pacing and 16-device failure isolation/recovery. All device I/O simulated or mocked. Source compilation and whitespace checks passed.
 Register/profile tests: 382 passed locally on Python 3.12.14. Includes signed boundaries and inverse conversions for every scaled definition, legacy dilution, FID units, status/relay/service mapping, unsupported registers, write restrictions and model limits. GitHub-hosted run pending push.
 2026-10-22 environment smoke check: PASS on Python 3.12.14.
@@ -35,7 +44,11 @@ Register/profile tests: 382 passed locally on Python 3.12.14. Includes signed bo
 - SQLite and JSON round trip passed.
 - Qt event loop and synthetic PyQtGraph plot passed (15 timer updates); rendered window in tmp/environment-check/window.png.
 - pip check: no broken requirements.
-- This checks the development environment, not the HMI application, packaging, physical communications, or full acceptance criteria. Visible VS Code launch remains for the user to verify.
+- User confirmed the visible setup-check window worked. The later monitoring tests above additionally exercise the application and packaging. Physical communications and complete release acceptance are still unverified.
 
 ## Next steps
-Proceed to Milestone 2 monitoring GUI: overview, independent detail pages, live trends, simulated device management and diagnostics. Hardware verification remains pending. Roles, physical control, full historian UX and release acceptance remain future milestones.
+## Remaining work
+- Milestone 3: secure local user accounts and Viewer/Operator/Administrator enforcement; permission-controlled, confirmed calibration/configuration workflows; persistent command/configuration audit trail; manufacturer-validated outcome rules. These are NOT available in this preview.
+- Milestone 4: richer historian ranges/retention configuration, archival/disk-capacity handling, installer/signing, clean-machine Windows10/11 validation and full release acceptance.
+- Hardware: obtain missing FID protocol/UNITS documentation and resolve all VERIFICATION.md gates through explicitly authorized read-only physical testing. No physical control may be enabled based on simulator tests.
+- No system-wide software installation, Windows security change, COM-port access or actual Modbus write was performed.

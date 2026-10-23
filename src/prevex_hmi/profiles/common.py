@@ -3,8 +3,6 @@
 Source page references are PDF page numbers followed by manufacturer printed pages.
 RW describes manufacturer access, NOT physical write availability in this release.
 """
-from dataclasses import replace
-
 from prevex_hmi.registers.schema import Profile, Register
 
 COMMANDS = {
@@ -96,6 +94,7 @@ def make_profile(family: str) -> Profile:
     add(28, "CAL TIME", "Duration of each calibration interval", section="calibration", unit="min", access="RW", minimum="1", maximum="4", write_policy="validated", category="Calibration")
     for n, name in [(29, "RAW ZERO"), (30, "RAW SPAN"), (56, "SPAN VDC" if fid else "SPAN degC")]:
         scaled(n, name, "Zero-cal result" if n == 29 else "Span minus raw zero" if n == 30 else "Expected span-calibration rise", "voltage" if fid else "temperature", unit="VDC" if fid else "degC", section="calibration", access="RW" if n == 56 else "R",
+               minimum=("450" if lel else "200") if n == 29 and not fid else None, maximum=("550" if lel else "300") if n == 29 and not fid else None,
                restrictions="LEL RAW ZERO 450..550 default500; BTU 200..300 default250. LEL SPAN standard105..140 default125; P68..140 default80; D/K50..70 default60. Calibration editing deferred" if not fid else "FID voltage range not documented", category="Calibration")
     if not fid:
         add(35, "AUTO IGN", "Automatic re-ignition attempts, 15-second spacing", section="alarms", access="RW", minimum="0", maximum="120", restrictions="0 disabled; default0. Safety-related behavior editing deferred")

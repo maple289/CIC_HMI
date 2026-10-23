@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal
+import re
 
 
 class UnverifiedDefinition(ValueError):
@@ -42,10 +43,11 @@ class Register:
     def scale(self, family: str, context: Context) -> tuple[Decimal, Decimal, str]:
         if self.conversion == "reading":
             if family == "LEL":
-                if not context.assembly or not context.version:
+                if not re.fullmatch(r"SNR67[1245](?:D|K|P|PL)?", context.assembly.upper()) or not context.version:
                     raise UnverifiedDefinition("LEL reading requires assembly and software version")
                 try:
-                    version = tuple(int(n) for n in context.version.split("."))
+                    parts = tuple(int(n) for n in context.version.split("."))
+                    version = (parts + (0, 0))[:2]
                 except ValueError as exc:
                     raise UnverifiedDefinition("Unrecognized software version") from exc
                 diluted = context.assembly.upper().endswith(("D", "K"))
