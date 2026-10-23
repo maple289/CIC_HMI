@@ -10,6 +10,8 @@ os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
 
 import pytest
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtTest import QTest
 
 from prevex_hmi.communication.engine import BusEngine
 from prevex_hmi.communication.protocol import Addressing
@@ -17,7 +19,7 @@ from prevex_hmi.devices.configuration import default_devices, load_settings, sav
 from prevex_hmi.devices.models import DeviceConfig
 from prevex_hmi.gui.presentation import format_reading, measurement, severity
 from prevex_hmi.gui.window import MainWindow
-from prevex_hmi.gui.device_dialogs import DeviceEditor
+from prevex_hmi.gui.device_dialogs import DeviceEditor, DeviceManager
 from prevex_hmi.logging_db.store import Historian
 from prevex_hmi.profiles import PROFILES
 from prevex_hmi.simulator.bus import SimulatedBus
@@ -170,4 +172,29 @@ def test_selected_events_are_filtered(app,tmp_path):
     assert window.event_table.item(0,1).text() == "lel-1"
     window.inspection_result_ready("fid-3",1,12345)
     assert window.inspection_result.text() == "No manual read requested"
+    window.close()
+
+
+def test_click_in_manage_analyzers_opens_selected_screen_without_restart(app,tmp_path):
+    settings=load_settings(tmp_path/"settings.json")
+    window=MainWindow(settings,tmp_path/"settings.json",tmp_path,start_worker=False)
+    window.navigation.setCurrentRow(5)
+    clicked=[]
+
+    def choose():
+        dialog=QApplication.activeModalWidget()
+        if isinstance(dialog,DeviceManager):
+            item=next(dialog.chooser.item(i) for i in range(dialog.chooser.count()) if dialog.chooser.item(i).data(Qt.UserRole) == "fid-3")
+            QTest.mouseClick(dialog.chooser.viewport(),Qt.LeftButton,pos=dialog.chooser.visualItemRect(item).center())
+            clicked.append(True)
+            if dialog.isVisible(): dialog.reject()
+
+    QTimer.singleShot(30,choose)
+    window.manage_devices()
+    assert clicked
+    assert window.selected.currentData() == "fid-3"
+    assert window.navigation.currentRow() == 0
+    assert "FID" in window.monitor_model.text()
+    assert window.worker is None and not window.restarting
+    assert load_settings(tmp_path/"settings.json")["selected_device"] == "fid-3"
     window.close()

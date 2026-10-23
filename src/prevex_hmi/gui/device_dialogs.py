@@ -4,7 +4,7 @@ from dataclasses import replace
 import uuid
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLineEdit, QListWidget, QMessageBox, QPushButton, QSpinBox, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
 from prevex_hmi.devices.models import DeviceConfig, validate_devices
 
@@ -69,12 +69,29 @@ class DeviceEditor(QDialog):
 
 class DeviceManager(QDialog):
     """Order is the saved analyzer-selector order; no physical connection settings."""
-    def __init__(self, devices: list[DeviceConfig], parent=None):
+    def __init__(self, devices: list[DeviceConfig], parent=None, *, selected_id=None):
         super().__init__(parent)
-        self.setWindowTitle("Manage simulated analyzers / selector order")
-        self.resize(650,450)
+        self.setWindowTitle("Select or manage analyzers")
+        self.resize(740,480)
         self.devices=list(devices)
-        layout=QVBoxLayout(self)
+        self.original_devices=list(devices)
+        self.open_analyzer_id=None
+        outer=QVBoxLayout(self)
+        self.tabs=QTabWidget()
+        outer.addWidget(self.tabs)
+        choose_page=QWidget()
+        choose_layout=QVBoxLayout(choose_page)
+        choose_layout.addWidget(QLabel("Click an analyzer to open its monitoring screen."))
+        self.chooser=QListWidget()
+        self.chooser.setStyleSheet("QListWidget::item { padding: 18px 12px; }")
+        self.chooser.itemClicked.connect(self.choose_analyzer)
+        self.chooser.itemActivated.connect(self.choose_analyzer)
+        choose_layout.addWidget(self.chooser)
+        self.tabs.addTab(choose_page,"Select analyzer")
+        manage_page=QWidget()
+        layout=QVBoxLayout(manage_page)
+        layout.addWidget(QLabel("Edit the configured instruments here. Save or cancel changes before selecting an analyzer."))
+        self.tabs.addTab(manage_page,"Manage configuration")
         self.list=QListWidget()
         layout.addWidget(self.list)
         row=QHBoxLayout()
@@ -90,16 +107,36 @@ class DeviceManager(QDialog):
             sort_row.addWidget(button)
         sort_row.addStretch()
         layout.addLayout(sort_row)
-        buttons=QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        self.buttons=QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        outer.addWidget(self.buttons)
+        self.tabs.currentChanged.connect(self.update_buttons)
         self.refresh()
+        index=next((i for i,d in enumerate(self.devices) if d.id == selected_id),0)
+        self.list.setCurrentRow(index)
+        self.chooser.setCurrentRow(index)
+        self.update_buttons()
+
+    def update_buttons(self,*_):
+        choosing=self.tabs.currentIndex() == 0
+        self.buttons.button(QDialogButtonBox.Save).setVisible(not choosing)
+        self.buttons.button(QDialogButtonBox.Cancel).setText("Close" if choosing else "Cancel")
+
+    def choose_analyzer(self,item):
+        self.open_analyzer_id=item.data(Qt.UserRole)
+        self.accept()
 
     def refresh(self, selection=0):
         self.list.clear()
         self.list.addItems([f"{d.name} | {d.family} | address {d.address} | {'enabled' if d.enabled else 'disabled'}" for d in self.devices])
         self.list.setCurrentRow(min(selection,len(self.devices)-1))
+        self.chooser.clear()
+        for d in self.devices:
+            self.chooser.addItem(f"{d.family}  |  {d.name}\nAddress {d.address}  |  {d.assembly}  |  {'enabled' if d.enabled else 'disabled'}")
+            self.chooser.item(self.chooser.count()-1).setData(Qt.UserRole,d.id)
+        # Switching instruments must not silently save or discard configuration.
+        self.tabs.setTabEnabled(0,self.devices == self.original_devices)
 
     def apply_editor(self, index=None):
         editor=DeviceEditor(self.devices[index] if index is not None else None,self)

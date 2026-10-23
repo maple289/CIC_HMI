@@ -500,8 +500,13 @@ class MainWindow(QMainWindow):
 
     def manage_devices(self):
         if self.restarting: return
-        dialog=DeviceManager(self.devices,self)
+        dialog=DeviceManager(self.devices,self,selected_id=self.selected.currentData())
         if dialog.exec() != QDialog.Accepted: return
+        if dialog.devices == self.devices:
+            if dialog.open_analyzer_id is not None:
+                self.selected.setCurrentIndex(self.selected.findData(dialog.open_analyzer_id))
+                self.navigation.setCurrentRow(0)
+            return
         updated=dict(self.settings,devices=[asdict(d) for d in dialog.devices])
         try:
             save_settings(self.settings_path,updated)
