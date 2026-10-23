@@ -1,3 +1,9 @@
+# Authorized physical connection test — COM4 (2026-10-23)
+
+- User explicitly authorized a read-only connection test. COM4(ATEN USB serial bridge) successfully communicated at9600 baud/8N1, packet address1, PDU offset-1. Seven final replies passed CRC checks; no writes or address0 requests were issued. Port released and saved application settings unchanged.
+- Identity includes SNR671 and an older TYPE FTA/non-ASCII version format not handled by current Auto Detect. Full firmware/serial identification remains unverified. Registers62/63 returned0; do not infer support or model from these.
+- Three samples reported STATUS25/TC2 Fail, Fault relay active, FULLSCLE100 and raw process8001H. A healthy measurement was not established. This limited successful connection does not validate commands or general hardware compatibility. Details and remaining gates are in Docs/VERIFICATION.md; raw frames remain in the local tmp test report.
+
 # Diagnostics responsiveness fix (2026-10-23)
 
 - Reproduced progressive GUI starvation with Diagnostics open and100 live traffic rows at1100x780. Timer gaps grew from0.5s to8.7s while the serial worker remained responsive. Tracebacks identified table cell replacement and ResizeToContents processing on the Qt thread.

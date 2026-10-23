@@ -1,6 +1,6 @@
 # Manufacturer ambiguities and hardware-validation gates
 
-All physical-device compatibility remains PENDING. No physical instruments have been accessed.
+General physical-device compatibility remains PENDING. An explicitly authorized, limited read-only COM4 test was completed on2026-10-23; see the bench evidence below. Operational controls remain disabled.
 
 | ID | Evidence / question | Current behavior and required verification |
 | --- | --- | --- |
@@ -39,3 +39,16 @@ The prior LEL findings A1/A2/A13/A14 describe the legacy extract. They must not 
 | A22 | p118 Lock/Unlock have no Modbus effect; Save permits factory setting changes. | All three disabled for700; calibration lock checked through27. No output-test/zero-adjust bypass. |
 | A23 | p123 analog override descriptions use%LFL; p116 lists tenths-mA lookup without assignment;25 unit labels conflict. | Explicit register reading descriptions retained, editing blocked. Verify conversion on hardware with manufacturer before configuration procedures. |
 | A24 | Alarm-test duration one hour vs15 minutes; speed references50 vs20/100; pressure units/limits conflict. | Conflicts recorded in LEL_700_REVIEW.md. Alarm tests and ambiguous edits unavailable. |
+
+## Authorized COM4 read-only bench evidence — 2026-10-23
+
+User explicitly requested testing the analyzer on COM4 and confirmed proceeding. Only FC03 was used, with no writes/commands/address0. COM4 was closed after each bounded session; application settings were preserved.
+
+- Saved simulation configuration(address3,9600 baud) did not match this physical endpoint. Bounded probes of nonzero addresses3/2/1,9600/19200, and PDU offsets-1/0 found replies only at packet1/9600/8N1.
+- Offset-1 returns logical1..4 as32769/25/100/4; offset0 shifts these values. Legacy ASCII identification begins correctly at logical257/PDU256. This is evidence for offset-1 on this tested unit, not a universal mapping.
+- Seven final FC03 replies passed independent CRC checks. Three primary samples consistently reported STATUS25 (TC2 Fail in the LEL extract), FULLSCLE100 and RELAYS4 (Fault bit active). Process word8001H must not be represented as a healthy process measurement while that fault is active.
+- Register21 returned1, and packet address1 responded. Direct addressing therefore works for this specific endpoint, despite the later manual's minus-one claim. No packet0 was tested; no general conclusion is made for other firmware.
+- Baud registers22/47 both returned17(decimal)=11H, consistent with9600 in the legacy table.
+- Identity bytes contain TYPE FTA, SNR671 and a version-looking field4[byteA7]81. The current strict ASCII parser does not recognize FTA or the non-ASCII separator. Automatic identity is unverified; do not silently normalize the byte or invent version/serial semantics.
+- Registers62/63 returned0. Their support on this older firmware is unverified; zero is not proof of a valid model/serial or of a Data Lost state. STATUS remains25.
+- Raw TX/RX evidence is retained locally in tmp/com4-readonly-test/confirmed-report.json. No live GUI monitoring/control was enabled. Follow-up requires confirming the older identity/firmware format and the reported TC2 fault on the instrument display.
