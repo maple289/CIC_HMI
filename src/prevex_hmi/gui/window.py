@@ -24,15 +24,32 @@ from prevex_hmi.security.users import UserStore
 def table(headers):
     w=QTableWidget(0,len(headers));w.setHorizontalHeaderLabels(headers)
     w.setEditTriggers(QAbstractItemView.NoEditTriggers);w.setAlternatingRowColors(True)
-    w.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents);w.horizontalHeader().setStretchLastSection(True);w.verticalHeader().hide()
+    # Live traffic changes continuously. ResizeToContents repeatedly scans the
+    # entire table during cell updates and can starve the Qt event loop.
+    w.setWordWrap(False)
+    header=w.horizontalHeader();header.setSectionResizeMode(QHeaderView.Interactive)
+    header.setDefaultSectionSize(160)
+    for column,name in enumerate(headers):
+        w.setColumnWidth(column,260 if 'timestamp' in name.lower() else 700 if name=='Hexadecimal bytes' else 480 if name in ('Transition','Detail') else 160)
+    w.verticalHeader().setSectionResizeMode(QHeaderView.Fixed);w.verticalHeader().hide()
     return w
 
 
 def fill_table(widget,rows):
-    widget.setUpdatesEnabled(False);widget.setRowCount(len(rows))
-    for i,row in enumerate(rows):
-        for j,value in enumerate(row):widget.setItem(i,j,QTableWidgetItem(str(value)))
-    widget.setUpdatesEnabled(True)
+    values=tuple(tuple(str(value) for value in row) for row in rows)
+    if getattr(widget,'_displayed_rows',None)==values and widget.rowCount()==len(values):return
+    updating=widget.updatesEnabled();blocked=widget.blockSignals(True)
+    widget.setUpdatesEnabled(False)
+    try:
+        if widget.rowCount()!=len(values):widget.setRowCount(len(values))
+        for i,row in enumerate(values):
+            for j,value in enumerate(row):
+                item=widget.item(i,j)
+                if item is None:widget.setItem(i,j,QTableWidgetItem(value))
+                elif item.text()!=value:item.setText(value)
+        widget._displayed_rows=values
+    finally:
+        widget.blockSignals(blocked);widget.setUpdatesEnabled(updating)
 
 
 class MainWindow(QMainWindow):

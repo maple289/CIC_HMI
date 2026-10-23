@@ -33,7 +33,7 @@ For700 LEL, Save Settings and Modbus Lock/Unlock are unavailable under the revis
 - Live trends: signed values, mouse-wheel zoom, drag pan; bounded1800 points. Communication gaps break the curve.
 - History / CSV: select time range, load up to5000 primary records, export those rows with instrument ID and UTC timestamps. Plots display local time.
 - Alarm history: latest500 status/communication transitions, independent of measurement logging.
-- Diagnostics: poll/error counts, response timing, bounded TX/RX data, documented read-only inspection. Inject simulated timeout/CRC/protocol/unknown-identity/lost-command-ack faults. Set fault to `none` for recovery; backoff can take up to60s. Forced readings and STATUS codes support offline testing.
+- Diagnostics: poll/error counts, response timing, bounded TX/RX data, documented read-only inspection. Traffic columns have stable widths; drag header dividers to resize them and use horizontal scrolling for long hexadecimal frames. Inject simulated timeout/CRC/protocol/unknown-identity/lost-command-ack faults. Set fault to `none` for recovery; backoff can take up to60s. Forced readings and STATUS codes support offline testing.
 - Command audit: user, target, command, outcome and detail, including rejections and unknown results.
 
 ## User data and deployment

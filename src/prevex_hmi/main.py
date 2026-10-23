@@ -7,6 +7,7 @@ from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 import sys
+import time
 
 from PySide6.QtCore import QStandardPaths, QTimer
 from PySide6.QtGui import QFont, QFontDatabase
@@ -60,6 +61,14 @@ def main() -> int:
     window.show()
     errors=[]
     if args.smoke_test:
+        heartbeat_times=[]
+        heartbeat=QTimer(window);heartbeat.setInterval(100)
+        heartbeat.timeout.connect(lambda:heartbeat_times.append(time.monotonic()));heartbeat.start()
+        diagnostic_updates=[]
+        def open_diagnostics():
+            window.navigation.setCurrentRow(4)
+            diagnostic_updates.append(window.update_count)
+        QTimer.singleShot(1500,open_diagnostics)
         def finish():
             try:
                 if window.update_count < 2:
@@ -68,19 +77,23 @@ def main() -> int:
                     raise RuntimeError("Single simulated analyzer is not current")
                 if not window.identity.get("controls_verified"):
                     raise RuntimeError("Automatic instrument identification failed")
+                gap=max((b-a for a,b in zip(heartbeat_times,heartbeat_times[1:])),default=0)
+                active_updates=window.update_count-diagnostic_updates[0] if diagnostic_updates else 0
+                if gap > 1.5 or active_updates < 8 or window.traffic.rowCount()!=100:
+                    raise RuntimeError(f"Diagnostics responsiveness failed: heartbeat gap={gap:.2f}s, updates={active_updates}, rows={window.traffic.rowCount()}")
                 for index,name in [(0,"overview"),(0,"detail"),(1,"trends"),(4,"diagnostics")]:
                     window.navigation.setCurrentRow(index)
                     app.processEvents()
                     if not window.grab().save(str(data_path/f"{name}.png")):
                         raise RuntimeError("Window rendering failed")
-                (data_path/"smoke-report.json").write_text(json.dumps({"result":"PASS","mode":"simulation","updates":window.update_count,"devices":1,"detected_family":window.identity.get("family"),"gauge_parameters":len(window.readouts),"physical_access":False},indent=2),encoding="utf-8")
+                (data_path/"smoke-report.json").write_text(json.dumps({"result":"PASS","mode":"simulation","updates":window.update_count,"devices":1,"detected_family":window.identity.get("family"),"gauge_parameters":len(window.readouts),"diagnostics_updates":active_updates,"maximum_heartbeat_gap_ms":round(gap*1000,1),"physical_access":False},indent=2),encoding="utf-8")
                 print(f"PASS: single-analyzer GUI, updates={window.update_count}, detected={window.identity.get('family')}")
             except Exception as error:
                 errors.append(str(error))
                 print(f"FAIL: {error}")
             finally:
                 window.close()
-        QTimer.singleShot(4000,finish)
+        QTimer.singleShot(12000,finish)
     result=app.exec()
     return 1 if errors else result
 

@@ -1,3 +1,11 @@
+# Diagnostics responsiveness fix (2026-10-23)
+
+- Reproduced progressive GUI starvation with Diagnostics open and100 live traffic rows at1100x780. Timer gaps grew from0.5s to8.7s while the serial worker remained responsive. Tracebacks identified table cell replacement and ResizeToContents processing on the Qt thread.
+- Replaced automatic content-based resizing with stable, user-resizable column widths and unwrapped cells. Reuse existing cells, update only changed text, skip unchanged table contents and restore signal/paint state after batch updates. Applied to traffic/history/event/audit tables to prevent the same repeated work there.
+- Added a bounded subprocess regression exercising full100-row maximum-length frame updates, Qt timer responsiveness, mouse navigation back to Gauge and clearing/reloading the table. The subprocess timeout turns an event-loop stall into a test failure.
+- Extended source and packaged smoke tests to keep Diagnostics open under live polling for12s and check heartbeat gaps, continued updates and full bounded traffic.
+- Validation:587 tests passed in18.63s. Source smoke passed(39 Diagnostics updates,max heartbeat gap110ms); rebuilt executable passed(exit0,40 Diagnostics updates,max heartbeat gap125ms). Manual18s reproduction stayed around0.5s timer gaps after the fix. Diagnostics screenshot and whitespace check passed. No physical access or writes.
+
 # Active indicator display (2026-10-23)
 
 - Status/Relays/Service now show only current active indicators. Inactive/unavailable/stale indicators and empty category rows are hidden. Communication quality and current STATUS remain visible in the summary; stale STATUS is marked unavailable.
