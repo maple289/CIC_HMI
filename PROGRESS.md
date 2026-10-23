@@ -4,6 +4,9 @@
 Milestone 1 in progress. No physical instruments accessed. Physical transport will be read-only, unavailable from the initial simulation GUI, and require explicit authorization to open a port. Offline operation is mandatory.
 
 ## Completed
+- Added per-family register inventories and exact Decimal conversions, with manufacturer access separated from application write permission.
+- Documented protocol pages, command exclusions, model restrictions and 17 hardware / documentation verification gates in Docs/.
+- Added Windows GitHub Actions workflow: locked dependency install, pip check, Python compilation, pytest, generated-inventory consistency, offscreen Qt/plot smoke check, and retained test evidence.
 - Git repository connected; three source PDFs preserved in Docs/.
 - Read all three PDF extracts; captured page-separated source text in Docs/extracted/.
 - Confirmed Python 3.12.14 bundled runtime; created local .venv.
@@ -19,6 +22,7 @@ Milestone 1 in progress. No physical instruments accessed. Physical transport wi
 - See forthcoming Docs/REGISTER_SPECIFICATION.md and Docs/VERIFICATION.md.
 
 ## Test results
+Register/profile tests: 382 passed locally on Python 3.12.14. Includes signed boundaries and inverse conversions for every scaled definition, legacy dilution, FID units, status/relay/service mapping, unsupported registers, write restrictions and model limits. GitHub-hosted run pending push.
 2026-10-22 environment smoke check: PASS on Python 3.12.14.
 - Imports passed: PySide6 6.8.3, pymodbus 3.11.3, pyserial 3.5, pyqtgraph 0.13.7, numpy 2.2.6, pytest 8.4.2, PyInstaller 6.16.0.
 - SQLite and JSON round trip passed.
@@ -27,4 +31,4 @@ Milestone 1 in progress. No physical instruments accessed. Physical transport wi
 - This checks the development environment, not the HMI application, packaging, physical communications, or full acceptance criteria. Visible VS Code launch remains for the user to verify.
 
 ## Next steps
-Finish complete register inventory and metadata; implement conversions, serialized scheduler, read-only serial adapter, simulator, tests; then monitoring GUI.
+Implement serialized scheduler, read-only serial adapter, simulator and communication tests; then monitoring GUI. Hardware verification remains pending; this is not yet a complete Milestone 1.
