@@ -68,10 +68,10 @@ class DeviceEditor(QDialog):
 
 
 class DeviceManager(QDialog):
-    """Order is the saved overview-card layout; no physical connection settings."""
+    """Order is the saved analyzer-selector order; no physical connection settings."""
     def __init__(self, devices: list[DeviceConfig], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Manage simulated analyzers / overview order")
+        self.setWindowTitle("Manage simulated analyzers / selector order")
         self.resize(650,450)
         self.devices=list(devices)
         layout=QVBoxLayout(self)

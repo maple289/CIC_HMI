@@ -4,6 +4,8 @@
 Milestone 1 software foundation and Milestone 2 simulation monitoring preview implemented. No physical instruments accessed. Physical transport is read-only, unavailable from the GUI, and requires explicit authorization to open a port. Offline operation is mandatory. Missing/ambiguous hardware behavior remains gated, not claimed complete. This is not the full production release.
 
 ## Completed
+- Updated operator-screen requirement: show exactly one selected analyzer, including in simulation; the initial four-card overview is replaced. A persistent global selector switches the monitoring gauge, details, live/history trends, alarm list and device diagnostics together. All enabled analyzers continue to poll in the background.
+- Added native Qt circular gauge using FULLSCLE and model-specific alarm thresholds. Unknown thresholds stay neutral; offline/stale/disabled values hide the indicator. Out-of-range numeric values are preserved. Compact windows scroll instead of clipping the gauge/chart.
 - Added Qt monitoring overview, independent analyzer detail screens, family-specific engineering values, relay/service indicators and live PyQtGraph trends.
 - Added saved simulation-device management (add/edit/disable/remove/sort/reorder), duplicate-address prevention and dark/light themes.
 - Added threaded polling and database ownership, signal-based GUI updates, asynchronous shutdown and explicit GOOD/STALE/OFFLINE/DISABLED state. Old process values are hidden when not current.
@@ -35,6 +37,7 @@ Milestone 1 software foundation and Milestone 2 simulation monitoring preview im
 - See forthcoming Docs/REGISTER_SPECIFICATION.md and Docs/VERIFICATION.md.
 
 ## Test results
+Single-analyzer/gauge update: 494 tests passed locally (latest full run2.29s), covering range mapping, LEL legacy200%LFL, FID range/units, BTU low/high bands, missing thresholds, out-of-range values, hidden stale indicators, cross-page selection, selection persistence and clearing previous-device data. Four-device background polling GUI smoke passed; screenshots checked for LEL/BTU/FID, light theme and offline state. Compact-window overlap corrected with scrollable content. Rebuilt Windows executable passed its smoke test (exit0,7 updates,4 background devices,physical_access=false). Hosted CI pending for this change.
 Monitoring checkpoint: 481 tests passed locally in 2.19s. Independent expected-factor cases cover every scaled register, beyond inverse-round-trip tests. Includes settings persistence/corruption, independent history stream identity, SQLite retention/quality, widgets suppressing stale values and threaded fault isolation/clean shutdown.
 Source GUI smoke passed with four simulated analyzers, and overview/detail/trend/diagnostics screenshots visually inspected. Final PyInstaller rebuild passed, and packaged EXE exited0 with a PASS smoke report (7 updates,4 devices,physical_access=false). Final local regression: 481 passed in2.14s; pip check and source compilation passed. Hosted monitoring CI run is pending push at this entry.
 Communication/profile foundation: 404 tests passed locally (0.76s), including thread-concurrency serialization, aggregate pacing and 16-device failure isolation/recovery. All device I/O simulated or mocked. Source compilation and whitespace checks passed.

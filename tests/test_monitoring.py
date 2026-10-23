@@ -106,11 +106,12 @@ def test_widgets_hide_stale_data_and_render_model_specific_values(app,tmp_path):
     window.update_data([data],bus.diagnostics())
     window.open_device(data["config"]["id"])
     assert "100.00" in window.detail_reading.text()
-    assert "100.00" in window.cards[data["config"]["id"]].text()
+    assert window.gauge.state.reading == "100.00"
     data["quality"]="OFFLINE"
     window.update_data([data],bus.diagnostics())
     assert window.detail_reading.text().strip() == "--"
-    assert "100.00" not in window.cards[data["config"]["id"]].text()
+    assert window.gauge.state.reading == "--"
+    assert window.gauge.state.fraction is None
     window.close()
     bus.close()
 
@@ -127,10 +128,44 @@ def test_threaded_monitoring_fault_history_and_clean_close(app,tmp_path):
         until(app,lambda:bool(window.history_rows))
         window.worker.request("fault",1,"timeout")
         until(app,lambda:window.snapshots["lel-1"]["quality"] == "OFFLINE")
-        assert "--" in window.cards["lel-1"].text()
+        assert window.gauge.state.reading == "--"
         assert any(s["quality"] == "GOOD" for id,s in window.snapshots.items() if id != "lel-1")
     finally:
         window.close()
         until(app,lambda:not window.worker.isRunning())
         app.processEvents()
     assert (tmp_path/"simulation.sqlite3").exists()
+
+
+def test_selection_switches_all_process_views_and_clears_previous_values(app,tmp_path):
+    settings=load_settings(tmp_path/"settings.json")
+    window=MainWindow(settings,tmp_path/"settings.json",tmp_path,start_worker=False)
+    bus=BusEngine(SimulatedBus(default_devices()))
+    lel=snapshot()
+    fid=snapshot(family="FID")
+    window.update_data([lel,fid],bus.diagnostics())
+    assert window.monitor_name.text() == lel["config"]["name"]
+    assert window.gauge.state.unit == "%LFL"
+    window.selected.setCurrentIndex(window.selected.findData("fid-3"))
+    assert window.monitor_name.text() == fid["config"]["name"]
+    assert window.gauge.state.unit == "PPM"
+    assert window.detail_reading.text().endswith("PPM")
+    assert all(c.currentData() == "fid-3" for c in (window.selected,window.trend_device,window.history_device,window.fault_device))
+    assert json.loads((tmp_path/"settings.json").read_text())["selected_device"] == "fid-3"
+    # Select a configured analyzer that has not replied: no FID value can linger.
+    window.selected.setCurrentIndex(window.selected.findData("btu-2"))
+    assert window.gauge.state.reading == "--"
+    assert window.detail_reading.text() == "--"
+    assert window.parameters.rowCount() == 0
+    assert window.overview_curve.xData is None or len(window.overview_curve.xData) == 0
+    window.close()
+    bus.close()
+
+
+def test_selected_events_are_filtered(app,tmp_path):
+    settings=load_settings(tmp_path/"settings.json")
+    window=MainWindow(settings,tmp_path/"settings.json",tmp_path,start_worker=False)
+    window.update_events([("now","lel-1","Warning","GOOD"),("now","fid-3","Danger","GOOD")])
+    assert window.event_table.rowCount() == 1
+    assert window.event_table.item(0,1).text() == "lel-1"
+    window.close()

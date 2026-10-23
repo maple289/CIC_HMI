@@ -17,6 +17,7 @@ from prevex_hmi.devices.models import DeviceConfig
 from prevex_hmi.gui.device_dialogs import DeviceManager
 from prevex_hmi.gui.presentation import format_reading, measurement, severity
 from prevex_hmi.gui.worker import MonitoringWorker
+from prevex_hmi.gui.gauge import CircularGauge
 from prevex_hmi.profiles import PROFILES
 from prevex_hmi.registers.schema import decode_relays, decode_service
 
@@ -75,10 +76,16 @@ class MainWindow(QMainWindow):
         banner=QLabel("SIMULATION MODE  |  Synthetic analyzer data  |  No physical connection  |  Controls unavailable")
         banner.setObjectName("simulationBanner")
         root.addWidget(banner)
+        selection_row=QHBoxLayout()
+        selection_row.addWidget(QLabel("SELECT ANALYZER"))
+        self.selected=QComboBox()
+        self.selected.setMinimumWidth(340)
+        selection_row.addWidget(self.selected,1)
+        root.addLayout(selection_row)
         body=QHBoxLayout()
         self.navigation=QListWidget()
         self.navigation.setFixedWidth(190)
-        self.navigation.addItems(["Overview","Analyzer details","Live trends","History / CSV","Alarm / event history","Diagnostics"])
+        self.navigation.addItems(["Analyzer","Analyzer details","Live trends","History / CSV","Alarm / event history","Diagnostics"])
         body.addWidget(self.navigation)
         self.pages=QStackedWidget()
         body.addWidget(self.pages,1)
@@ -91,6 +98,7 @@ class MainWindow(QMainWindow):
         self.build_history()
         self.build_events()
         self.build_diagnostics()
+        self.selected.currentIndexChanged.connect(self.select_analyzer)
         self.navigation.setCurrentRow(0)
         self.apply_theme()
         self.refresh_devices()
@@ -112,27 +120,55 @@ class MainWindow(QMainWindow):
         return page,layout
 
     def build_overview(self):
-        _,layout=self.page("Analyzer overview","Shared RS485 bus model - refresh rates depend on total bus traffic.")
+        _,outer=self.page("Analyzer monitoring","One selected analyzer at a time. Use the selector above to switch instruments; background polling continues for all enabled devices.")
+        scroll=QScrollArea()
+        scroll.setWidgetResizable(True)
+        content=QWidget()
+        content.setMinimumHeight(600)
+        layout=QVBoxLayout(content)
+        layout.setContentsMargins(0,0,0,0)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
         row=QHBoxLayout()
-        manage=QPushButton("Manage analyzers / arrange cards")
+        manage=QPushButton("Manage analyzers")
         manage.clicked.connect(self.manage_devices)
         row.addWidget(manage)
         row.addStretch()
         layout.addLayout(row)
-        scroll=QScrollArea()
-        scroll.setWidgetResizable(True)
-        self.card_container=QWidget()
-        self.card_layout=QGridLayout(self.card_container)
-        self.card_layout.setAlignment(Qt.AlignTop)
-        scroll.setWidget(self.card_container)
-        layout.addWidget(scroll)
-        self.cards={}
+        hero=QHBoxLayout()
+        self.gauge=CircularGauge()
+        hero.addWidget(self.gauge,3)
+        info=QVBoxLayout()
+        self.monitor_name=QLabel("No analyzer selected")
+        self.monitor_name.setObjectName("heading")
+        self.monitor_name.setWordWrap(True)
+        info.addWidget(self.monitor_name)
+        self.monitor_model=QLabel()
+        self.monitor_model.setWordWrap(True)
+        info.addWidget(self.monitor_model)
+        self.monitor_status=QLabel("Waiting for first update")
+        self.monitor_status.setObjectName("monitorStatus")
+        self.monitor_status.setWordWrap(True)
+        info.addWidget(self.monitor_status)
+        self.monitor_updated=QLabel()
+        self.monitor_updated.setWordWrap(True)
+        info.addWidget(self.monitor_updated)
+        self.monitor_parameters=QLabel()
+        self.monitor_parameters.setWordWrap(True)
+        info.addWidget(self.monitor_parameters)
+        details=QPushButton("Open analyzer details")
+        details.clicked.connect(lambda:self.open_device(self.selected.currentData()))
+        info.addWidget(details)
+        info.addStretch()
+        hero.addLayout(info,2)
+        layout.addLayout(hero,3)
+        self.overview_plot=self.make_plot()
+        self.overview_plot.setMinimumHeight(180)
+        self.overview_curve=self.overview_plot.plot(pen=pg.mkPen("#3ccbb1",width=2),connect="finite")
+        layout.addWidget(self.overview_plot,2)
 
     def build_details(self):
         _,layout=self.page("Analyzer details","Only documented parameters for the selected family are shown. -- means unavailable.")
-        self.selected=QComboBox()
-        self.selected.currentIndexChanged.connect(self.refresh_detail)
-        layout.addWidget(self.selected)
         hero=QHBoxLayout()
         self.detail_reading=QLabel("--")
         self.detail_reading.setObjectName("reading")
@@ -165,7 +201,7 @@ class MainWindow(QMainWindow):
     def build_trends(self):
         _,layout=self.page("Live trends","Zoom with the mouse wheel; drag to pan. The latest 1800 points are retained in memory; communication gaps break the line.")
         self.trend_device=QComboBox()
-        self.trend_device.currentIndexChanged.connect(self.refresh_trend)
+        self.trend_device.currentIndexChanged.connect(lambda:self.activate_from(self.trend_device))
         layout.addWidget(self.trend_device)
         self.trend_plot=self.make_plot()
         self.trend_curve=self.trend_plot.plot(pen=pg.mkPen("#3ccbb1",width=2),connect="finite")
@@ -176,6 +212,7 @@ class MainWindow(QMainWindow):
         row=QHBoxLayout()
         self.history_device=QComboBox()
         self.history_device.currentIndexChanged.connect(self.clear_history)
+        self.history_device.currentIndexChanged.connect(lambda:self.activate_from(self.history_device))
         row.addWidget(self.history_device,1)
         self.history_hours=QComboBox()
         for text,hours in [("Last hour",1),("Last 24 hours",24),("Last 7 days",168),("Last 90 days",2160)]:
@@ -211,6 +248,7 @@ class MainWindow(QMainWindow):
         fault_row=QHBoxLayout()
         self.fault_device=QComboBox()
         self.fault_device.currentIndexChanged.connect(self.refresh_inspector)
+        self.fault_device.currentIndexChanged.connect(lambda:self.activate_from(self.fault_device))
         self.fault_kind=QComboBox()
         self.fault_kind.addItems(["none","timeout","crc","protocol"])
         fault_row.addWidget(self.fault_device,1)
@@ -232,33 +270,83 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.traffic)
 
     def refresh_devices(self):
+        previous=self.selected.currentData() or self.settings.get("selected_device")
         self.devices=[DeviceConfig(**r) for r in self.settings["devices"]]
         current_ids={d.id for d in self.devices}
         self.series={id:points for id,points in self.series.items() if id in current_ids}
-        while self.card_layout.count():
-            item=self.card_layout.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
-        self.cards={}
-        for index,device in enumerate(self.devices):
-            card=QPushButton(f"{device.name}\n{device.family} | address {device.address}\n--\nWaiting for first update")
-            card.setMinimumHeight(205)
-            card.setObjectName("analyzerCard")
-            card.clicked.connect(lambda checked=False,id=device.id:self.open_device(id))
-            self.card_layout.addWidget(card,index//2,index%2)
-            self.cards[device.id]=card
         for combo in (self.selected,self.trend_device,self.history_device,self.fault_device):
             combo.blockSignals(True)
             combo.clear()
             for device in self.devices:
-                combo.addItem(device.name,device.id)
+                combo.addItem(f"{device.name}  /  {device.family}  /  address {device.address}",device.id)
+            index=combo.findData(previous)
+            combo.setCurrentIndex(index if index >= 0 else 0)
             combo.blockSignals(False)
+        self.select_analyzer()
         self.refresh_inspector()
+
+    def activate_from(self,combo):
+        index=self.selected.findData(combo.currentData())
+        if index >= 0:
+            self.selected.setCurrentIndex(index)
+
+    def select_analyzer(self,*_):
+        id=self.selected.currentData()
+        for combo in (self.trend_device,self.history_device,self.fault_device):
+            if combo.currentData() != id:
+                combo.blockSignals(True)
+                combo.setCurrentIndex(combo.findData(id))
+                combo.blockSignals(False)
+        self.clear_history()
+        self.refresh_inspector()
+        self.refresh_monitor()
+        self.refresh_detail()
+        self.refresh_trend()
+        # Hide results from the previously selected instrument immediately.
+        self.event_table.setRowCount(0)
+        self.device_stats.setRowCount(0)
+        self.traffic.setRowCount(0)
+        self.inspection_result.setText("No manual read requested")
+        self.diagnostics_summary.setText("Waiting for selected analyzer diagnostics")
+        self.settings["selected_device"]=id
+        try:
+            save_settings(self.settings_path,self.settings)
+        except OSError as error:
+            self.statusBar().showMessage(f"Selection could not be saved: {error}")
+
+    def refresh_monitor(self):
+        id=self.selected.currentData()
+        device=next((d for d in self.devices if d.id == id),None)
+        snapshot=self.snapshots.get(id)
+        self.gauge.set_snapshot(snapshot)
+        self.monitor_name.setText(device.name if device else "No analyzer configured")
+        self.monitor_model.setText(f"PREVEX {device.family}  |  {device.assembly}\nAddress {device.address}  |  Software {device.version}" if device else "Add an analyzer to begin monitoring")
+        if snapshot:
+            color,status=severity(snapshot)
+            self.monitor_status.setText(f"● {status}\nCommunication: {snapshot['quality']}")
+            self.monitor_status.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: 600;")
+            age="never" if snapshot["age"] is None else f"{snapshot['age']:.1f}s ago"
+            self.monitor_updated.setText(f"Last successful update: {age}\n{snapshot['error']}")
+            rows=[]
+            numbers=(9,11,15) if device.family == "LEL" else (9,10,11)
+            for number in numbers:
+                value,unit=measurement(snapshot,number)
+                rows.append(f"{PROFILES[device.family].register(number).name}: {float(value):.2f} {unit}" if value is not None else f"{PROFILES[device.family].register(number).name}: --")
+            self.monitor_parameters.setText("\n\n".join(rows))
+            self.summary.setText(f"{device.family}  |  {snapshot['quality']}  |  SIMULATION")
+        else:
+            self.monitor_status.setText("Waiting for first update" if device else "No analyzer selected")
+            self.monitor_status.setStyleSheet("color: #8290a5; font-size: 20px;")
+            self.monitor_updated.setText("Last successful update: never")
+            self.monitor_parameters.clear()
+            self.summary.setText("SIMULATION")
+        self.plot_series(self.overview_curve,self.overview_plot,id)
 
     def start_worker(self):
         self.worker=MonitoringWorker(self.devices,self.data_path,self)
         self.worker.updated.connect(self.update_data)
         self.worker.history_ready.connect(self.update_history)
-        self.worker.events_ready.connect(lambda rows:fill_table(self.event_table,rows))
+        self.worker.events_ready.connect(self.update_events)
         self.worker.failed.connect(self.worker_error)
         self.worker.inspection_ready.connect(self.inspection_result_ready)
         self.worker.inspection_failed.connect(self.inspection_result.setText)
@@ -272,29 +360,27 @@ class MainWindow(QMainWindow):
             config=snapshot["config"]
             id=config["id"]
             self.snapshots[id]=snapshot
-            color,status=severity(snapshot)
             value,unit=measurement(snapshot)
             good+=snapshot["quality"] == "GOOD"
-            age=snapshot["age"]
-            age_text="never" if age is None else f"{age:.1f}s ago"
-            card=self.cards.get(id)
-            if card:
-                card.setText(f"{config['name']}\n{config['family']}  /  address {config['address']}\n\n{format_reading(snapshot)}  {unit if value is not None else ''}\n\n● {status}  |  {snapshot['quality']}\nLast successful update: {age_text}")
-                card.setStyleSheet(f"QPushButton {{ border: 1px solid {color}; border-left: 5px solid {color}; text-align: left; padding: 18px; font-size: 15px; }}")
             marker=snapshot["last_success"],snapshot["quality"]
             if marker != self.last_sample.get(id):
                 timestamp=datetime.fromisoformat(snapshot["last_success"]).timestamp() if value is not None else time.time()
                 self.series.setdefault(id,deque(maxlen=1800)).append((timestamp,float(value) if value is not None else float("nan")))
                 self.last_sample[id]=marker
-        self.summary.setText(f"{good}/{len(snapshots)} current  |  SIMULATED BUS")
+        self.refresh_monitor()
         self.refresh_detail()
         self.refresh_trend()
         stats=diagnostics["bus"]
         rate=stats["success_rate"]
         self.diagnostics_summary.setText(f"9600 baud equivalent / 8N1 | Polls: {stats['polls']} | Success: {'--' if rate is None else f'{rate:.1f}%'} | Timeouts: {stats['timeouts']} | CRC errors: {stats['crc_errors']} | Last poll: {stats['last_poll']}\nLast response: {stats['last_response']} | Response time: {stats['last_response_ms']:.2f} ms | Shared bus cap: 8 requests/s; retries via bounded scheduler backoff")
-        fill_table(self.device_stats,[(a,s["polls"],s["successes"],s["timeouts"],s["crc_errors"],s["protocol_errors"],f"{s['last_response_ms']:.2f}") for a,s in diagnostics["devices"].items()])
-        fill_table(self.traffic,[(r["time"],r["direction"],r["address"],r["register"],r["hex"]) for r in diagnostics["traffic"][-100:]])
+        active=next((d for d in self.devices if d.id == self.selected.currentData()),None)
+        address=active.addressing.packet_address if active else None
+        fill_table(self.device_stats,[(a,s["polls"],s["successes"],s["timeouts"],s["crc_errors"],s["protocol_errors"],f"{s['last_response_ms']:.2f}") for a,s in diagnostics["devices"].items() if a == str(address)])
+        fill_table(self.traffic,[(r["time"],r["direction"],r["address"],r["register"],r["hex"]) for r in diagnostics["traffic"] if r["address"] == address][-100:])
         self.received.emit()
+
+    def update_events(self,rows):
+        fill_table(self.event_table,[r for r in rows if r[1] == self.selected.currentData()])
 
     def open_device(self,id):
         self.selected.setCurrentIndex(self.selected.findData(id))
@@ -305,6 +391,13 @@ class MainWindow(QMainWindow):
         id=self.selected.currentData()
         snapshot=self.snapshots.get(id)
         if not snapshot:
+            self.detail_reading.setText("--")
+            self.detail_status.setText("Waiting for selected analyzer")
+            self.detail_meta.clear()
+            self.parameters.setRowCount(0)
+            self.relays.setText("RELAYS | unavailable")
+            self.service.setText("SERVICE | unavailable")
+            self.detail_curve.setData([],[])
             return
         config=snapshot["config"]
         color,status=severity(snapshot)
@@ -338,8 +431,7 @@ class MainWindow(QMainWindow):
         samples=self.series.get(id,[])
         curve.setData([t for t,v in samples],[v for t,v in samples])
         snapshot=self.snapshots.get(id)
-        if snapshot:
-            plot.setLabel("left","Measurement",units=measurement(snapshot)[1] if snapshot["quality"] == "GOOD" else "")
+        plot.setLabel("left","Measurement",units=measurement(snapshot)[1] if snapshot and snapshot["quality"] == "GOOD" else "")
 
     def refresh_trend(self,*_):
         self.plot_series(self.trend_curve,self.trend_plot,self.trend_device.currentData())
@@ -438,14 +530,15 @@ class MainWindow(QMainWindow):
         for id,snapshot in self.snapshots.items():
             snapshot["quality"]="OFFLINE"
             snapshot["error"]=message
-            card=self.cards.get(id)
-            if card: card.setText(f"{snapshot['config']['name']}\nOFFLINE\n--\nMonitoring stopped: {message}")
+        self.refresh_monitor()
         self.refresh_detail()
         self.summary.setText("MONITORING STOPPED")
         self.statusBar().showMessage(f"Monitoring stopped: {message}")
 
     def apply_theme(self):
         dark=self.settings.get("theme","dark") == "dark"
+        self.gauge.dark=dark
+        self.gauge.update()
         bg,panel,text,muted=("#0d1625","#172335","#e7edf7","#adbbcf") if dark else ("#f1f4f9","#ffffff","#172335","#425570")
         self.setStyleSheet(f"""
             QWidget {{ background: {bg}; color: {text}; font-family: 'Segoe UI'; font-size: 13px; }}
