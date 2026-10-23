@@ -36,3 +36,7 @@ GitHub Actions runs on pushes to `main`, pull requests and manual dispatch. The 
 One active analyzer and one polling connection. **Choose Analyzer Type** offers Auto Detect, LEL, BTU and FID. New installations simulate a700-series LEL analyzer using the full Rev D manual; legacy LEL simulation remains selectable. The Gauge page has a signed circular scale, manufacturer-specific digital readouts, status/relay/service indicators and a confirmed command panel. Local Viewer/Operator/Administrator checks and command audit records protect simulator controls.
 
 Physical connections and writes remain disabled. Test Connection identifies the simulated unit without enabling controls. Live/history trends, CSV export, diagnostics, fault injection and SQLite recording remain available. See [operating instructions](Docs/OPERATING.md) and [replacement specification](Docs/SINGLE_ANALYZER_SPECIFICATION.md).
+
+## Authorized real SNR671 bench session
+
+Open the authorized legacy controller with `scripts/launch_controller_bench.cmd` or `PREVEX-HMI.exe --controller-com4-bench`: COM4,9600/8N1,address1,read-only monitoring plus only confirmed Operator/Admin Acknowledge and Reset. Other physical writes remain blocked. See [bench evidence and command-result display](Docs/SNR671_BENCH.md). Use the read-only launcher when commands are not required. Close an existing bench instance before launching another.

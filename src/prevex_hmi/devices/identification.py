@@ -20,10 +20,19 @@ class Identification:
     text: str = ""
     warning: str = ""
     verified: bool = False
+    legacy_format: bool = False
 
 
 def parse_identity(text: str) -> Identification:
     clean=text.replace("\x00"," ").strip()
+    if re.match(r'^TYPE\s+FTAVER\s',clean,re.I) and re.search(r'\b(?:BTU|FID)\b',clean,re.I):
+        return Identification(text=clean,warning='Conflicting legacy FTA/analyzer family identity')
+    # Observed on the explicitly authorized SNR671 controller. Preserve the
+    # source glyph; interpreting A7 as a version separator remains provisional.
+    if re.match(r'^TYPE\s+FTAVER\s',clean,re.I) and re.search(r'\bSNR67[1245](?:D|K|P|PL)?\b',clean,re.I) and not re.search(r'\b(?:BTU|FID)\b',clean,re.I):
+        model=re.search(r'\bSNR67[1245](?:D|K|P|PL)?\b',clean,re.I).group(0).upper()
+        version=re.search(r'VER\s*(\d+)([.\xa7])(\d{2})\b',clean,re.I)
+        return Identification(family='LEL',model=model,version=f'{version[1]}.{version[3]}' if version else '',text=clean,warning='Legacy FTA compatibility profile: firmware separator and older register support remain provisional. Only explicitly authorized operator commands are permitted.',legacy_format=True)
     tokens=set(re.findall(r"\b(?:LEL|PREVEX|BTU|FID)\b",clean.upper()))
     families={"LEL" if t == "PREVEX" else t for t in tokens}
     if len(families) != 1:
@@ -39,7 +48,7 @@ def parse_identity(text: str) -> Identification:
 
 def detect(bus, addressing, *, alternate_page=False) -> Identification:
     def ascii_words(words):
-        return b"".join(words[n].to_bytes(2,"big") for n in sorted(words)).decode("ascii",errors="replace")
+        return b"".join(words[n].to_bytes(2,"big") for n in sorted(words)).decode("latin-1")
     try:
         try:
             words=bus.read(PROBE,addressing,1025 if alternate_page else 257,16)
@@ -66,7 +75,7 @@ def detect(bus, addressing, *, alternate_page=False) -> Identification:
             # Physical FID continuation remains blocked by the existing profile gate.
             words.update(bus.read(PROFILES["FID"],addressing,273,16))
             identity=parse_identity(ascii_words(words))
-        if identity.family == "LEL":
+        if identity.family == "LEL" and not identity.legacy_format:
             model_word=bus.read(PROFILES["LEL"],addressing,62,1)[62]
             model=LEL_TYPES.get(model_word,"")
             if model and identity.model and model != identity.model:
@@ -74,7 +83,7 @@ def detect(bus, addressing, *, alternate_page=False) -> Identification:
             if not identity.model and model:
                 identity=replace(identity,model=model)
         if identity.family and identity.model and identity.version:
-            return replace(identity,verified=True)
+            return replace(identity,verified=not bool(identity.warning))
         return replace(identity,warning=identity.warning or "Model or software version unavailable; manual verification required")
     except (OSError,ValueError,PermissionError) as error:
         return Identification(warning=f"Identification failed: {error}")
@@ -89,5 +98,5 @@ def resolve_profile(config, selection: str, identity: Identification):
     if not identity.verified and not warning:
         warning="Identity unverified; commands blocked"
     # Never interpret BTU/FID registers using a contradictory selected profile.
-    effective=replace(config,family=family,assembly=identity.model or config.assembly,version=identity.version or config.version)
+    effective=replace(config,family=family,assembly=identity.model or config.assembly,version=identity.version or config.version,register_profile='fta_4x' if identity.legacy_format else 'auto')
     return effective, warning, bool(identity.verified and not mismatch and not identity.warning)

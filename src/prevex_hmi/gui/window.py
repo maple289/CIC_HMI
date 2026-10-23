@@ -55,9 +55,10 @@ def fill_table(widget,rows):
 class MainWindow(QMainWindow):
     received=Signal()
 
-    def __init__(self,settings,settings_path:Path,data_path:Path,*,start_worker=True):
+    def __init__(self,settings,settings_path:Path,data_path:Path,*,start_worker=True,hardware_grant=None):
         super().__init__()
         self.settings,self.settings_path,self.data_path=settings,settings_path,data_path
+        self.hardware_grant=hardware_grant
         self.worker=None;self.snapshot=None;self.identity={};self.diagnostics={}
         self.snapshot_family=None;self.readouts={};self.history_rows=[];self.series=deque(maxlen=1800)
         self.last_sample=None;self.update_count=0;self.closing=False;self.next_action=None
@@ -106,7 +107,8 @@ class MainWindow(QMainWindow):
         self.monitor_model=QLabel();self.monitor_model.setWordWrap(True);info.addWidget(self.monitor_model)
         self.monitor_status=QLabel('Disconnected');self.monitor_status.setWordWrap(True);info.addWidget(self.monitor_status)
         self.monitor_updated=QLabel();self.monitor_updated.setWordWrap(True);info.addWidget(self.monitor_updated)
-        self.range_help=QLabel('Blue: negative section\nBold marker: zero\nAlarm bands use instrument thresholds');self.range_help.setWordWrap(True);info.addWidget(self.range_help);info.addStretch();hero.addLayout(info,2);readings.addLayout(hero)
+        self.range_help=QLabel('Blue: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nAlarm bands use instrument thresholds');self.range_help.setWordWrap(True);info.addWidget(self.range_help);info.addStretch();hero.addLayout(info,2);readings.addLayout(hero)
+        self.controller_display=QLabel();self.controller_display.setWordWrap(True);info.insertWidget(info.count()-1,self.controller_display)
         self.readout_container=QWidget();self.readout_grid=QGridLayout(self.readout_container);self.readout_grid.setContentsMargins(0,0,0,0);readings.addWidget(self.readout_container)
         self.overview_plot=self.make_plot();self.overview_plot.setMinimumHeight(180);self.overview_curve=self.overview_plot.plot(pen=pg.mkPen('#45cbb0',width=2),connect='finite');readings.addWidget(self.overview_plot)
         scroll.setWidget(content);body.addWidget(scroll,1)
@@ -117,6 +119,7 @@ class MainWindow(QMainWindow):
         for code,name in COMMANDS.items():
             button=QPushButton(name);button.setMinimumHeight(33);button.clicked.connect(lambda checked=False,code=code:self.send_command(code));column.addWidget(button);self.command_buttons[code]=button
         self.command_message=QLabel('Sign in and verify connection to authorize simulated commands.');self.command_message.setWordWrap(True);column.addWidget(self.command_message);column.addStretch()
+        self.command_proof=QLabel('No command sent in this session');self.command_proof.setWordWrap(True);column.insertWidget(column.indexOf(self.command_message),self.command_proof)
         command_scroll=QScrollArea();command_scroll.setWidgetResizable(True);command_scroll.setFixedWidth(236);command_scroll.setWidget(commands);body.addWidget(command_scroll)
 
     def build_readouts(self,family,config=None):
@@ -165,6 +168,7 @@ class MainWindow(QMainWindow):
     def build_diagnostics(self):
         layout=self.page('Diagnostics','One connection, serialized transactions. Raw traffic limited to500 frames; latest100 displayed.')
         self.diagnostics_summary=QLabel('Disconnected');self.diagnostics_summary.setWordWrap(True);layout.addWidget(self.diagnostics_summary)
+        self.simulation_controls=[]
         row=QHBoxLayout();self.fault_kind=QComboBox();self.fault_kind.addItems(['none','timeout','crc','protocol','unknown_identity','ambiguous_command']);row.addWidget(self.fault_kind)
         fault=QPushButton('Apply simulated fault / recovery');fault.clicked.connect(lambda:self.request('fault',self.fault_kind.currentText()));row.addWidget(fault);layout.addLayout(row)
         row=QHBoxLayout();self.forced_value=QDoubleSpinBox();self.forced_value.setRange(-10000,32000);self.forced_value.setDecimals(3);self.forced_value.setValue(-20);row.addWidget(self.forced_value)
@@ -173,6 +177,7 @@ class MainWindow(QMainWindow):
         row=QHBoxLayout();self.forced_status=QSpinBox();self.forced_status.setRange(0,255);row.addWidget(self.forced_status)
         status=QPushButton('Set simulated STATUS');status.clicked.connect(lambda:self.request('status',self.forced_status.value()));row.addWidget(status)
         dynamic_status=QPushButton('Resume dynamic status');dynamic_status.clicked.connect(lambda:self.request('status',None));row.addWidget(dynamic_status);layout.addLayout(row)
+        for controls in (self.fault_kind,self.forced_value,self.forced_status,fault,force,dynamic,status,dynamic_status):self.simulation_controls.append(controls)
         row=QHBoxLayout();self.inspect_register=QComboBox();row.addWidget(self.inspect_register)
         inspect=QPushButton('Inspect register (FC03)');inspect.clicked.connect(lambda:self.request('inspect',self.inspect_register.currentData()));row.addWidget(inspect)
         self.inspection_result=QLabel('No manual read');row.addWidget(self.inspection_result,1);layout.addLayout(row)
@@ -181,12 +186,15 @@ class MainWindow(QMainWindow):
     def refresh_connection_labels(self):
         c=self.settings['connection'];d=self.config
         self.selection_label.setText(f"{self.settings['analyzer_selection']} | Address {d.address} | {c['baud']} baud / 8N1 | {self.settings['mode'].upper()}")
-        self.banner.setText('SIMULATION MODE | One synthetic instrument | No physical port open' if self.settings['mode']=='simulation' else 'HARDWARE ACCESS BLOCKED | Explicit authorization and bench validation required')
+        self.banner.setText('SIMULATION MODE | One synthetic instrument | No physical port open' if self.settings['mode']=='simulation' else ('LIVE CONTROLLER BENCH TEST | ACK/RESET require confirmation | Sensor assembly disconnected' if self.hardware_grant.operator_commands else 'LIVE CONTROLLER BENCH TEST | READ ONLY | Sensor assembly disconnected') if self.hardware_grant else 'HARDWARE ACCESS BLOCKED | Explicit authorization required')
+        for widget in self.simulation_controls:widget.setEnabled(self.settings['mode']=='simulation')
 
     def invalidate(self,reason='Disconnected'):
         self.snapshot=None;self.identity={};self.series.clear();self.last_sample=None;self.history_rows=[];self.command_dispatching=False
         self.gauge.set_snapshot(None);self.indicators.update_snapshot(None)
         self.monitor_status.setText(reason);self.monitor_updated.setText('No current measurement');self.identity_label.setText(reason)
+        self.controller_display.clear()
+        self.command_proof.setText('No command sent in this session');self.command_proof.setStyleSheet('')
         for value,quality in self.readouts.values():value.setText('--');quality.setText('UNAVAILABLE')
         for curve in (self.overview_curve,self.trend_curve,self.history_curve):curve.setData([],[])
         self.history_table.setRowCount(0);self.event_table.setRowCount(0);self.audit_table.setRowCount(0);self.traffic.setRowCount(0)
@@ -202,7 +210,7 @@ class MainWindow(QMainWindow):
         for button in (self.choose_button,self.connect_button,self.test_button):button.setEnabled(enabled)
 
     def start_worker(self,*,test_only=False):
-        self.worker=MonitoringWorker(copy.deepcopy(self.settings),self.data_path,self,test_only=test_only)
+        self.worker=MonitoringWorker(copy.deepcopy(self.settings),self.data_path,self,test_only=test_only,hardware_grant=self.hardware_grant)
         owner=self.worker
         def current():return self.worker is owner and not self.next_action and not self.closing
         self.worker.updated.connect(self.update_data);self.worker.identified.connect(self.identification_result)
@@ -244,6 +252,11 @@ class MainWindow(QMainWindow):
         config=DeviceConfig(**snapshot['config']);family=config.family
         if (family,profile_for(config).revision)!=self.snapshot_family:self.build_readouts(family,config)
         self.gauge.set_snapshot(snapshot);self.indicators.update_snapshot(snapshot)
+        lcd_numbers=range(51,56)
+        if snapshot.get('source')=='hardware' and all(measurement(snapshot,n)[0] is not None for n in lcd_numbers):
+            lcd=b''.join(snapshot['raw'][n].to_bytes(2,'big') for n in lcd_numbers).decode('latin-1').strip()
+            self.controller_display.setText(f'Controller display [51–55]: {lcd}\nRaw process [1]: 0x{snapshot["raw"][1]:04X}\nFault-state values; sensor conversion validation pending')
+        else:self.controller_display.clear()
         color,status=severity(snapshot);self.monitor_name.setText(f'PREVEX {family}')
         self.monitor_status.setText(f"{status}\n{snapshot['quality']}");self.monitor_status.setStyleSheet(f'color:{color};font-size:21px;font-weight:bold;')
         self.monitor_updated.setText(f"Last update (UTC):\n{snapshot['last_success'] or 'never'}\n{snapshot['error']}")
@@ -253,7 +266,7 @@ class MainWindow(QMainWindow):
             value,unit=measurement(snapshot,n)
             if n==2 and value is not None:widget.setText(profile_for(config).status(int(value)))
             else:widget.setText(f'{value:.{precision(family,n,snapshot["raw"].get(3,100))}f} {unit}' if value is not None else '--')
-            quality.setText('GOOD' if value is not None else snapshot['quality'] if snapshot['quality']!='GOOD' else unit.upper())
+            quality.setText(('COMM GOOD | CONTROLLER FAULT' if snapshot.get('source')=='hardware' and snapshot.get('instrument_quality')=='INSTRUMENT_FAULT' else 'GOOD') if value is not None else snapshot['quality'] if snapshot['quality']!='GOOD' else unit.upper())
         value,unit=measurement(snapshot)
         marker=(snapshot['last_success'],snapshot['quality'])
         if marker!=self.last_sample:
@@ -266,28 +279,51 @@ class MainWindow(QMainWindow):
         self.diagnostics_summary.setText(f"Single bus | {diagnostics['baud']} baud / 8N1 | Polls {stats['polls']} | Success {rate if rate is not None else '--'}% | Timeouts {stats['timeouts']} | CRC {stats['crc_errors']} | Protocol {stats['protocol_errors']}\nLast reply {stats['last_response']} | {stats['last_response_ms']:.2f} ms")
         fill_table(self.traffic,[(r['time'],r['direction'],r['address'],r['register'],r['hex']) for r in diagnostics['traffic'][-100:]])
         self.update_command_buttons();self.received.emit()
+        if snapshot.get('control',{}).get('receipt'):self.show_command_receipt(snapshot['control']['receipt'])
+
+    def show_command_receipt(self,receipt):
+        state=receipt['state'];color='#efb753'
+        title={'CHECKING':'Checking target','SENDING':'Command sent; waiting for reply','CONTROLLER_REPLIED':'Controller replied','STATE_CHANGED':'Controller replied — state changed','NO_STATE_CHANGE':'Controller replied — state unchanged','UNKNOWN':'Outcome unknown — do not retry','REJECTED':'Command not sent'}.get(state,state)
+        if state=='STATE_CHANGED':color='#39c6a4'
+        elif state in ('CONTROLLER_REPLIED','NO_STATE_CHANGE'):color='#69a7ed'
+        elif state in ('UNKNOWN','REJECTED'):color='#f27778'
+        lines=[title,COMMANDS.get(receipt['code'],f"0x{receipt['code']:04X}"),f"Reply received: {'YES' if receipt.get('reply_received') else 'NO'}"]
+        before=receipt.get('before');after=receipt.get('after')
+        if before and after:
+            lines.extend([f"STATUS: {before['status']} → {after['status']}",f"RELAYS: {before['relays']:04X} → {after['relays']:04X}",f"SERVICE: {before['service']:04X} → {after['service']:04X}",'Reply confirms receipt; execution is not proven by acknowledgment alone.'])
+        if receipt.get('detail'):lines.append(receipt['detail'])
+        if receipt.get('time'):lines.append(receipt['time'])
+        self.command_proof.setText('\n'.join(lines));self.command_proof.setStyleSheet(f'QLabel {{padding:8px;border:1px solid {color};border-radius:5px;color:{color};}}')
 
     def update_command_buttons(self):
         name,role=self.users.resolve(self.session);self.role_label.setText(f'{name} / {role}')
         snapshot=self.snapshot;control=snapshot.get('control',{}) if snapshot else {}
-        enabled=bool(snapshot and snapshot['quality']=='GOOD' and control.get('verified') and not control.get('pending') and not control.get('ambiguous') and role in ('Operator','Administrator') and not self.command_dispatching and self.worker and self.worker.isRunning() and self.settings['mode']=='simulation')
+        bench=bool(self.hardware_grant and self.hardware_grant.operator_commands and self.settings['mode']=='hardware')
+        enabled=bool(snapshot and snapshot['quality']=='GOOD' and control.get('verified') and not control.get('pending') and not control.get('ambiguous') and role in ('Operator','Administrator') and not self.command_dispatching and self.worker and self.worker.isRunning() and (self.settings['mode']=='simulation' or bench))
         for code,button in self.command_buttons.items():
+            physical=self.settings['mode']=='hardware'
+            button.setVisible(not physical or code in (0x100,0x200))
             active_config=DeviceConfig(**snapshot["config"]) if snapshot else self.config
-            allow=enabled and code in commands_for(active_config)
+            allow=enabled and code in ((0x100,0x200) if bench else commands_for(active_config))
             if snapshot and code in range(0x300,0x900,0x100):
                 lock_register=27 if profile_for(active_config).revision=='700' else 60
                 allow=allow and lock_register in snapshot['raw'] and not snapshot['raw'][lock_register]&(1 if lock_register==27 else 3) and snapshot['raw'].get(2) not in (4,5,6,7,11,12)
             button.setEnabled(bool(allow));button.setToolTip('Verified simulator identity, current communication and Operator/Administrator session required')
             if code not in commands_for(active_config):button.setToolTip('700-series Rev D: Lock/Unlock have no effect over Modbus; Save Settings permits factory changes. Not available in operational controls.')
+            if physical:button.setToolTip('Real controller:670 Rev Q p90. Operator/Administrator login and explicit confirmation required.' if bench else 'Start the explicitly authorized command bench session to test Acknowledge/Reset.')
         if control.get('pending'):self.command_message.setText('Command active: monitoring STATUS. Duplicate commands disabled.')
         elif control.get('ambiguous'):self.command_message.setText('Unknown command outcome. No retry; reconnect and review state.')
+        elif self.settings['mode']=='hardware':self.command_message.setText('Real controller: sign in as Operator/Administrator to test Acknowledge or Reset. Each action requires confirmation.' if bench else 'Read-only controller test. No commands enabled in this session.')
 
     def send_command(self,code):
         if code not in COMMANDS or not self.command_buttons[code].isEnabled():return
         config=self.snapshot['config']
-        answer=QMessageBox.question(self,'Confirm analyzer command',f"Target: {config['name']} / {config['family']} / address {config['address']}\n{COMMANDS[code]} (0x{code:04X})\nExecute this simulated command once?",QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
+        physical=self.settings['mode']=='hardware'
+        effects=('Acknowledge can silence the horn, clear Service Needed and adjust CHK FLOW.' if code==0x100 else 'Reset can clear corrected latched faults, adjust CHK FLOW and initiate ignition when Flameout is active.') if physical else ''
+        answer=QMessageBox.question(self,'Confirm analyzer command',f"Target: {config['name']} / {config['family']} / address {config['address']}\n{COMMANDS[code]} (0x{code:04X})\n{effects}\nExecute this {'REAL CONTROLLER' if physical else 'simulated'} command once?",QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
         if answer!=QMessageBox.Yes:return
         self.command_dispatching=True;self.update_command_buttons();self.request('command',code,self.session,True)
+        self.show_command_receipt({'code':code,'state':'SENDING','reply_received':False})
 
     def command_feedback(self,text):
         self.command_dispatching=False;self.command_message.setText(text);self.statusBar().showMessage(text);self.update_command_buttons()

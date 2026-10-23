@@ -135,3 +135,17 @@ class BusEngine:
                 return result
             finally:
                 self._last_end=self.clock()
+
+    def bench_operator_command(self,code: int) -> None:
+        from .serial_transport import ControllerBenchTransport
+        if not isinstance(self.transport,ControllerBenchTransport) or code not in (0x100,0x200):
+            raise PermissionError('No authorized operator bench command')
+        with self._lock:
+            if self.closed:raise RuntimeError('Bus closed')
+            deadline=max(self.clock(),(self._last_start or 0)+self.minimum_interval,(self._last_end or 0)+35/self.baud)
+            self.sleep(max(0,deadline-self.clock()));self._last_start=self.clock()
+            self._active={'address':1,'register':8,'count':1,'family':'LEL_BENCH_OPERATOR'}
+            try:
+                if code==0x100:self.transport.acknowledge()
+                else:self.transport.reset_alarms()
+            finally:self._last_end=self.clock()

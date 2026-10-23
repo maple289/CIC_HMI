@@ -65,3 +65,31 @@ class ReadOnlySerialTransport:
 
     def close(self) -> None:
         self._client.close()
+
+
+class ControllerBenchTransport(ReadOnlySerialTransport):
+    """User-authorized670 bench exception: ACK/RESET only, never arbitrary writes.
+
+    Codes:670 SERIES Rev Q p90 (PDF94). Each caller must provide the explicit
+    session grant; the worker additionally checks identity, role and confirmation.
+    """
+    def __init__(self,*args,bench_grant=None,**kwargs):
+        if bench_grant is None or not bench_grant.operator_commands:
+            raise PermissionError('Explicit Acknowledge/Reset bench authorization required')
+        if not args or args[0].upper()!=bench_grant.port or kwargs.get('baud',9600)!=bench_grant.baud:
+            raise PermissionError('Bench command transport is restricted to the authorized COM4 endpoint')
+        super().__init__(*args,**kwargs)
+
+    def _operator_action(self,code: int) -> None:
+        if code not in (0x0100,0x0200):raise PermissionError('Only Acknowledge/Reset are allowed')
+        self._received.clear()
+        try:
+            response=self._client.write_register(7,code,device_id=1)
+        except (ModbusException,OSError) as error:
+            self._client.close()
+            raise TimeoutError('Command response lost; outcome unknown. Never retry automatically.') from error
+        if response.isError() or response.address!=7 or response.registers!=[code]:
+            raise ProtocolError('Command response did not match; outcome unknown')
+
+    def acknowledge(self) -> None:self._operator_action(0x0100)
+    def reset_alarms(self) -> None:self._operator_action(0x0200)

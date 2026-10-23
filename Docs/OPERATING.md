@@ -1,3 +1,9 @@
+# Authorized SNR671 controller bench operation
+
+For the connected legacy LEL controller use `scripts/launch_controller_bench.cmd`, or the executable with `--controller-com4-bench`. This explicit process authorization opens only the tested COM4/9600/packet1/PDU-1 endpoint. Sign in/create a local Administrator to enable Acknowledge and Reset; each action requires confirmation. The result card distinguishes a reply from observed state changes or an unknown outcome. No calibration or general configuration writes are enabled. Close any prior bench instance first so only one owner uses COM4. Use `launch_controller_readonly.cmd` for monitoring without commands. See SNR671_BENCH.md for evidence and limitations.
+
+The following general preview instructions describe simulation and default hardware gating; the scoped bench launch above is the explicit exception.
+
 # Operating the single-analyzer preview
 
 Start `scripts/launch_windows.cmd`, or run `.venv/Scripts/python.exe scripts/run_hmi.py`. PowerShell activation is optional. A new installation opens one simulated700-series LEL analyzer with Auto Detect selected. The amber simulation banner remains visible. Synthetic data must never be used for safety functions.
@@ -14,7 +20,7 @@ LEL700 numeric identification replaces the removed legacy ASCII page. See LEL_70
 
 ## Gauge and indicators
 
-The circular gauge shows a blue negative section down to -30, a bold zero marker, the positive full scale and instrument alarm bands. FULLSCLE3 supplies the positive range when available. Optional manual fallback or display override is in Choose Analyzer Type. It changes only the display, never the instrument or FID conversion. Values beyond either endpoint retain their actual numeric reading. Negative sign alone does not determine a fault; STATUS does.
+The circular gauge shows a blue negative section, a bold zero marker, the positive full scale and instrument alarm bands. For LEL, the negative endpoint is-30 normally and-100 while current STATUS or Fault relay indicates a fault; it returns automatically when the fault clears. FULLSCLE3 supplies the positive range when available. Optional manual fallback or display override is in Choose Analyzer Type. It changes only the display, never the instrument or FID conversion. Values beyond either endpoint retain their actual numeric reading. Negative sign alone does not determine a fault; STATUS does.
 
 All documented Gauge-menu parameters for the selected revision appear as digital readouts with names, units, register numbers and validity. Scroll for additional tiles and the live plot. BTU's unnamed42 is marked unavailable and never polled. Unsupported registers are not invented. Missing/stale/offline measurements show `--`.
 

@@ -28,6 +28,7 @@ class DeviceConfig:
     range_mode: str = "auto"
     manual_maximum: float | None = None
     gauge_minimum: float = -30.0
+    register_profile: str = "auto"
 
     def __post_init__(self) -> None:
         if not self.id.strip() or not self.name.strip() or self.family not in PROFILES:
@@ -38,6 +39,8 @@ class DeviceConfig:
         self.addressing.pdu(1)
         if self.units not in (None, "US", "METRIC"):
             raise ValueError("Unknown unit context")
+        if self.register_profile not in ('auto','fta_4x') or (self.register_profile=='fta_4x' and self.family!='LEL'):
+            raise ValueError('Unsupported register compatibility profile')
         if self.range_mode not in ("auto", "manual"):
             raise ValueError("Range mode must be auto or manual")
         if self.manual_maximum is not None and (not math.isfinite(self.manual_maximum) or self.manual_maximum <= 0):

@@ -9,6 +9,8 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from prevex_hmi.gui.presentation import format_reading, measurement, severity
+from prevex_hmi.devices.models import DeviceConfig
+from prevex_hmi.profiles import profile_for
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,14 @@ def gauge_state(snapshot: dict | None) -> GaugeState:
     maximum = float(raw_maximum) if type(raw_maximum) is int and raw_maximum > 0 else None
     if snapshot['config']['family']=='FID' and maximum is not None and not 10 <= maximum <= 32000:maximum=None
     config=snapshot["config"]
+    minimum=config.get('gauge_minimum',-30)
+    if config['family']=='LEL' and snapshot['quality']=='GOOD':
+        age_limit=max(5,config['interval']*3)
+        ages=snapshot.get('register_ages',{})
+        status_code=snapshot['raw'].get(2)
+        status_fault=ages.get(2,0)<=age_limit and status_code in profile_for(DeviceConfig(**config)).statuses and status_code not in (0,1,2,4,5,6,7,11,12)
+        relay_fault=ages.get(4,0)<=age_limit and bool(snapshot['raw'].get(4,0)&4)
+        if status_fault or relay_fault:minimum=min(minimum,-100)
     manual=config.get("manual_maximum")
     source="Modbus FULLSCLE [3]"
     if config.get("range_mode","auto") == "manual":
@@ -84,7 +94,7 @@ def gauge_state(snapshot: dict | None) -> GaugeState:
         unit=unit if value is not None else "", reading=format_reading(snapshot),
         status=status if value is not None or snapshot["quality"] != "GOOD" else "Reading unavailable",
         color=color, bands=bands, thresholds=thresholds,
-        minimum=config.get("gauge_minimum",-30),range_source=source,
+        minimum=minimum,range_source=source,
     )
 
 

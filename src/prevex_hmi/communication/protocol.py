@@ -71,7 +71,7 @@ class Addressing:
 
 
 def canonical(profile: Profile, register: int) -> tuple[int, bool]:
-    if profile.protocol_documented:
+    if profile.protocol_documented and profile.revision!='fta_4x':
         if 1025 <= register <= 1040:
             return register - 768, True
         if 1281 <= register <= 1344:
@@ -87,7 +87,7 @@ def validate_read(profile: Profile, start: int, count: int) -> list[tuple[int, b
         # Rev D omits its page map. Single-word reads above64 avoid guessing
         # a page boundary; the simulator is not physical validation.
         windows += [(n,n) for n in range(65,106)]
-    if profile.protocol_documented:
+    if profile.protocol_documented and profile.revision!='fta_4x':
         windows += [(1025, 1040), (1281, 1344)]
     if not any(lo <= start <= start + count - 1 <= hi for lo, hi in windows):
         raise UnverifiedDefinition("Read crosses a documented register window")

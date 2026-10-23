@@ -30,11 +30,12 @@ class MonitoringWorker(QThread):
     command_result=Signal(str)
     failed=Signal(str)
 
-    def __init__(self,settings:dict,data_path:Path,parent=None,*,test_only=False):
+    def __init__(self,settings:dict,data_path:Path,parent=None,*,test_only=False,hardware_grant=None):
         super().__init__(parent)
         if len(settings['devices']) != 1: raise ValueError('One active analyzer required')
         self.settings,self.data_path=settings,data_path
         self.test_only=test_only
+        self.hardware_grant=hardware_grant
         self.stop_requested=threading.Event()
         self.messages=Queue(maxsize=50)
 
@@ -47,20 +48,31 @@ class MonitoringWorker(QThread):
     def run(self):
         bus=database=users=controller=None
         try:
-            if self.settings['mode'] != 'simulation':
-                raise PermissionError('Physical access is disabled pending explicit authorization and hardware validation. No port was opened.')
             configured=DeviceConfig(**self.settings['devices'][0])
-            actual=next(d for d in default_devices() if d.family == self.settings['simulated_family'])
-            actual=replace(actual,id=configured.id,name=configured.name,address=configured.address,address_mode=configured.address_mode,pdu_offset=configured.pdu_offset,enabled=True,interval=configured.interval,range_mode=configured.range_mode,manual_maximum=configured.manual_maximum,gauge_minimum=configured.gauge_minimum,logging_enabled=configured.logging_enabled)
-            if actual.family == "LEL" and self.settings.get("simulated_lel_revision","legacy") == "700":
-                actual=replace(actual,assembly="SNR705",version="7.01",fullscale=100)
-            if actual.family == 'FID': actual=replace(actual,fullscale=configured.fullscale,units=configured.units or 'US')
-            simulation=SimulatedBus([actual])
             connection=self.settings['connection']
-            bus=BusEngine(simulation,baud=connection['baud'])
+            simulation=None
+            physical=self.settings['mode']=='hardware'
+            if physical:
+                if self.hardware_grant is None:
+                    raise PermissionError('Physical access requires an explicitly authorized read-only session. No port was opened.')
+                self.hardware_grant.validate(self.settings,configured)
+                from prevex_hmi.communication.serial_transport import ReadOnlySerialTransport,ControllerBenchTransport
+                factory=ControllerBenchTransport if self.hardware_grant.operator_commands else ReadOnlySerialTransport
+                options={'bench_grant':self.hardware_grant} if self.hardware_grant.operator_commands else {}
+                transport=factory(connection['port'],hardware_authorized=True,addressing_reviewed=True,baud=connection['baud'],timeout=connection['timeout'],**options)
+            else:
+                actual=next(d for d in default_devices() if d.family == self.settings['simulated_family'])
+                actual=replace(actual,id=configured.id,name=configured.name,address=configured.address,address_mode=configured.address_mode,pdu_offset=configured.pdu_offset,enabled=True,interval=configured.interval,range_mode=configured.range_mode,manual_maximum=configured.manual_maximum,gauge_minimum=configured.gauge_minimum,logging_enabled=configured.logging_enabled)
+                if actual.family == "LEL" and self.settings.get("simulated_lel_revision","legacy") == "700":
+                    actual=replace(actual,assembly="SNR705",version="7.01",fullscale=100)
+                if actual.family == 'FID':actual=replace(actual,fullscale=configured.fullscale,units=configured.units or 'US')
+                simulation=SimulatedBus([actual]);transport=simulation
+            bus=BusEngine(transport,baud=connection['baud'])
             identity=detect(bus,configured.addressing,alternate_page=connection.get('identification_page') == 'alternate')
+            if physical:self.hardware_grant.validate_identity(identity)
             effective,warning,verified=resolve_profile(configured,self.settings['analyzer_selection'],identity)
-            info={**asdict(identity),'warning':warning,'controls_verified':verified,'test_only':self.test_only}
+            controls_verified=bool(self.hardware_grant.operator_commands and self.settings['analyzer_selection'] in ('Auto Detect','LEL')) if physical else verified
+            info={**asdict(identity),'warning':warning,'controls_verified':controls_verified,'test_only':self.test_only}
             if effective:
                 if effective.family == 'FID': effective=replace(effective,units=configured.units or 'US')
                 effective=replace(effective,enabled=True)
@@ -71,10 +83,14 @@ class MonitoringWorker(QThread):
             scheduler=PollingScheduler(bus,[effective])
             state=scheduler.states[effective.id]
             state.identification=identity.text
-            database=Historian(self.data_path/'simulation.sqlite3')
+            database=Historian(self.data_path/('hardware.sqlite3' if physical else 'simulation.sqlite3'))
             database.retain()
             users=UserStore(self.data_path/'users.sqlite3')
-            controller=CommandController(bus,effective,database,users,identity_verified=verified,expected_identity=identity)
+            command_class=CommandController
+            if physical and self.hardware_grant.operator_commands:
+                from prevex_hmi.communication.bench_commands import BenchOperatorCommands
+                command_class=BenchOperatorCommands
+            controller=command_class(bus,effective,database,users,identity_verified=controls_verified,expected_identity=identity)
             last_emit=last_identity=time.monotonic()
             last_logged=last_event=None
             while not self.stop_requested.is_set():
@@ -83,6 +99,8 @@ class MonitoringWorker(QThread):
                 if message:
                     try:
                         kind=message[0]
+                        if physical and kind in ('fault','reading','status'):
+                            raise PermissionError('Simulation injection is unavailable for a real controller')
                         if kind == 'fault': simulation.set_fault(effective.addressing.packet_address,message[1])
                         elif kind == 'history': self.history_ready.emit(database.history(effective.id,message[1]))
                         elif kind == 'inspect':
@@ -106,11 +124,14 @@ class MonitoringWorker(QThread):
                 now=time.monotonic()
                 if now-last_identity >= 30:
                     check=detect(bus,effective.addressing)
+                    if physical:self.hardware_grant.validate_identity(check)
                     last_identity=now
                     if (identity.verified and (not check.verified or (check.family,check.model,check.version,check.serial) != (identity.family,identity.model,identity.version,identity.serial))) or (check.family and check.family != effective.family):
                         raise OSError('Instrument identity changed or became unverifiable. Polling stopped; reconnect to identify again.')
                 if now-last_emit >= 0.25:
                     snapshot=state.snapshot(now)
+                    snapshot['source']='hardware' if physical else 'simulation'
+                    snapshot['instrument_quality']='INSTRUMENT_FAULT' if snapshot['raw'].get(2) not in (None,0,1,2,4,5,6,7,11,12) else 'GOOD'
                     controller.observe(snapshot)
                     status=snapshot['raw'].get(2)
                     event=(snapshot['quality'],status)
@@ -124,10 +145,10 @@ class MonitoringWorker(QThread):
                             for number in snapshot['raw']:
                                 if number >= 257: continue
                                 value,unit=measurement(snapshot,number)
-                                if value is not None: database.measurement(snapshot['last_success'],effective.id,number,float(value),unit,'GOOD',status)
+                                if value is not None: database.measurement(snapshot['last_success'],effective.id,number,float(value),unit,snapshot['instrument_quality'],status)
                         last_logged=snapshot['last_success']
                     database.commit()
-                    snapshot['control']={'verified':controller.identity_verified,'pending':controller.pending is not None,'ambiguous':controller.ambiguous,'message':controller.result}
+                    snapshot['control']={'verified':controller.identity_verified,'pending':controller.pending is not None,'ambiguous':controller.ambiguous,'message':controller.result,'receipt':getattr(controller,'receipt',None)}
                     self.updated.emit(snapshot,bus.diagnostics())
                     self.events_ready.emit(database.events())
                     self.audit_ready.emit(database.audit_rows())

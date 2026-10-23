@@ -18,6 +18,27 @@ def reading(family="LEL",value=25,maximum=100,quality="GOOD"):
     return {"config":asdict(device),"raw":raw,"quality":quality,"age":0,"last_success":datetime.now(timezone.utc).isoformat(),"error":"","identification":"test"}
 
 
+def test_lel_fault_scale_adapts_and_restores_without_clamping_numeric_value():
+    snapshot=reading(value=-120)
+    snapshot['raw'][2]=25;snapshot['raw'][4]=4
+    fault=gauge_state(snapshot)
+    assert fault.minimum==-100 and fault.maximum==100
+    assert fault.value==pytest.approx(-120) and fault.range_note=='BELOW RANGE'
+    snapshot['raw'][2]=0;snapshot['raw'][4]=0
+    normal=gauge_state(snapshot)
+    assert normal.minimum==-30 and normal.maximum==100
+    assert normal.value==pytest.approx(-120)
+
+
+def test_lel_fault_relay_adapts_but_negative_sign_or_stale_fault_does_not():
+    snapshot=reading(value=-20)
+    assert gauge_state(snapshot).minimum==-30
+    snapshot['raw'][4]=4
+    assert gauge_state(snapshot).minimum==-100
+    snapshot['raw'][2]=25;snapshot['register_ages']={2:100,4:100}
+    assert gauge_state(snapshot).minimum==-30
+
+
 @pytest.mark.parametrize("family,maximum,value,fraction,unit",[("LEL",100,25,0.25,"%LFL"),("BTU",1000,250,0.25,"unit unverified"),("FID",1000,250,0.25,"PPM")])
 def test_gauge_span_is_fullscale_not_raw_word_limit(family,maximum,value,fraction,unit):
     state=gauge_state(reading(family,value,maximum))

@@ -30,7 +30,10 @@ def main() -> int:
     parser=argparse.ArgumentParser(description="PREVEX HMI - one active analyzer. Physical access remains gated pending authorization.")
     parser.add_argument("--data-dir",type=Path,help="Override the user-writable data directory")
     parser.add_argument("--smoke-test",action="store_true",help="Run offscreen monitoring checks and exit")
+    parser.add_argument('--read-only-com4',action='store_true',help='Explicitly authorize the tested COM4/9600/address1 SNR671 read-only bench session')
+    parser.add_argument('--controller-com4-bench',action='store_true',help='Authorized SNR671 COM4 bench monitoring with confirmed Operator ACK/RESET only')
     args=parser.parse_args()
+    if args.smoke_test and (args.read_only_com4 or args.controller_com4_bench):parser.error('Automated smoke tests cannot open hardware')
     if args.smoke_test:
         os.environ["QT_QPA_PLATFORM"]="offscreen"
     app=QApplication(sys.argv[:1])
@@ -57,7 +60,15 @@ def main() -> int:
         else:
             QMessageBox.critical(None,"Configuration error",f"Could not load {settings_path}\n{error}\nThe existing file was preserved.")
         return 2
-    window=MainWindow(settings,settings_path,data_path)
+    grant=None
+    if args.read_only_com4 or args.controller_com4_bench:
+        from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant
+        grant=ReadOnlyControllerGrant(operator_commands=args.controller_com4_bench)
+        settings['mode']='hardware'
+        settings['analyzer_selection']='Auto Detect'
+        settings['connection'].update(port='COM4',baud=9600,timeout=.5,identification_page='standard')
+        settings['devices'][0].update(family='LEL',assembly='SNR671',version='4.81',address=1,address_mode='direct',pdu_offset=-1,register_profile='fta_4x',name='LEL SNR671 — real controller',id='hardware-com4-snr671')
+    window=MainWindow(settings,settings_path,data_path,hardware_grant=grant)
     window.show()
     errors=[]
     if args.smoke_test:
@@ -71,6 +82,9 @@ def main() -> int:
         QTimer.singleShot(1500,open_diagnostics)
         def finish():
             try:
+                # Import client dependencies without opening any port. Packaged
+                # simulation must also verify that the serial runtime can load.
+                from prevex_hmi.communication.serial_transport import ReadOnlySerialTransport
                 if window.update_count < 2:
                     raise RuntimeError("No worker updates received")
                 if not window.snapshot or window.snapshot["quality"] != "GOOD":

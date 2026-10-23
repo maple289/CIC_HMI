@@ -52,3 +52,7 @@ User explicitly requested testing the analyzer on COM4 and confirmed proceeding.
 - Identity bytes contain TYPE FTA, SNR671 and a version-looking field4[byteA7]81. The current strict ASCII parser does not recognize FTA or the non-ASCII separator. Automatic identity is unverified; do not silently normalize the byte or invent version/serial semantics.
 - Registers62/63 returned0. Their support on this older firmware is unverified; zero is not proof of a valid model/serial or of a Data Lost state. STATUS remains25.
 - Raw TX/RX evidence is retained locally in tmp/com4-readonly-test/confirmed-report.json. No live GUI monitoring/control was enabled. Follow-up requires confirming the older identity/firmware format and the reported TC2 fault on the instrument display.
+
+## User-authorized SNR671 HMI bench exception
+
+See SNR671_BENCH.md for the35s physical HMI read-only validation and599-test checkpoint.670 Series Rev Q p90 confirms command8 words0100H/0200H. The user explicitly requested these two real-controller controls; the dedicated session/transport permits only confirmed Operator/Admin ACK/RESET. Other physical writes remain blocked. Real command execution has not been claimed or performed by agent tests. TYPE FTA version separator and newer zero-valued register support remain provisional; sensor measurements cannot be validated while the assembly is disconnected.
