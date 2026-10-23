@@ -487,6 +487,8 @@ class MainWindow(QMainWindow):
             self.worker.request("inspect",self.fault_device.currentData(),self.inspect_register.currentData())
 
     def inspection_result_ready(self,id,number,raw):
+        if id != self.selected.currentData():
+            return
         snapshot=self.snapshots.get(id)
         text=f"Register {number}: raw {raw} / 0x{raw:04X}"
         if snapshot:

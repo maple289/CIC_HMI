@@ -168,4 +168,6 @@ def test_selected_events_are_filtered(app,tmp_path):
     window.update_events([("now","lel-1","Warning","GOOD"),("now","fid-3","Danger","GOOD")])
     assert window.event_table.rowCount() == 1
     assert window.event_table.item(0,1).text() == "lel-1"
+    window.inspection_result_ready("fid-3",1,12345)
+    assert window.inspection_result.text() == "No manual read requested"
     window.close()
