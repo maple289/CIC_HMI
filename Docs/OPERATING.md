@@ -18,7 +18,7 @@ The circular gauge shows a blue negative section down to -30, a bold zero marker
 
 All documented Gauge-menu parameters for the selected revision appear as digital readouts with names, units, register numbers and validity. Scroll for additional tiles and the live plot. BTU's unnamed42 is marked unavailable and never polled. Unsupported registers are not invented. Missing/stale/offline measurements show `--`.
 
-The top panel shows one current STATUS enum and separate relay/service bits. Horizontal scrolling exposes all active and inactive indicators.700-series LEL has different relay/service labels from legacy LEL. FID SERVICE is unsupported by the supplied documentation. Text accompanies colors.
+The top panel shows one current STATUS enum and separate relay/service bits. Only current active indicators are shown; inactive indicators and empty rows are hidden. Horizontal scrolling remains available when many indicators are active. Communication quality remains visible, and stale/unavailable indicators are hidden.700-series LEL has different relay/service labels from legacy LEL. FID SERVICE is unsupported by the supplied documentation. Text accompanies colors.
 
 ## Commands and local accounts
 

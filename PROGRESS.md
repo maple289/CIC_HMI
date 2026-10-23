@@ -1,3 +1,8 @@
+# Active indicator display (2026-10-23)
+
+- Status/Relays/Service now show only current active indicators. Inactive/unavailable/stale indicators and empty category rows are hidden. Communication quality and current STATUS remain visible in the summary; stale STATUS is marked unavailable.
+- Regression:586 tests passed in14.95s, including one-current-STATUS visibility and hiding all previous indicators on communication loss. Source GUI and rebuilt Windows executable smoke tests passed (13 updates,one LEL,physical_access=false). Screenshot visually checked. No physical access or writes.
+
 # Chooser correction (2026-10-23)
 
 - Manual LEL/BTU/FID selection now switches both the profile defaults and simulated instrument together. Reopening inconsistent saved selections repairs previous-family default names/models; custom instrument names remain intact.

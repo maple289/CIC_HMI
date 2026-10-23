@@ -187,10 +187,14 @@ def test_communication_loss_clears_indicator_and_retains_events(app,tmp_path):
     settings=load_settings(tmp_path/'settings.json');w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
     try:
         until(app,lambda:w.snapshot is not None and w.snapshot['quality']=='GOOD')
+        assert sum(not label.isHidden() for (group,_),(label,_) in w.indicators.labels.items() if group==0)==1
+        assert all(label.text().startswith('ON') for label,_ in w.indicators.labels.values() if not label.isHidden())
         w.worker.request('fault','timeout')
         until(app,lambda:w.snapshot is not None and w.snapshot['quality']=='OFFLINE')
         assert w.gauge.state.reading=='--' and w.gauge.state.fraction is None
         assert 'OFFLINE' in w.indicators.summary.text()
+        assert all(label.isHidden() for label,_ in w.indicators.labels.values())
+        assert all(row.isHidden() for row in w.indicators.row_widgets)
         assert not any(b.isEnabled() for b in w.command_buttons.values())
     finally:
         w.close();until(app,lambda:not w.worker.isRunning());app.processEvents()
