@@ -1,3 +1,9 @@
+# Match the real controller fault reading (2026-10-23)
+
+- Corrected the legacy FTA fault-state display: raw8001H was being converted to approximately-128%LFL while the controller LCD showed-99. The primary reading now explicitly uses fresh LCD51–55 for this specific current fault state and displays-99.00%LFL; raw1 remains in Diagnostics. Normal signed measurements are not clamped or replaced.
+- Missing, stale or non-reading LCD content produces an unavailable reading rather than a false process value. The readout names its LCD source and historian quality is INSTRUMENT_FAULT_LCD.
+- Real COM4 HMI regression passed(42 updates,max heartbeat gap125ms,writes0), including-99.00 reading and-100..100 fault gauge. Final regression:602 tests passed in26.51s. Rebuilt packaged smoke passed(exit0,45 updates,max heartbeat gap125ms). Updated executable restarted onCOM4 and live historian confirms-99.0%LFL with INSTRUMENT_FAULT_LCD quality and STATUS25. GitHub publication remains blocked pending explicit permission for the supplied manual and bench notes.
+
 # Real SNR671 HMI and operator bench controls (2026-10-23)
 
 - Integrated user-provided670 Series Rev Q manual; reviewed printed43–46/87–93 and rendered command table90. User confirmed SNR671=LEL and explicitly requested real-controller Acknowledge/Reset tests.

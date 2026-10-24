@@ -12,7 +12,7 @@ from prevex_hmi.communication.scheduler import PollingScheduler
 from prevex_hmi.devices.identification import detect, resolve_profile
 from prevex_hmi.devices.configuration import default_devices
 from prevex_hmi.devices.models import DeviceConfig, utc_now
-from prevex_hmi.gui.presentation import measurement
+from prevex_hmi.gui.presentation import measurement,uses_controller_fault_display
 from prevex_hmi.logging_db.store import Historian
 from prevex_hmi.security.users import UserStore
 from prevex_hmi.profiles import PROFILES, profile_for
@@ -132,6 +132,7 @@ class MonitoringWorker(QThread):
                     snapshot=state.snapshot(now)
                     snapshot['source']='hardware' if physical else 'simulation'
                     snapshot['instrument_quality']='INSTRUMENT_FAULT' if snapshot['raw'].get(2) not in (None,0,1,2,4,5,6,7,11,12) else 'GOOD'
+                    snapshot['reading_source']='controller_lcd_fault' if uses_controller_fault_display(snapshot) else 'process_register'
                     controller.observe(snapshot)
                     status=snapshot['raw'].get(2)
                     event=(snapshot['quality'],status)
@@ -145,7 +146,7 @@ class MonitoringWorker(QThread):
                             for number in snapshot['raw']:
                                 if number >= 257: continue
                                 value,unit=measurement(snapshot,number)
-                                if value is not None: database.measurement(snapshot['last_success'],effective.id,number,float(value),unit,snapshot['instrument_quality'],status)
+                                if value is not None: database.measurement(snapshot['last_success'],effective.id,number,float(value),unit,'INSTRUMENT_FAULT_LCD' if number==1 and snapshot['reading_source']=='controller_lcd_fault' else snapshot['instrument_quality'],status)
                         last_logged=snapshot['last_success']
                     database.commit()
                     snapshot['control']={'verified':controller.identity_verified,'pending':controller.pending is not None,'ambiguous':controller.ambiguous,'message':controller.result,'receipt':getattr(controller,'receipt',None)}

@@ -23,9 +23,9 @@ The35s live HMI run received129 updates with a maximum GUI heartbeat gap125ms. N
 | FLOW15 / FLAME11 |0 /0|Zero reported values; not proof of healthy sensors |
 | LOW FLOW23 |815|1.40942840SL/min |
 | CHK FLOW42 |1226|2.12019536SL/min |
-| Process1 |8001H|Signed raw fault-state value, scaled approximately-128%LFL; not a healthy concentration |
+| Process1 |8001H|Observed fault-state word; use current LCD reading for the primary fault display, retain raw word in Diagnostics |
 | Output-adjusted copy50 |27136|106%LFL, including analog fault override |
-| LCD51–55 |ASCII|Controller displays-99%LFL; shown separately, never substituted silently for raw process data |
+| LCD51–55 |ASCII|Controller displays-99%LFL; primary fault reading is explicitly labeled LCD51–55, with raw1 retained in Diagnostics |
 
 Every hardware readout labels the controller fault independently of GOOD communications. Live history uses `hardware.sqlite3`; simulation data remains in `simulation.sqlite3`.
 
@@ -49,6 +49,6 @@ Full physical compatibility, unconnected sensor measurements, calibration, outpu
 
 ## Adaptive gauge and final validation
 
-During a current LEL status/relay fault the negative scale endpoint becomes-100%LFL; when the fault clears it returns to-30%LFL. The positive endpoint continues to use FULLSCLE3(100 on this unit). Stale fault flags and a negative measurement alone do not expand the scale. Out-of-range values are never numerically clamped: this controller's raw process can still show approximately-128 below the-100 scale while its LCD shows-99.
+During a current LEL status/relay fault the negative scale endpoint becomes-100%LFL; when the fault clears it returns to-30%LFL. The positive endpoint continues to use FULLSCLE3(100 on this unit). Stale fault flags and a negative measurement alone do not expand the scale. Genuine out-of-range measurements are never clamped. For this observed legacy fault state only(FTA profile,8001H,current Status/Fault relay), the primary gauge reads the fresh controller LCD51–55 and shows-99.00%LFL. If the LCD is stale, missing or showing another menu, the reading is unavailable rather than falsely converting the fault word to-128%. The raw word remains in Diagnostics. Normal-state signed measurements retain their original conversion. Historian quality marks derived fault-LCD readings as INSTRUMENT_FAULT_LCD.
 
 Final regression:601 tests passed, including fault/normal scale transitions,operator-only hardware exception,fake command replies/state effects,timeout/no-retry behavior and UI receipt rendering. The12s live HMI test passed(40 updates,max heartbeat gap125ms); the35s run also crossed periodic identity revalidation. Packaged smoke passed with serial-runtime import(45 updates,max heartbeat gap125ms). The packaged interactive bench session is connected and responding; hardware.sqlite3 contains fresh physical readings. No real ACK/RESET was executed by the agent.

@@ -37,6 +37,18 @@ def test_fta_identity_is_lel_without_claiming_verified_version():
     assert parse_identity('TYPE FTAVER 4\xa781 SNR671 BTU').family is None
 
 
+def test_fault_word_uses_current_lcd_but_never_clamps_normal_negative_measurements():
+    config=replace(default_devices()[0],assembly='SNR671',version='4.81',register_profile='fta_4x')
+    snapshot=dict(config=asdict(config),raw=dict(RAW),quality='GOOD')
+    assert measurement(snapshot,1)[0]==-99
+    snapshot['register_ages']={51:100}
+    assert measurement(snapshot,1)[0] is None
+    snapshot['register_ages']={};snapshot['raw'][51]=0
+    assert measurement(snapshot,1)[0] is None
+    snapshot['raw'][2]=0;snapshot['raw'][4]=0
+    assert float(measurement(snapshot,1)[0])==pytest.approx(-127.99609375)
+
+
 @pytest.mark.parametrize('field,value',[('port','COM5'),('baud',19200),('identification_page','alternate')])
 def test_grant_rejects_unapproved_connection_before_opening(tmp_path,field,value):
     settings=settings_for(tmp_path/'settings.json');settings['connection'][field]=value
@@ -82,6 +94,8 @@ def test_hardware_gui_replays_real_signals_and_blocks_injection_and_commands(tmp
         assert 'TC2 failed' in w.monitor_status.text() and '-99 %LFL' in w.controller_display.text()
         assert measurement(w.snapshot,5)[0]==40 and measurement(w.snapshot,6)[0]==50
         assert measurement(w.snapshot,50)[0]==106
+        assert measurement(w.snapshot,1)[0]==-99 and w.gauge.state.reading=='-99.00'
+        assert w.gauge.state.minimum==-100 and 'LCD51' in w.readout_names[1].text()
         assert all(not b.isEnabled() for b in w.command_buttons.values())
         if operator_commands:
             w.users.create_user('admin','bench-test-password')

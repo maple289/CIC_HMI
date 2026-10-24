@@ -13,7 +13,7 @@ from prevex_hmi.devices.models import DeviceConfig
 from prevex_hmi.gui.connection_dialog import AnalyzerChoice,LoginDialog
 from prevex_hmi.gui.gauge import CircularGauge
 from prevex_hmi.gui.indicators import IndicatorPanel
-from prevex_hmi.gui.presentation import measurement,severity
+from prevex_hmi.gui.presentation import measurement,severity,uses_controller_fault_display
 from prevex_hmi.gui.worker import MonitoringWorker
 from prevex_hmi.profiles import PROFILES,profile_for,commands_for
 from prevex_hmi.profiles.common import COMMANDS
@@ -129,12 +129,13 @@ class MainWindow(QMainWindow):
         while self.readout_grid.count():
             item=self.readout_grid.takeAt(0)
             if item.widget():item.widget().deleteLater()
-        self.readouts={}
+        self.readouts={};self.readout_names={}
         numbers=list(gauges_for(config) if config.family==family else GAUGE_REGISTERS[family])
         if family=='BTU':numbers.append(42)
         for i,n in enumerate(numbers):
             r=profile.register(n);frame=QFrame();frame.setObjectName('readout');box=QVBoxLayout(frame)
             name=QLabel(f'{r.name}  [{n}]');name.setWordWrap(True);box.addWidget(name)
+            self.readout_names[n]=name
             value=QLabel('--');value.setWordWrap(True);value.setObjectName('digitalValue');box.addWidget(value)
             quality=QLabel('WAITING');quality.setWordWrap(True);box.addWidget(quality)
             self.readout_grid.addWidget(frame,i//3,i%3);self.readouts[n]=(value,quality)
@@ -262,6 +263,7 @@ class MainWindow(QMainWindow):
         self.monitor_updated.setText(f"Last update (UTC):\n{snapshot['last_success'] or 'never'}\n{snapshot['error']}")
         self.summary.setText(f"{family} | {snapshot['quality']} | {config.assembly}")
         for n,(widget,quality) in self.readouts.items():
+            if n==1:self.readout_names[n].setText('READING [LCD51–55; raw1]' if uses_controller_fault_display(snapshot) else 'READING [1]')
             if family=='BTU' and n==42:widget.setText('--');quality.setText('UNAVAILABLE: meaning not documented');continue
             value,unit=measurement(snapshot,n)
             if n==2 and value is not None:widget.setText(profile_for(config).status(int(value)))
