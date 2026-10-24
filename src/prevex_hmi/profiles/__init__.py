@@ -10,10 +10,20 @@ def profile_for(config):
     if getattr(config,'register_profile','auto')=='fta_4x':
         from .fta import PROFILE
         return PROFILE
-    if config.family == "LEL" and (config.assembly.upper().startswith("SNR70") or config.version.split('.')[0] == '7'):
+    from .lel700 import TYPES
+    if config.family == "LEL" and (getattr(config,'register_profile','auto')=='700' or getattr(config,'register_profile','auto')!='670' and config.assembly.upper() in TYPES.values()):
         from .lel700 import PROFILE
         return PROFILE
+    if config.family == 'LEL':
+        from .lel670 import PROFILE
+        return PROFILE
     return PROFILES[config.family]
+
+
+def profile_name(config):
+    if config.family == 'LEL':
+        return 'LEL 700 Series' if profile_for(config).revision=='700' else 'LEL 670 Series'
+    return config.family
 
 
 def commands_for(config):

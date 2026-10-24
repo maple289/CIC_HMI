@@ -31,12 +31,18 @@ class SimulatedAnalyzer:
         self.raw = {n: 0 for n in self.profile.registers}
         self.raw[3] = self.config.fullscale
         for number, value in ((5, 40 if self.config.family != "BTU" else 300), (6,50 if self.config.family != "BTU" else 700), (9,120), (11,500), (24,120), (28,1), (15,1.8), (10,0 if self.profile.revision == "700" else -40 if self.config.family == "FID" else 40), (23,1.4 if self.config.family == "LEL" else -40 if self.config.family == "FID" else 40), (33,20), (56,2 if self.config.family == "FID" else 125)):
+            # 700 register33 is CONTROL3, not BTU/FID aspirator pressure.
+            if self.profile.revision=='700' and number==33:continue
             if number in self.raw:
                 self.raw[number] = self.profile.register(number).encode(value, self.config.family, self.config.context)
         self.raw[4] = 0x80
         self.raw[16] = 506
         if self.profile.revision == "700":
             self.raw[3]=100
+            self.raw[21]=self.config.address
+            self.raw[22]=self.raw[47]=16  # documented default 19200 baud
+            for n,value in ((7,60),(23,1.8),(42,.4)):
+                self.raw[n]=self.profile.register(n).encode(value,'LEL',self.config.context)
             self.raw[40]=int(Decimal(self.config.version)*100)
             self.raw[63]=101;self.raw[65]=2026
             self.raw[29]=self.profile.register(29).encode(500,"LEL",self.config.context)
@@ -97,10 +103,11 @@ class SimulatedBus:
     """
     physical = False
 
-    def __init__(self, devices: list[DeviceConfig], *, clock=time.monotonic):
+    def __init__(self, devices: list[DeviceConfig], *, clock=time.monotonic, sleep=time.sleep):
         validate_devices(devices)
         self.devices = {d.addressing.packet_address: SimulatedAnalyzer(d) for d in devices if d.enabled}
         self.clock = clock
+        self.sleep = sleep
         self.trace = lambda *_: None
         self.closed = False
         self._inflight = threading.Lock()
@@ -118,6 +125,7 @@ class SimulatedBus:
             device = self.devices.get(address)
             if device is None or device.fault == "timeout":
                 raise TimeoutError("Simulated analyzer did not reply")
+            if device.fault == 'delay':self.sleep(.6)
             start = pdu - device.config.pdu_offset
             if device.profile.revision == "700" and start == 257 and count == 16:
                 # Rev D p127 returns ASCII blanks for legacy identification.
@@ -193,7 +201,7 @@ class SimulatedBus:
         return "Accepted by software simulator; monitor STATUS (not physical verification)"
 
     def set_fault(self, address: int, fault: str) -> None:
-        if fault not in ("none", "timeout", "crc", "protocol", "unknown_identity", "ambiguous_command"):
+        if fault not in ("none", "timeout", "delay", "crc", "protocol", "unknown_identity", "ambiguous_command"):
             raise ValueError("Unsupported simulated fault")
         self.devices[address].fault = fault
 

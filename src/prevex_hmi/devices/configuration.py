@@ -39,7 +39,7 @@ def load_settings(path: Path) -> dict:
 def validate_settings(settings):
     if settings.get("schema_version") != 2 or settings.get("mode") not in ("simulation","hardware"):
         raise ValueError("Unsupported configuration schema or connection mode")
-    if settings.get("analyzer_selection") not in ("Auto Detect","LEL","BTU","FID") or settings.get("simulated_family") not in ("LEL","BTU","FID"):
+    if settings.get("analyzer_selection") not in ("Auto Detect","LEL","LEL 670 Series","LEL 700 Series","BTU","FID") or settings.get("simulated_family") not in ("LEL","BTU","FID"):
         raise ValueError("Invalid analyzer type")
     if settings.get("simulated_lel_revision","legacy") not in ("legacy","700"):
         raise ValueError("Invalid simulated LEL revision")

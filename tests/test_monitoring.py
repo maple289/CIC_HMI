@@ -64,9 +64,9 @@ def test_settings_roundtrip_and_corruption_preserved(tmp_path):
     with pytest.raises(ValueError):load_settings(path)
     assert path.read_text()=='bad json'
 
-def test_choice_has_four_options_and_preserves_manual_range(app,tmp_path):
+def test_choice_has_five_options_and_preserves_manual_range(app,tmp_path):
     settings=load_settings(tmp_path/'settings.json');dialog=AnalyzerChoice(settings)
-    assert [dialog.types.item(i).text() for i in range(4)]==['Auto Detect','LEL','BTU','FID']
+    assert [dialog.types.item(i).text() for i in range(5)]==['Auto Detect','LEL 670 Series','LEL 700 Series','BTU','FID']
     dialog.range_mode.setCurrentText('manual');dialog.manual.setValue(250)
     dialog.logging_enabled.setChecked(False)
     result=dialog.settings();assert result['devices'][0]['manual_maximum']==250
@@ -83,15 +83,15 @@ def test_chooser_clicks_select_matching_simulator_and_confirms_ok(app,tmp_path):
         assert dialog.name.text()=='LEL - Process line 1'
         assert dialog.sim_family.currentText()=='LEL'
         assert not dialog.units.isVisible() and not dialog.fullscale.isVisible()
-        assert dialog.assembly.text()=='SNR705'
-        for family,index,prefix in [('FID',3,'SNR65'),('BTU',2,'SNR69'),('LEL',1,'SNR70')]:
+        assert dialog.assembly.text()=='SNR675'
+        for family,index,prefix in [('FID',4,'SNR65'),('BTU',3,'SNR69'),('LEL',1,'SNR67'),('LEL',2,'SNR70')]:
             QTest.mouseClick(dialog.types.viewport(),Qt.LeftButton,pos=dialog.types.visualItemRect(dialog.types.item(index)).center())
             assert dialog.sim_family.currentText()==family
             assert dialog.assembly.text().startswith(prefix)
             assert dialog.name.text().startswith(family)
             assert dialog.units.isVisible()==(family=='FID')
             assert dialog.fullscale.isVisible()==(family=='FID')
-            assert dialog.lel_revision.isVisible()==(family=='LEL')
+            assert not dialog.lel_revision.isVisible()
             result=dialog.settings()
             assert result['devices'][0]['family']==family and result['simulated_family']==family
         dialog.address.setValue(1);dialog.address_mode.setCurrentText('display_minus_one')
@@ -112,7 +112,7 @@ def test_chooser_preserves_custom_name_and_auto_detect_simulator_choice(app,tmp_
     try:
         dialog.sim_family.setCurrentText('FID')
         assert dialog.name.text()=='My process' and dialog.settings()['devices'][0]['family']=='FID'
-        dialog.types.setCurrentRow(2)
+        dialog.types.setCurrentRow(3)
         assert dialog.name.text()=='My process' and dialog.sim_family.currentText()=='BTU'
         dialog.address_mode.setCurrentText('display_minus_one');dialog.address_mode.setCurrentText('direct');dialog.address.setValue(1)
         assert DeviceConfig(**dialog.settings()['devices'][0]).addressing.packet_address==1
@@ -188,9 +188,12 @@ def test_communication_loss_clears_indicator_and_retains_events(app,tmp_path):
     try:
         until(app,lambda:w.snapshot is not None and w.snapshot['quality']=='GOOD')
         assert sum(not label.isHidden() for (group,_),(label,_) in w.indicators.labels.items() if group==0)==1
-        assert all(label.text().startswith('ON') for label,_ in w.indicators.labels.values() if not label.isHidden())
+        assert all(not label.text().startswith('ON ') for label,_ in w.indicators.labels.values() if not label.isHidden())
         w.worker.request('fault','timeout')
         until(app,lambda:w.snapshot is not None and w.snapshot['quality']=='OFFLINE')
+        # Display-only hold is independent of the red connection indicator.
+        assert 'No Connection' in w.monitor_status.text()
+        until(app,lambda:w.gauge.state.reading=='--')
         assert w.gauge.state.reading=='--' and w.gauge.state.fraction is None
         assert 'OFFLINE' in w.indicators.summary.text()
         assert all(label.isHidden() for label,_ in w.indicators.labels.values())

@@ -1,10 +1,11 @@
 """Range-aware circular process gauge drawn natively with Qt."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
+import time
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
@@ -102,15 +103,51 @@ class CircularGauge(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.state = GaugeState()
+        self.held = False
+        self.display_quality = 'UNAVAILABLE'
+        self._scope = None
+        self._last_valid = None
+        self._deadline = 0.0
+        self._latest = GaugeState()
+        self.expiry = QTimer(self); self.expiry.setInterval(100)
+        self.expiry.timeout.connect(self.expire); self.expiry.start()
         self.dark = True
         self.setMinimumSize(350, 330)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setAccessibleName("Selected analyzer reading and measurement range")
 
     def set_snapshot(self, snapshot: dict | None) -> None:
-        self.state = gauge_state(snapshot)
+        now = time.monotonic()
+        scope = None if snapshot is None else tuple(snapshot['config'].get(k) for k in ('id','family','assembly','version','address','register_profile'))
+        if scope != self._scope or snapshot is None:
+            self._last_valid = None; self._deadline = 0.0
+        self._scope = scope
+        state = gauge_state(snapshot)
+        self._latest = state
+        if snapshot is not None and state.value is not None:
+            numbers = range(51,56) if snapshot.get('reading_source') == 'controller_lcd_fault' or snapshot['config'].get('register_profile') == 'fta_4x' and snapshot['raw'].get(1) == 0x8001 else (1,)
+            age = max(snapshot.get('register_ages',{}).get(n,0) for n in numbers)
+            if age <= 4:
+                self._last_valid = state; self._deadline = now + 4 - age
+            else:
+                state = replace(state, value=None, reading='--', status='Reading unavailable')
+        self.held = bool(self._last_valid is not None and now < self._deadline and (state.value is None or snapshot.get('quality') != 'GOOD'))
+        if self.held:
+            state = replace(self._last_valid, status='Retained reading • stale', color='#8290a5')
+        self.display_quality = 'RETAINED_STALE' if self.held else 'CURRENT' if state.value is not None else 'UNAVAILABLE'
+        self._set_state(state)
+
+    def _set_state(self, state):
+        if state == self.state:return
+        self.state = state
         self.setAccessibleDescription(f"{self.state.reading} {self.state.unit}; {self.state.status}; {self.state.range_note}; {self.state.thresholds}")
         self.update()
+
+    def expire(self):
+        if self._last_valid is not None and time.monotonic() >= self._deadline:
+            self._last_valid = None; self.held = False
+            self.display_quality = 'UNAVAILABLE'
+            self._set_state(replace(self._latest, value=None, reading='--', status='Reading unavailable', color='#8290a5'))
 
     def paintEvent(self, event):
         painter = QPainter(self)

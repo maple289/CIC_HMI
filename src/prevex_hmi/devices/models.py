@@ -39,7 +39,7 @@ class DeviceConfig:
         self.addressing.pdu(1)
         if self.units not in (None, "US", "METRIC"):
             raise ValueError("Unknown unit context")
-        if self.register_profile not in ('auto','fta_4x') or (self.register_profile=='fta_4x' and self.family!='LEL'):
+        if self.register_profile not in ('auto','fta_4x','670','700') or (self.register_profile!='auto' and self.family!='LEL'):
             raise ValueError('Unsupported register compatibility profile')
         if self.range_mode not in ("auto", "manual"):
             raise ValueError("Range mode must be auto or manual")

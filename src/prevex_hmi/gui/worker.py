@@ -5,6 +5,7 @@ from pathlib import Path
 from queue import Empty, Full, Queue
 import threading
 import time
+import uuid
 from PySide6.QtCore import QThread, Signal
 from prevex_hmi.communication.engine import BusEngine
 from prevex_hmi.communication.commands import CommandController
@@ -12,7 +13,7 @@ from prevex_hmi.communication.scheduler import PollingScheduler
 from prevex_hmi.devices.identification import detect, resolve_profile
 from prevex_hmi.devices.configuration import default_devices
 from prevex_hmi.devices.models import DeviceConfig, utc_now
-from prevex_hmi.gui.presentation import measurement,uses_controller_fault_display,FaultDisplayCache
+from prevex_hmi.gui.presentation import measurement,uses_controller_fault_display
 from prevex_hmi.logging_db.store import Historian
 from prevex_hmi.security.users import UserStore
 from prevex_hmi.profiles import PROFILES, profile_for
@@ -63,15 +64,21 @@ class MonitoringWorker(QThread):
             else:
                 actual=next(d for d in default_devices() if d.family == self.settings['simulated_family'])
                 actual=replace(actual,id=configured.id,name=configured.name,address=configured.address,address_mode=configured.address_mode,pdu_offset=configured.pdu_offset,enabled=True,interval=configured.interval,range_mode=configured.range_mode,manual_maximum=configured.manual_maximum,gauge_minimum=configured.gauge_minimum,logging_enabled=configured.logging_enabled)
-                if actual.family == "LEL" and self.settings.get("simulated_lel_revision","legacy") == "700":
-                    actual=replace(actual,assembly="SNR705",version="7.01",fullscale=100)
+                selection=self.settings['analyzer_selection']
+                if actual.family == "LEL" and (selection=='LEL 700 Series' or selection=='Auto Detect' and self.settings.get("simulated_lel_revision","legacy") == "700"):
+                    from prevex_hmi.profiles.lel700 import TYPES
+                    model=configured.assembly if configured.assembly in TYPES.values() else 'SNR705'
+                    actual=replace(actual,assembly=model,version="7.01",fullscale=100)
+                elif actual.family == 'LEL':
+                    from prevex_hmi.profiles.lel670 import MODELS
+                    actual=replace(actual,assembly=configured.assembly if configured.assembly in MODELS else actual.assembly,version='5.11')
                 if actual.family == 'FID':actual=replace(actual,fullscale=configured.fullscale,units=configured.units or 'US')
                 simulation=SimulatedBus([actual]);transport=simulation
             bus=BusEngine(transport,baud=connection['baud'])
             identity=detect(bus,configured.addressing,alternate_page=connection.get('identification_page') == 'alternate')
             if physical:self.hardware_grant.validate_identity(identity)
             effective,warning,verified=resolve_profile(configured,self.settings['analyzer_selection'],identity)
-            controls_verified=bool(self.hardware_grant.operator_commands and self.settings['analyzer_selection'] in ('Auto Detect','LEL')) if physical else verified
+            controls_verified=bool(self.hardware_grant.operator_commands and self.settings['analyzer_selection'] in ('Auto Detect','LEL','LEL 670 Series') and 'PROFILE MISMATCH' not in warning) if physical else verified
             info={**asdict(identity),'warning':warning,'controls_verified':controls_verified,'test_only':self.test_only}
             if effective:
                 if effective.family == 'FID': effective=replace(effective,units=configured.units or 'US')
@@ -93,7 +100,6 @@ class MonitoringWorker(QThread):
             controller=command_class(bus,effective,database,users,identity_verified=controls_verified,expected_identity=identity)
             last_emit=last_identity=time.monotonic()
             last_logged=last_event=None
-            fault_display=FaultDisplayCache()
             while not self.stop_requested.is_set():
                 try: message=self.messages.get_nowait()
                 except Empty: message=None
@@ -107,6 +113,7 @@ class MonitoringWorker(QThread):
                         elif kind == 'inspect':
                             number=message[1]
                             raw=bus.read(profile_for(effective),effective.addressing,number,1)[number]
+                            state.raw[number]=raw;state.register_times[number]=time.monotonic()
                             self.inspection_ready.emit(f'Register {number}: {raw} / 0x{raw:04X}')
                         elif kind == 'reading':
                             target=simulation.devices[effective.addressing.packet_address]
@@ -117,6 +124,7 @@ class MonitoringWorker(QThread):
                             snapshot=state.snapshot(time.monotonic())
                             if snapshot['quality'] != 'GOOD':
                                 actor,_=users.resolve(message[2])
+                                controller.receipt={'id':uuid.uuid4().hex,'code':message[1],'state':'REJECTED','reply_received':False,'time':utc_now()}
                                 controller.record(actor,message[1],'REJECTED','Communication is not current; command not sent')
                             else: controller.execute(message[1],message[2],confirmed=message[3])
                             self.command_result.emit(controller.result)
@@ -131,7 +139,8 @@ class MonitoringWorker(QThread):
                         raise OSError('Instrument identity changed or became unverifiable. Polling stopped; reconnect to identify again.')
                 if now-last_emit >= 0.25:
                     snapshot=state.snapshot(now)
-                    fault_display.update(snapshot,now)
+                    # Display-only retention belongs to CircularGauge. Never
+                    # attach retained LCD data to logging/command snapshots.
                     snapshot['source']='hardware' if physical else 'simulation'
                     snapshot['instrument_quality']='INSTRUMENT_FAULT' if snapshot['raw'].get(2) not in (None,0,1,2,4,5,6,7,11,12) else 'GOOD'
                     snapshot['reading_source']='controller_lcd_fault' if uses_controller_fault_display(snapshot) else 'process_register'

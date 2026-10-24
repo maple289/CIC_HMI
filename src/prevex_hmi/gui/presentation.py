@@ -18,14 +18,6 @@ def uses_controller_fault_display(snapshot: dict) -> bool:
     return bool(fault)
 
 
-def controller_fault_reading(snapshot: dict):
-    cached=snapshot.get('fault_lcd_reading')
-    limit=max(5,snapshot['config']['interval']*3)
-    if cached and 0<=cached['age']<=limit:
-        return Decimal(cached['value']),'%LFL'
-    return direct_controller_fault_reading(snapshot)
-
-
 def direct_controller_fault_reading(snapshot: dict):
     raw=snapshot['raw'];ages=snapshot.get('register_ages',{})
     limit=max(5,snapshot['config']['interval']*3)
@@ -36,38 +28,6 @@ def direct_controller_fault_reading(snapshot: dict):
     if not match:return None,'controller LCD is not showing %LFL'
     return Decimal(match[1]),'%LFL'
 
-
-class FaultDisplayCache:
-    """Hold a fresh numeric LCD sample across the controller's fault flashing.
-
-    A non-reading refresh never renews the original sample time. Scope changes,
-    communication loss and other menus clear it; stale values cannot persist.
-    """
-    def __init__(self):
-        self.key=None;self.value=None;self.sampled_at=None
-
-    def update(self,snapshot: dict,now: float) -> None:
-        snapshot.pop('fault_lcd_reading',None)
-        config=snapshot['config'];raw=snapshot['raw']
-        key=(config['id'],config['address'],config.get('register_profile'),raw.get(1),raw.get(2),raw.get(4,0)&4)
-        if not uses_controller_fault_display(snapshot):
-            self.key=None;self.value=None;self.sampled_at=None;return
-        if key!=self.key:self.value=None;self.sampled_at=None
-        self.key=key
-        value,_=direct_controller_fault_reading(snapshot)
-        held=False
-        if value is not None:
-            self.value=value
-            self.sampled_at=now-max(snapshot.get('register_ages',{}).get(n,0) for n in range(51,56))
-        else:
-            if not all(n in raw for n in range(51,56)):return
-            text=b''.join(raw[n].to_bytes(2,'big') for n in range(51,56)).decode('latin-1').strip().upper()
-            if text and not (raw.get(2)==25 and text=='TC2 FAIL'):
-                self.value=None;self.sampled_at=None;return
-            held=True
-        limit=max(5,config['interval']*3)
-        if self.value is not None and self.sampled_at is not None and 0<=now-self.sampled_at<=limit:
-            snapshot['fault_lcd_reading']={'value':str(self.value),'age':now-self.sampled_at,'held':held}
 
 
 def measurement(snapshot: dict, number: int = 1) -> tuple[Decimal | None, str]:
@@ -80,7 +40,7 @@ def measurement(snapshot: dict, number: int = 1) -> tuple[Decimal | None, str]:
     if number not in raw:
         return None, "not yet polled"
     if number==1 and uses_controller_fault_display(snapshot):
-        return controller_fault_reading(snapshot)
+        return direct_controller_fault_reading(snapshot)
     device = DeviceConfig(**snapshot["config"])
     context = device.context
     if device.family == "FID":

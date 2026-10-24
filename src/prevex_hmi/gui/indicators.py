@@ -34,7 +34,7 @@ class IndicatorPanel(QFrame):
         groups=[{code:name for code,name in profile.statuses.items()},dict(enumerate(relays_for(0,config) if config else decode_relays(0))),dict(enumerate(service_for(0,config) if config else decode_service(0,family))) if family!="FID" else {0:"Not documented for FID"}]
         for group,items in enumerate(groups):
             for key,text in items.items():
-                label=QLabel(text);label.setMinimumWidth(max(90,self.fontMetrics().horizontalAdvance('off  '+text)+28));label.setAlignment(Qt.AlignCenter)
+                label=QLabel(text);label.setMinimumWidth(max(75,self.fontMetrics().horizontalAdvance(text)+20));label.setAlignment(Qt.AlignCenter)
                 self.rows[group].addWidget(label);self.labels[(group,key)]=(label,text)
                 label.hide()
             self.rows[group].addStretch()
@@ -62,7 +62,7 @@ class IndicatorPanel(QFrame):
             active=(code==key) if group==0 else relays[key] if group==1 else service[key] if service else False
             color="#39c6a4"
             if group==0 and key not in (0,4,5,6,7,11,12):color="#efb753" if key==1 else "#f27778"
-            elif group==1:color="#f27778" if key in (1,2) else "#efb753" if key in (0,3) else "#39c6a4"
+            elif group==1:color="#f27778" if text in ('Danger / high','Fault','Air/fuel cutoff') else "#efb753" if text in ('Warning / low','Horn','Service Needed') else "#39c6a4"
             elif group==2:color="#efb753"
             self.paint(label,text,active if valid else None,color)
             if valid and active:active_groups.add(group)
@@ -70,5 +70,5 @@ class IndicatorPanel(QFrame):
 
     def paint(self,label,text,active,color):
         label.setVisible(active is True)
-        label.setText(f"{'ON' if active else 'off' if active is False else '--'}  {text}")
+        label.setText(text)
         label.setStyleSheet(f"QLabel {{padding:4px 8px;border-radius:5px;border:1px solid {color if active else '#536074'};color:{color if active else '#8d9aaf'};font-weight:{'bold' if active else 'normal'};}}")

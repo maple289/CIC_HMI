@@ -1,6 +1,8 @@
 """Audited simulation command workflow. Physical commands are never exposed."""
 from dataclasses import dataclass
 import time
+import uuid
+from prevex_hmi.devices.models import utc_now
 
 from prevex_hmi.profiles import PROFILES, profile_for, commands_for
 from prevex_hmi.profiles.common import COMMANDS
@@ -24,13 +26,18 @@ class CommandController:
         self.pending=None
         self.ambiguous=False
         self.result="No command issued"
+        self.receipt=None
 
     def record(self,actor,code,result,detail):
         self.store.command_audit(self.config.id,actor,code,result,detail)
         self.result=detail
+        if self.receipt is not None and self.receipt['code']==code and not self.receipt.get('bench'):
+            self.receipt.update(state=result, detail=detail)
 
     def execute(self,code,token,*,confirmed=False):
         actor,role=self.users.resolve(token)
+        self.receipt={'id':uuid.uuid4().hex,'code':code,'state':'CHECKING','reply_received':False,'time':utc_now()}
+        sent=False
         try:
             if role not in ("Operator","Administrator"):
                 raise PermissionError("Sign in as Operator or Administrator")
@@ -54,7 +61,9 @@ class CommandController:
             self.record(actor,code,"SENDING",f"{COMMANDS[code]} confirmed; sending once")
             # Same transaction lock, pacing and worker owner as polling. There
             # is no path from this simulation-only method to a serial write.
+            sent=True
             self.bus.simulated_command(self.config.addressing.packet_address,code,role,pdu=self.config.addressing.pdu(8))
+            self.receipt.update(reply_received=True, before_status=status)
             if code in range(0x300,0x900,0x100):
                 self.pending=PendingCommand(code,actor,self.clock())
                 self.record(actor,code,"PENDING","Monitoring STATUS for sequence and outcome")
@@ -69,7 +78,8 @@ class CommandController:
             self.ambiguous=True
             self.record(actor,code,"UNKNOWN",f"{error}. No automatic retry; reconnect and review instrument state.")
         except (OSError,PermissionError,ValueError) as error:
-            self.record(actor,code,"REJECTED",str(error))
+            if sent:self.ambiguous=True
+            self.record(actor,code,"UNKNOWN" if sent else "REJECTED",str(error))
 
     def observe(self,snapshot):
         pending=self.pending

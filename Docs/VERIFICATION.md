@@ -1,6 +1,6 @@
 # Manufacturer ambiguities and hardware-validation gates
 
-General physical-device compatibility remains PENDING. An explicitly authorized, limited read-only COM4 test was completed on2026-10-23; see the bench evidence below. Operational controls remain disabled.
+General physical-device compatibility remains PENDING. An explicitly authorized, limited read-only COM4 test was completed on2026-10-23; see the bench evidence below. Physical controls remain disabled except the explicitly granted, confirmed SNR671 Acknowledge/Reset bench path. New calibration/test/settings commands are simulator-only; see the 2026-10-24 interface/series update below.
 
 | ID | Evidence / question | Current behavior and required verification |
 | --- | --- | --- |
@@ -56,3 +56,12 @@ User explicitly requested testing the analyzer on COM4 and confirmed proceeding.
 ## User-authorized SNR671 HMI bench exception
 
 See SNR671_BENCH.md for the35s physical HMI read-only validation and599-test checkpoint.670 Series Rev Q p90 confirms command8 words0100H/0200H. The user explicitly requested these two real-controller controls; the dedicated session/transport permits only confirmed Operator/Admin ACK/RESET. Other physical writes remain blocked. Real command execution has not been claimed or performed by agent tests. TYPE FTA version separator and newer zero-valued register support remain provisional; sensor measurements cannot be validated while the assembly is disconnected.
+# Interface / named series verification update — 2026-10-24
+
+- The retained LEL baseline is now named LEL 670 Series, with the older FTA subset kept for the observed SNR671 firmware. SNR673 is absent from the supplied manufacturer model tables: no model-specific conversion/control behavior is invented. Documented variants remain subject to their assembly/version limitations.
+- The 700-series profile is selected from recognized SNR701/702/704/705 and D assemblies or consistent numeric TYPE62/VERSION40/SERIAL63/YEAR65 identification. Generic PREVEX text or firmware7 alone is insufficient. Physical 700 page/address/timing/command compatibility remains unverified; controls stay disabled.
+- 670 Rev Q p90 confirms calibration/test0300H–0800H, SAVE ALL0900H and LOCK0F00H. These are prepared and tested in simulation only. The existing physical COM4 exception remains only ACK0100H/RESET0200H; no new physical commands were authorized or sent during this update.
+- Rev D p118 was rechecked, including its rendered command table: Modbus lock/unlock has no effect and SAVE SETTINGS permits factory changes. These 700 controls remain disabled despite their numeric command entries. Other existing exclusions remain intact.
+- Four-second gauge retention is now isolated to the GUI and marked internally stale; it is never injected into snapshots, trends, historian data or command evaluation. The previous worker LCD hold is removed. Connection health expires separately and cannot be held green by the display cache.
+- The Profile settings page is read-only. Optional monitor inventory is not evidence of installed monitor hardware. Unsupported/ambiguous106 and internal reads remain blocked. Factory/configuration write procedures still require separate validation.
+- This update uses simulator/fake-client tests only. No physical port was opened and no real Modbus command was executed for these interface/profile changes. See INTERFACE_AND_SERIES.md for operating behavior and the historical observations below for the limited prior controller bench evidence.

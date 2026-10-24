@@ -26,7 +26,7 @@ def test_rev_d_exact_factors_and_signed_words(config,number,factor):
 
 def test_revision_is_independent_of_legacy(config):
     assert profile_for(config).revision=='700'
-    assert profile_for(default_devices()[0]).revision=='legacy'
+    assert profile_for(default_devices()[0]).revision=='670'
     assert PROFILE.status(15)=='12VDC failed' and PROFILE.status(22)=='Fuel pressure low'
     assert PROFILE.register(12).name=='FUEL PRESSURE'
     assert PROFILE.register(40).safe_read

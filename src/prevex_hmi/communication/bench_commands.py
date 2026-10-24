@@ -1,5 +1,6 @@
 """Confirmed, audited ACK/RESET exception for the user-authorized real controller."""
 import time
+import uuid
 from .commands import CommandController
 from .hardware_session import ReadOnlyControllerGrant
 from prevex_hmi.devices.identification import detect
@@ -13,7 +14,7 @@ class BenchOperatorCommands(CommandController):
 
     def execute(self,code,token,*,confirmed=False):
         actor,role=self.users.resolve(token);sent=False
-        self.receipt={'code':code,'state':'CHECKING','reply_received':False,'time':utc_now()}
+        self.receipt={'id':uuid.uuid4().hex,'bench':True,'code':code,'state':'CHECKING','reply_received':False,'time':utc_now()}
         try:
             if code not in (0x100,0x200) or role not in ('Operator','Administrator') or not confirmed:
                 raise PermissionError('Only explicitly confirmed Operator/Administrator Acknowledge or Reset is allowed')

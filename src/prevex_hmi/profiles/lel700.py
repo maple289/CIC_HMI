@@ -54,6 +54,24 @@ def make_profile():
     regs[106]=replace(regs[106],safe_read=False)
     for n in range(51,56):add(n,"DISABLED LEGACY DISPLAY","Legacy LCD buffer disabled",page=127)
     for n in range(75,91):add(n,f"DISPLAY BUFFER {n-74}","Two-line sixteen-character front panel ASCII buffer",page=126)
+    # Keep the full manual's menus available for read-only inspection. Optional
+    # monitor registers do not imply that the instrument has those assemblies.
+    menus={
+        'Gauges':set(GAUGES),
+        'Flow System':{23,42,70,93,94},
+        'Dilution Monitor (optional)':{13,66,67,96},
+        'Fuel Monitor (optional)':{12,68,69,95},
+        'Purge Monitor (optional)':{14,97},
+        'Calibration':{7,10,20,28,43,56,91,92,101},
+        'Alarm Settings':{5,6,35,61,72,73,74,99},
+        'Analog Outputs':{25,26,31,32,44,50,57},
+        'Controls':{33,34,36,37,58,105},
+        'Communication':{19,21,22,47,48},
+        'General':{40,62,63,64,65,71,98,100,102,103,104,106},
+        'Security':{27,60},
+    }
+    for category,numbers in menus.items():
+        for n in numbers:regs[n]=replace(regs[n],category=category)
     return Profile("LEL",regs,STATUSES,256,False,revision="700")
 
 

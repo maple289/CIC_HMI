@@ -40,3 +40,10 @@ Physical connections and writes remain disabled. Test Connection identifies the 
 ## Authorized real SNR671 bench session
 
 Open the authorized legacy controller with `scripts/launch_controller_bench.cmd` or `PREVEX-HMI.exe --controller-com4-bench`: COM4,9600/8N1,address1,read-only monitoring plus only confirmed Operator/Admin Acknowledge and Reset. Other physical writes remain blocked. See [bench evidence and command-result display](Docs/SNR671_BENCH.md). Use the read-only launcher when commands are not required. Close an existing bench instance before launching another.
+# Interface and LEL series update (2026-10-24)
+
+The single-analyzer HMI now offers Auto Detect, **LEL 670 Series**, **LEL 700 Series**, BTU and FID, plus an enumerated serial-port dropdown with Refresh. Compact digital cards and active indicators accompany a red/green Connection Status display. The main gauge has a four-second display-only hold; retained readings never become new historian or command-input samples.
+
+Raised command buttons have individual three-second acknowledgment LEDs. Documented calibration/test commands are exercised in simulation, with execution tracked separately through STATUS and the audit log. Physical access still defaults to read-only; the previously authorized SNR671/COM4 exception remains limited to confirmed Operator/Administrator Acknowledge and Reset. Real 700-series controls are disabled pending hardware validation. SNR673 behavior is undocumented and is not claimed as supported.
+
+See [Interface and series guide](Docs/INTERFACE_AND_SERIES.md), [700-series manual review](Docs/LEL_700_REVIEW.md), and [verification gates](Docs/VERIFICATION.md). Profile settings provides read-only access to documented parameters and restrictions. BTU/FID register definitions and conversions remain unchanged.

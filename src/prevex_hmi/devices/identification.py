@@ -90,13 +90,19 @@ def detect(bus, addressing, *, alternate_page=False) -> Identification:
 
 
 def resolve_profile(config, selection: str, identity: Identification):
-    family=identity.family or (selection if selection in PROFILES else None)
+    selected_family='LEL' if selection in ('LEL 670 Series','LEL 700 Series') else selection
+    family=identity.family or (selected_family if selected_family in PROFILES else None)
     if family is None:
         return None, "Auto Detect could not recognize the instrument. Choose a type manually.", False
-    mismatch=selection in PROFILES and identity.family is not None and selection != identity.family
-    warning=f"PROFILE MISMATCH: selected {selection}, detected {identity.family}. Using detected profile; commands blocked." if mismatch else identity.warning
+    from prevex_hmi.profiles.lel670 import MODELS
+    identified_series='700' if identity.model in TYPES700.values() else '670' if identity.model in MODELS else None
+    selected_series='700' if selection=='LEL 700 Series' else '670' if selection=='LEL 670 Series' else None
+    mismatch=selected_family in PROFILES and identity.family is not None and (selected_family != identity.family or selected_series is not None and identified_series is not None and selected_series != identified_series)
+    warning=f"PROFILE MISMATCH: selected {selection}, detected {identity.family} {identified_series or ''}. Using detected profile; commands blocked." if mismatch else identity.warning
+    if family=='LEL' and identity.model and identified_series is None:
+        warning=f'Undocumented LEL assembly {identity.model}; model-specific conversion and controls unavailable. Manufacturer verification required.'
     if not identity.verified and not warning:
         warning="Identity unverified; commands blocked"
     # Never interpret BTU/FID registers using a contradictory selected profile.
-    effective=replace(config,family=family,assembly=identity.model or config.assembly,version=identity.version or config.version,register_profile='fta_4x' if identity.legacy_format else 'auto')
-    return effective, warning, bool(identity.verified and not mismatch and not identity.warning)
+    effective=replace(config,family=family,assembly=identity.model or config.assembly,version=identity.version or config.version,register_profile='fta_4x' if identity.legacy_format else (identified_series or selected_series or 'auto') if family=='LEL' else 'auto')
+    return effective, warning, bool(identity.verified and not mismatch and not warning)
