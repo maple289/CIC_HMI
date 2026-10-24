@@ -28,6 +28,10 @@ COM port, baud, timeout, nonzero address, address compatibility and register off
 
 **Test Connection** stops monitoring, performs identification and a read-only response check, then reports family/model/version/serial without enabling controls. Choose Connect to start polling. Unknown identity permits an explicit manual profile but keeps commands disabled. A mismatch uses the detected family's definitions and displays a warning; choose the matching type or Auto Detect to resolve it.
 
+The result shows the selected and loaded/detected profile and whether a valid Modbus response was received. Raw nonstandard firmware text is retained beside its provisional interpretation. Compatibility warnings describe the specific undocumented behavior; Administrator sign-in does not change detection or dismiss limitations. Supported successful identification clears prior warnings. Test Connection never activates operating controls.
+
+Digital measurement/status cards use a consistent230px width, approximately two-thirds of the previous normal-window width. They reflow according to available space rather than stretching across three columns. Labels/values wrap when necessary; compact internal margins retain the previous normal card height. The shared layout applies to670/700/BTU/FID and grows rows only when text requires it.
+
 LEL700 numeric identification replaces the removed legacy ASCII page. See LEL_700_REVIEW.md. FID units remain explicit context because its supplied UNITS entry lacks an address. BTU units remain labeled unverified.
 
 ## Gauge and indicators

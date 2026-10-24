@@ -1,5 +1,12 @@
 # Manufacturer ambiguities and hardware-validation gates
 
+## Test Connection clarification (2026-10-24)
+
+- A fresh FC03-only COM4 check confirmed selected **Auto Detect**, detected **SNR671 / LEL 670 Series**, and the conservative `fta_4x` register subset. Saved SNR675/5.11 fields are manual fallbacks, not the detected identity. The controller reports `TYPE FTAVER 4[0xA7]81 SNR671 01 593`; serial semantics remain unverified. Only identification257-272 and primary1-4 were read. No write or unsupported lock/type probe was performed. Raw evidence: tmp/test-connection-readonly-report.json (local QA only).
+- Replaced the generic compatibility/permission text with specific limitations: raw firmware4§81, provisional4.81 interpretation, the undocumented separator and unverified full-register/CAL LOCK60 support under the supplied Rev Q5.12+ scope. This does not claim4.81 is incompatible. The VER5.11 example inconsistency remains in COMMAND_READINESS.md.
+- Test Connection reports selected/detected profiles, the older-firmware subset where applicable, raw/provisional firmware and Modbus response status. Its control-ready flag stays false. Guest and Administrator replay tests produce identical identity/profile/warning results without activating commands. Fully supported successful identification clears stale warnings. Mismatches retain genuine firmware details.
+- Register definitions, conversions, command allowlists, firmware restrictions and role enforcement were not widened by this presentation fix.
+
 General physical-device compatibility remains PENDING. An explicitly authorized, limited read-only COM4 test was completed on2026-10-23; see the bench evidence below. Physical controls remain disabled except the explicitly granted, confirmed SNR671 Acknowledge/Reset bench path. New calibration/test/settings commands are simulator-only; see the 2026-10-24 interface/series update below.
 
 On2026-10-24 the user authorized read-only access on all available serial ports without further approval prompts. This removes the per-session port-access gate for ordinary Connect/Test Connection and saved hardware startup. Only the selected enumerated port is opened; normal transport remains read-only. This authorization does not validate an analyzer's register/protocol behavior or expand any physical command allowlist. Test Connection downgrades even a bench grant to a read-only transport; endpoint changes drop the special bench capability.

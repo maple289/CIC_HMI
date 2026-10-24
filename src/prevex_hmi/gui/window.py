@@ -13,6 +13,7 @@ from prevex_hmi.devices.configuration import save_settings
 from prevex_hmi.devices.models import DeviceConfig
 from prevex_hmi.gui.connection_dialog import AnalyzerChoice,LoginDialog
 from prevex_hmi.gui.gauge import CircularGauge
+from prevex_hmi.gui.compact_readouts import CompactReadouts
 from prevex_hmi.gui.command_button import CommandButton
 from prevex_hmi.gui.serial_ports import require_available_port
 from prevex_hmi.gui.indicators import IndicatorPanel
@@ -121,7 +122,7 @@ class MainWindow(QMainWindow):
         self.monitor_updated=QLabel();self.monitor_updated.setWordWrap(True);info.addWidget(self.monitor_updated)
         self.range_help=QLabel('Blue: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nAlarm bands use instrument thresholds');self.range_help.setWordWrap(True);info.addWidget(self.range_help);info.addStretch();hero.addLayout(info,2);readings.addLayout(hero)
         self.controller_display=QLabel();self.controller_display.setWordWrap(True);info.insertWidget(info.count()-1,self.controller_display)
-        self.readout_container=QWidget();self.readout_grid=QGridLayout(self.readout_container);self.readout_grid.setContentsMargins(0,0,0,0);readings.addWidget(self.readout_container)
+        self.readout_container=CompactReadouts();self.readout_grid=self.readout_container.grid;readings.addWidget(self.readout_container)
         self.overview_plot=self.make_plot();self.overview_plot.setMinimumHeight(180);self.overview_curve=self.overview_plot.plot(pen=pg.mkPen('#45cbb0',width=2),connect='finite');readings.addWidget(self.overview_plot)
         scroll.setWidget(content);body.addWidget(scroll,1)
         commands=QFrame();commands.setObjectName('panel');commands.setFixedWidth(220);column=QVBoxLayout(commands)
@@ -144,9 +145,7 @@ class MainWindow(QMainWindow):
         config=config or self.config
         profile=profile_for(config) if config.family==family else PROFILES[family]
         self.snapshot_family=(family,profile.revision)
-        while self.readout_grid.count():
-            item=self.readout_grid.takeAt(0)
-            if item.widget():item.widget().deleteLater()
+        self.readout_container.clear_cards()
         self.readouts={};self.readout_names={}
         numbers=list(gauges_for(config) if config.family==family else GAUGE_REGISTERS[family])
         if family=='BTU':numbers.append(42)
@@ -156,8 +155,8 @@ class MainWindow(QMainWindow):
             self.readout_names[n]=name
             value=QLabel('--');value.setWordWrap(True);value.setObjectName('digitalValue');box.addWidget(value)
             quality=QLabel();quality.hide()
-            box.setContentsMargins(10,6,10,6);box.setSpacing(3)
-            self.readout_grid.addWidget(frame,i//3,i%3);self.readouts[n]=(value,quality)
+            box.setContentsMargins(6,6,6,6);box.setSpacing(3)
+            self.readout_container.add_card(frame);self.readouts[n]=(value,quality)
         self.indicators.build(family,config if config.family==family else None)
         self.monitor_name.setText(profile_name(config))
 
@@ -306,7 +305,11 @@ class MainWindow(QMainWindow):
             family=info['config']['family']
             config=DeviceConfig(**info["config"])
             if (family,profile_for(config).revision)!=self.snapshot_family:self.build_readouts(family,config)
-        text=f"Detected: {info.get('family') or 'UNKNOWN'} | Assembly: {info.get('model') or 'unavailable'} | Software: {info.get('version') or 'unavailable'} | Serial: {info.get('serial') or 'unavailable'}"
+        firmware=info.get('version') or 'unavailable'
+        if info.get('version_provisional'):firmware+=f" (provisional; reported {info.get('reported_version')})"
+        detected=info.get('loaded_profile') if info.get('family') else 'UNKNOWN'
+        if info.get('register_revision')=='fta_4x':detected+=' (older-firmware register subset)'
+        text=f"Selected: {info.get('selected_profile',self.settings['analyzer_selection'])} | Detected: {detected or info.get('family') or 'UNKNOWN'} | Assembly: {info.get('model') or 'unavailable'} | Software: {firmware} | Serial: {info.get('serial') or 'unavailable'} | Communication: {info.get('communication','not verified')}"
         if info.get('test_only'):text+=' | TEST ONLY: monitoring and controls remain inactive'
         self.identity_label.setText(text);self.warning.setText(info.get('warning',''));self.warning.setVisible(bool(info.get('warning')))
         self.monitor_model.setText(info.get('text',''))
@@ -341,6 +344,7 @@ class MainWindow(QMainWindow):
             if n==2 and value is not None:widget.setText(profile_for(config).status(int(value)))
             else:widget.setText(f'{value:.{precision(family,n,snapshot["raw"].get(3,100))}f} {unit}' if value is not None else '--')
             quality.clear()
+        self.readout_container.refresh_height()
         value,unit=measurement(snapshot)
         marker=(snapshot['last_success'],snapshot['quality'])
         if marker!=self.last_sample:

@@ -16,7 +16,7 @@ from prevex_hmi.devices.models import DeviceConfig, utc_now
 from prevex_hmi.gui.presentation import measurement,uses_controller_fault_display
 from prevex_hmi.logging_db.store import Historian
 from prevex_hmi.security.users import UserStore
-from prevex_hmi.profiles import PROFILES, profile_for
+from prevex_hmi.profiles import PROFILES, profile_for,profile_name
 from prevex_hmi.simulator.bus import SimulatedBus
 from prevex_hmi.communication.validated_controls import validated_670
 from prevex_hmi.profiles.common import COMMANDS
@@ -84,12 +84,15 @@ class MonitoringWorker(QThread):
             controls_verified=bool(self.hardware_grant and self.hardware_grant.operator_commands and self.settings['analyzer_selection'] in ('Auto Detect','LEL','LEL 670 Series') and 'PROFILE MISMATCH' not in warning) if physical else verified
             validated_controls=bool(physical and effective and verified and validated_670(effective))
             if validated_controls:controls_verified=True
-            info={**asdict(identity),'warning':warning,'controls_verified':controls_verified,'test_only':self.test_only}
+            info={**asdict(identity),'warning':warning,'controls_verified':bool(controls_verified and not self.test_only),'test_only':self.test_only,'selected_profile':self.settings['analyzer_selection']}
             if effective:
                 if effective.family == 'FID': effective=replace(effective,units=configured.units or 'US')
                 effective=replace(effective,enabled=True)
                 info['config']=asdict(effective)
                 bus.read(profile_for(effective),effective.addressing,1,4)
+                info['loaded_profile']=profile_name(effective)
+                info['register_revision']=profile_for(effective).revision
+            info['communication']='Valid Modbus response' if bus.stats.successes else 'No valid Modbus response'
             self.identified.emit(info)
             if self.test_only or effective is None: return
             scheduler=PollingScheduler(bus,[effective])

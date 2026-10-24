@@ -21,6 +21,8 @@ class Identification:
     warning: str = ""
     verified: bool = False
     legacy_format: bool = False
+    reported_version: str = ""
+    version_provisional: bool = False
 
 
 def parse_identity(text: str) -> Identification:
@@ -32,7 +34,18 @@ def parse_identity(text: str) -> Identification:
     if re.match(r'^TYPE\s+FTAVER\s',clean,re.I) and re.search(r'\bSNR67[1245](?:D|K|P|PL)?\b',clean,re.I) and not re.search(r'\b(?:BTU|FID)\b',clean,re.I):
         model=re.search(r'\bSNR67[1245](?:D|K|P|PL)?\b',clean,re.I).group(0).upper()
         version=re.search(r'VER\s*(\d+)([.\xa7])(\d{2})\b',clean,re.I)
-        return Identification(family='LEL',model=model,version=f'{version[1]}.{version[3]}' if version else '',text=clean,warning='Legacy FTA compatibility profile: firmware separator and older register support remain provisional. Only explicitly authorized operator commands are permitted.',legacy_format=True)
+        normalized=f'{version[1]}.{version[3]}' if version else ''
+        reported=f'{version[1]}{version[2]}{version[3]}' if version else ''
+        provisional=bool(version and version[2]=='\xa7')
+        limits=[]
+        if provisional:
+            limits.append(f'Reported firmware "{reported}" contains an undocumented 0xA7 separator; "{normalized}" is a provisional interpretation.')
+        if not version:limits.append('Firmware version could not be decoded from the TYPE FTA identification.')
+        elif (int(version[1]),int(version[3]))<(5,12):
+            limits.append(f'The 670 Rev Q manual covers firmware 5.12+. Full register/command support, including CAL LOCK [60], is unverified for {normalized}.')
+        else:
+            limits.append('The TYPE FTA identity format has not been verified against the full 670 register table.')
+        return Identification(family='LEL',model=model,version=normalized,text=clean,warning=' '.join(limits),legacy_format=True,reported_version=reported,version_provisional=provisional)
     tokens=set(re.findall(r"\b(?:LEL|PREVEX|BTU|FID)\b",clean.upper()))
     families={"LEL" if t == "PREVEX" else t for t in tokens}
     if len(families) != 1:
@@ -43,7 +56,7 @@ def parse_identity(text: str) -> Identification:
     serial=re.search(r"(?:SERIAL\s*[:#]?|S/N\s*[:#]?)\s*([A-Z0-9-]+)",clean.upper())
     if serial is None and family == "FID":
         serial=re.search(r"\b(\d{2}\s+\d{3,})\s*$",clean)
-    return Identification(family,model.group(0) if model else "",version.group(1) if version else "",serial.group(1) if serial else "",clean)
+    return Identification(family,model.group(0) if model else "",version.group(1) if version else "",serial.group(1) if serial else "",clean,reported_version=version.group(1) if version else '')
 
 
 def detect(bus, addressing, *, alternate_page=False) -> Identification:
@@ -93,14 +106,17 @@ def resolve_profile(config, selection: str, identity: Identification):
     selected_family='LEL' if selection in ('LEL 670 Series','LEL 700 Series') else selection
     family=identity.family or (selected_family if selected_family in PROFILES else None)
     if family is None:
-        return None, "Auto Detect could not recognize the instrument. Choose a type manually.", False
+        warning="Auto Detect could not recognize the instrument. Choose a type manually."
+        if identity.warning:warning+=' '+identity.warning
+        return None,warning,False
     from prevex_hmi.profiles.lel670 import MODELS
     identified_series='700' if identity.model in TYPES700.values() else '670' if identity.model in MODELS else None
     selected_series='700' if selection=='LEL 700 Series' else '670' if selection=='LEL 670 Series' else None
     mismatch=selected_family in PROFILES and identity.family is not None and (selected_family != identity.family or selected_series is not None and identified_series is not None and selected_series != identified_series)
     warning=f"PROFILE MISMATCH: selected {selection}, detected {identity.family} {identified_series or ''}. Using detected profile; commands blocked." if mismatch else identity.warning
+    if mismatch and identity.warning:warning+=' '+identity.warning
     if family=='LEL' and identity.model and identified_series is None:
-        warning=f'Undocumented LEL assembly {identity.model}; model-specific conversion and controls unavailable. Manufacturer verification required.'
+        warning=(warning+' '+f'Undocumented LEL assembly {identity.model}; model-specific conversion and controls unavailable. Manufacturer verification required.').strip()
     if not identity.verified and not warning:
         warning="Identity unverified; commands blocked"
     # Never interpret BTU/FID registers using a contradictory selected profile.
