@@ -438,7 +438,7 @@ class MainWindow(QMainWindow):
         elif physical:reason='Acknowledge and Reset available. Other commands need applicable firmware documentation.'
         else:reason='Simulator controls. Each command requires target confirmation.'
         if physical and snapshot and snapshot['config'].get('register_profile')=='fta_4x':
-            reason+='\nProvisional firmware4.81: Rev Q covers5.12+. Other command/lock behavior is unverified.'
+            reason+='\nFirmware4.81 uses the 5.12 register/command map by user instruction; hardware compatibility remains unverified.'
         self.command_access_note.setText(reason)
         enabled=bool(snapshot and snapshot['quality']=='GOOD' and control.get('verified') and not control.get('pending') and not control.get('ambiguous') and role in ('Operator','Administrator') and not self.command_dispatching and self.worker and self.worker.isRunning() and (self.settings['mode']=='simulation' or bench or documented))
         for code,button in self.command_buttons.items():
@@ -465,6 +465,8 @@ class MainWindow(QMainWindow):
         config=self.snapshot['config']
         physical=self.settings['mode']=='hardware'
         effects=({0x100:'Can silence horn/service indications.',0x200:'Can clear alarms and initiate ignition after Flameout.',0x300:'Uses zero gas and changes zero calibration.',0x400:'Uses span gas and changes span calibration.',0x500:'Uses zero/span gases and changes calibration.',0x600:'Activates zero-gas test.',0x700:'Activates span-gas test.',0x800:'Activates zero/span gas tests.',0x900:'PERSISTENT CHANGE: saves settings to EEPROM. A reply cannot prove persistence.',0xF00:'Sets software calibration lock.',0x1000:'Clears software calibration lock; does not bypass hardware lock.'}.get(code,'')) if physical else ''
+        if physical and config.get('version')=='4.81':
+            effects+='\nFirmware4.81: using the 5.12 register/command map by your instruction; physical compatibility remains unverified.'
         if physical and code in range(0x300,0x900,0x100) and self.snapshot['raw'].get(2) not in (0,1,2):
             active=DeviceConfig(**config);status=self.snapshot['raw'].get(2)
             effects+=f'\nCurrent STATUS {status}: {profile_for(active).status(status)}. Command may operate gas valves/change calibration while this condition remains.'

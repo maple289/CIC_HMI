@@ -1,4 +1,4 @@
-"""Audited confirmed commands for the manufacturer-documented6705.12+ set."""
+"""Audited confirmed commands for the 670 command set, including the explicit user-approved4.81 assumption."""
 import uuid
 from .commands import CommandController,PendingCommand
 from .validated_controls import ValidatedControlGrant,WORDS,validated_670
@@ -51,7 +51,8 @@ class ValidatedOperatingCommands(CommandController):
                 raise PermissionError('Calibration lock changed during preflight')
             if code in range(0x300,0x900,0x100) and self.bus.read(profile,self.config.addressing,28,1)[28]!=minutes:
                 raise PermissionError('Calibration interval changed during preflight')
-            self.record(actor,code,'SENDING',f'{COMMANDS[code]} confirmed; send once')
+            assumption='; firmware4.81 uses the 5.12 map by user instruction, physical compatibility unverified' if self.config.version=='4.81' else ''
+            self.record(actor,code,'SENDING',f'{COMMANDS[code]} confirmed; send once{assumption}')
             sent=True;self.last_attempt[code]=self.clock()
             self.bus.validated_operating_command(code)
             self.receipt.update(reply_received=True,before_status=before)

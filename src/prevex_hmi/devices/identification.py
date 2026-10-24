@@ -23,6 +23,7 @@ class Identification:
     legacy_format: bool = False
     reported_version: str = ""
     version_provisional: bool = False
+    compatibility_assumed: bool = False
 
 
 def parse_identity(text: str) -> Identification:
@@ -45,7 +46,12 @@ def parse_identity(text: str) -> Identification:
             limits.append(f'The 670 Rev Q manual covers firmware 5.12+. Full register/command support, including CAL LOCK [60], is unverified for {normalized}.')
         else:
             limits.append('The TYPE FTA identity format has not been verified against the full 670 register table.')
-        return Identification(family='LEL',model=model,version=normalized,text=clean,warning=' '.join(limits),legacy_format=True,reported_version=reported,version_provisional=provisional)
+        from .compatibility import assumed_481
+        assumed=assumed_481(model,normalized)
+        if assumed:
+            limits=['Firmware 4.81 uses the 670 Rev Q (5.12+) register/command map by explicit user instruction; physical compatibility is not verified.']
+            if provisional:limits.append(f'Reported firmware {reported}; 0xA7 is interpreted as the version separator.')
+        return Identification(family='LEL',model=model,version=normalized,text=clean,warning=' '.join(limits),legacy_format=True,reported_version=reported,version_provisional=provisional,compatibility_assumed=assumed,verified=assumed)
     tokens=set(re.findall(r"\b(?:LEL|PREVEX|BTU|FID)\b",clean.upper()))
     families={"LEL" if t == "PREVEX" else t for t in tokens}
     if len(families) != 1:
@@ -56,7 +62,11 @@ def parse_identity(text: str) -> Identification:
     serial=re.search(r"(?:SERIAL\s*[:#]?|S/N\s*[:#]?)\s*([A-Z0-9-]+)",clean.upper())
     if serial is None and family == "FID":
         serial=re.search(r"\b(\d{2}\s+\d{3,})\s*$",clean)
-    return Identification(family,model.group(0) if model else "",version.group(1) if version else "",serial.group(1) if serial else "",clean,reported_version=version.group(1) if version else '')
+    result=Identification(family,model.group(0) if model else "",version.group(1) if version else "",serial.group(1) if serial else "",clean,reported_version=version.group(1) if version else '')
+    from .compatibility import assumed_481
+    if family=='LEL' and assumed_481(result.model,result.version):
+        result=replace(result,compatibility_assumed=True,warning='Firmware 4.81 uses the 670 Rev Q (5.12+) register/command map by explicit user instruction; physical compatibility is not verified.')
+    return result
 
 
 def detect(bus, addressing, *, alternate_page=False) -> Identification:
@@ -96,7 +106,7 @@ def detect(bus, addressing, *, alternate_page=False) -> Identification:
             if not identity.model and model:
                 identity=replace(identity,model=model)
         if identity.family and identity.model and identity.version:
-            return replace(identity,verified=not bool(identity.warning))
+            return replace(identity,verified=identity.compatibility_assumed or not bool(identity.warning))
         return replace(identity,warning=identity.warning or "Model or software version unavailable; manual verification required")
     except (OSError,ValueError,PermissionError) as error:
         return Identification(warning=f"Identification failed: {error}")
@@ -121,4 +131,4 @@ def resolve_profile(config, selection: str, identity: Identification):
         warning="Identity unverified; commands blocked"
     # Never interpret BTU/FID registers using a contradictory selected profile.
     effective=replace(config,family=family,assembly=identity.model or config.assembly,version=identity.version or config.version,register_profile='fta_4x' if identity.legacy_format else (identified_series or selected_series or 'auto') if family=='LEL' else 'auto')
-    return effective, warning, bool(identity.verified and not mismatch and not warning)
+    return effective, warning, bool(identity.verified and not mismatch and (not warning or identity.compatibility_assumed and warning==identity.warning))

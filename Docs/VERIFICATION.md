@@ -1,3 +1,7 @@
+# User-approved 4.81 compatibility assumption (2026-10-24)
+
+The user states 4.81 documentation is unavailable and explicitly instructs treating its registers as the 5.12 map and releasing all documented operating buttons. Recognized 670 firmware4.81 now follows that assumption for register8 commands and CAL LOCK60. Existing legacy measurement/LCD handling remains intact. This supersedes the former ACK/RESET-only software restriction for that identity; it does not establish manufacturer or physical compatibility. Roles, target confirmation, fresh identity, controller locks, known status, busy/pending checks, bounded execution monitoring and no ambiguous retries remain. Cold Start/internal commands, generic writes and unvalidated700 hardware controls remain excluded. Test Connection/startup send no operating commands. Development verification uses fake SDK clients only; physical calibration/test/save/lock behavior remains pending.
+
 # Manufacturer ambiguities and hardware-validation gates
 
 ## Test Connection clarification (2026-10-24)

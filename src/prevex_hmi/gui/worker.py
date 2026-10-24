@@ -60,7 +60,8 @@ class MonitoringWorker(QThread):
                 if self.hardware_grant is not None:self.hardware_grant.validate(self.settings,configured)
                 elif connection['port'] not in available_ports():
                     raise ValueError('Select an available serial port. No port was opened.')
-                bench=bool(self.hardware_grant and self.hardware_grant.operator_commands)
+                from prevex_hmi.devices.compatibility import assumed_481
+                bench=bool(self.hardware_grant and self.hardware_grant.operator_commands and not assumed_481(configured.assembly,configured.version))
                 factory=ControllerBenchTransport if bench else ReadOnlySerialTransport
                 options={'bench_grant':self.hardware_grant} if bench else {}
                 transport=factory(connection['port'],hardware_authorized=True,addressing_reviewed=True,baud=connection['baud'],timeout=connection['timeout'],**options)

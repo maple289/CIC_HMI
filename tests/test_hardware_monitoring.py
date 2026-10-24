@@ -59,14 +59,14 @@ def settings_for(path):
     return settings
 
 
-def test_fta_identity_is_lel_without_claiming_verified_version():
+def test_fta_identity_uses_explicit_compatibility_assumption():
     identity=parse_identity(IDENTITY.decode('latin-1'))
     assert identity.family=='LEL' and identity.model=='SNR671' and identity.version=='4.81'
-    assert identity.legacy_format and identity.warning and not identity.verified
+    assert identity.legacy_format and identity.warning and identity.verified and identity.compatibility_assumed
     config,warning,controls=resolve_profile(default_devices()[0],'Auto Detect',identity)
-    assert config.register_profile=='fta_4x' and warning and not controls
-    assert profile_for(config).revision=='fta_4x' and not commands_for(config)
-    for number in (8,40,57,60,62,1281):
+    assert config.register_profile=='fta_4x' and warning and controls
+    assert profile_for(config).revision=='fta_4x' and len(commands_for(config))==11
+    for number in (8,40,57,62,1281):
         with pytest.raises((ValueError,PermissionError)):validate_read(profile_for(config),number,1)
     assert parse_identity('TYPE FTAVER 4\xa781 SNR671 BTU').family is None
 
@@ -135,7 +135,7 @@ def test_hardware_gui_replays_real_signals_and_blocks_injection_and_commands(tmp
         if operator_commands:
             w.users.create_user('admin','bench-test-password')
             w.session=w.users.authenticate('admin','bench-test-password');w.update_command_buttons()
-            assert {code for code,button in w.command_buttons.items() if button.isEnabled()}=={0x100,0x200}
+            assert {code for code,button in w.command_buttons.items() if button.isEnabled()}=={0x100,0x200,0x300,0x400,0x500,0x600,0x700,0x800,0x900,0xF00,0x1000}
             w.show_command_receipt(dict(code=0x100,state='NO_STATE_CHANGE',reply_received=True,before=dict(status=25,relays=4,service=161),after=dict(status=25,relays=4,service=161)))
             assert 'Controller replied' in w.command_proof.text() and 'Reply received: YES' in w.command_proof.text()
             assert 'STATUS: 25 → 25' in w.command_proof.text()
@@ -143,20 +143,17 @@ def test_hardware_gui_replays_real_signals_and_blocks_injection_and_commands(tmp
             assert not w.command_access_button.isEnabled()
             w.users.create_user('admin','bench-test-password')
             w.session=w.users.authenticate('admin','bench-test-password');w.update_command_buttons()
-            assert w.command_access_button.isEnabled() and 'Read-only' in w.command_access_note.text()
-            assert 'firmware4.81' in w.command_access_note.text()
-            # Activation is an explicit separate action, never caused by login.
-            assert all(not b.isEnabled() for b in w.command_buttons.values())
-            activations=[]
-            monkeypatch.setattr(w,'start_controller_bench',lambda:activations.append(True))
-            w.command_access_button.click()
-            assert activations==[True]
+            assert w.command_access_button.isHidden()
+            assert 'Firmware4.81' in w.command_access_note.text()
+            assert all(b.isEnabled() for b in w.command_buttons.values())
+            # Sign-in advertises readiness; no write-capable transport is opened.
+            assert len(instances)==1
         assert all(not b.isEnabled() for b in w.simulation_controls)
         assert (tmp_path/'hardware.sqlite3').exists() and not (tmp_path/'simulation.sqlite3').exists()
         w.worker.request('reading',42)
         wait(lambda:'Simulation injection' in w.command_message.text() or 'Simulation injection' in w.statusBar().currentMessage())
         assert w.snapshot['raw'][1]==32769
-        assert len(instances)==1 and all(pdu+1 not in (8,40,57,60,62) for _,pdu,_ in instances[0].calls)
+        assert len(instances)==1 and all(pdu+1 not in (8,40,57,62) for _,pdu,_ in instances[0].calls)
     finally:
         w.close();wait(lambda:not w.worker.isRunning());app.processEvents()
     assert instances[0].closed

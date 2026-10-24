@@ -12,8 +12,8 @@ from prevex_hmi.devices.identification import detect
 from prevex_hmi.logging_db.store import Historian
 
 
-@pytest.fixture
-def control(tmp_path):
+@pytest.fixture(params=['5.12','4.81'])
+def control(tmp_path,request):
     state=dict(status=0,lock=0,minutes=4,lost=False,mismatch=False,writes=[],clients=[])
     class Client:
         def __init__(self,**kwargs):
@@ -23,7 +23,7 @@ def control(tmp_path):
         def close(self):self.connected=False;self.closed=True
         def read_holding_registers(self,pdu,*,count,device_id):
             assert device_id==1
-            identity=b'LEL VER5.12 SNR675 S/N UNIT1'.ljust(32,b' ')
+            identity=(b'TYPE FTAVER 4\xa781 SNR671' if request.param=='4.81' else b'LEL VER5.12 SNR675 S/N UNIT1').ljust(32,b' ')
             raw={1:256,2:state['status'],3:100,4:128,28:state['minutes'],60:state['lock'],62:11}
             raw.update({257+i//2:int.from_bytes(identity[i:i+2],'big') for i in range(0,32,2)})
             return SimpleNamespace(isError=lambda:False,registers=[raw.get(n,0) for n in range(pdu+1,pdu+count+1)])
@@ -33,7 +33,7 @@ def control(tmp_path):
             if code==0xF00:state['lock']|=2
             if code==0x1000:state['lock']&=~2
             return SimpleNamespace(isError=lambda:False,address=pdu+int(state['mismatch']),registers=[code])
-    config=replace(default_devices()[0],version='5.12')
+    config=replace(default_devices()[0],version=request.param,assembly='SNR671' if request.param=='4.81' else 'SNR675',register_profile='fta_4x' if request.param=='4.81' else '670')
     transport=ReadOnlySerialTransport('COM7',hardware_authorized=True,addressing_reviewed=True,client_factory=Client)
     bus=BusEngine(transport,sleep=lambda _:None)
     identity=detect(bus,config.addressing)
@@ -96,7 +96,7 @@ def test_ambiguous_echo_never_retries(control,failure):
     assert len(state['writes'])==1
 
 
-@pytest.mark.parametrize('version',['4.81','5.08','5.11','6.00','7.01','unknown'])
+@pytest.mark.parametrize('version',['4.80','4.82','5.08','5.11','6.00','7.01','unknown'])
 def test_wrong_firmware_never_allowed(version):
     assert not validated_670(replace(default_devices()[0],version=version))
 
@@ -110,7 +110,8 @@ def test_cached_precommand_status_is_not_used_for_execution_proof(control):
     assert service.pending.saw_active and store.audit_rows()[0][4]=='STARTED'
 
 
-def test_command_buttons_follow_documented_profile_role_and_lock_state(tmp_path):
+@pytest.mark.parametrize('legacy',[False,True])
+def test_command_buttons_follow_documented_profile_role_and_lock_state(tmp_path,legacy):
     import os
     os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
     from dataclasses import asdict
@@ -119,7 +120,7 @@ def test_command_buttons_follow_documented_profile_role_and_lock_state(tmp_path)
     from prevex_hmi.devices.configuration import load_settings
     app=QApplication.instance() or QApplication([])
     settings=load_settings(tmp_path/'settings.json');settings['mode']='hardware'
-    config=replace(default_devices()[0],version='5.12')
+    config=replace(default_devices()[0],version='4.81' if legacy else '5.12',assembly='SNR671' if legacy else 'SNR675',register_profile='fta_4x' if legacy else '670')
     settings['devices']=[asdict(config)];settings['connection'].update(port='COM7',baud=9600)
     w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False)
     w.users.close()
@@ -162,3 +163,22 @@ def test_authorized_fault_state_commands_send_once_without_false_outcome(control
         service.observe(dict(raw={2:fault},quality='GOOD'))
         assert store.audit_rows()[0][4]=='UNKNOWN' and service.pending is None and service.ambiguous
     assert state['writes']==[(7,code,1)]
+
+
+@pytest.mark.parametrize('text',['TYPE FTAVER 4\xa781 SNR671','TYPE FTAVER 4.81 SNR671','LEL VER4.81 SNR671'])
+def test_481_assumption_is_explicit_and_does_not_override_mismatches(text):
+    from prevex_hmi.devices.identification import parse_identity,resolve_profile
+    from prevex_hmi.profiles import profile_for,commands_for
+    from prevex_hmi.communication.protocol import validate_read
+    identity=parse_identity(text)
+    # Standard ASCII identities still need their normal TYPE cross-check.
+    if not identity.legacy_format:identity=replace(identity,verified=True)
+    config,warning,ready=resolve_profile(default_devices()[0],'Auto Detect',identity)
+    assert ready and identity.compatibility_assumed and 'by explicit user instruction' in warning
+    assert validated_670(config) and set(commands_for(config))==WORDS
+    assert profile_for(config).registers[60].access=='R'
+    validate_read(profile_for(config),60,1)
+    assert not resolve_profile(default_devices()[0],'LEL 700 Series',identity)[2]
+    assert not resolve_profile(default_devices()[0],'BTU',identity)[2]
+    assert not validated_670(replace(config,assembly='SNR673'))
+    assert not validated_670(replace(config,family='FID',register_profile='auto'))

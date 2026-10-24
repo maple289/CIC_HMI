@@ -76,7 +76,7 @@ def test_admin_test_connection_does_not_change_profile_or_activate_commands(app,
             assert 'Detected: LEL 670 Series' in w.identity_label.text()
             assert 'Valid Modbus response' in w.identity_label.text()
             if legacy:
-                assert '0xA7' in w.warning.text() and 'CAL LOCK [60]' in w.warning.text()
+                assert '0xA7' in w.warning.text() and 'by explicit user instruction' in w.warning.text()
                 assert 'Only explicitly authorized operator' not in w.warning.text()
                 assert 'provisional; reported 4\xa781' in w.identity_label.text()
                 assert w.identity['config']['register_profile']=='fta_4x'
@@ -94,7 +94,7 @@ def test_legacy_warning_distinguishes_raw_separator_and_firmware_scope():
     assert raw.reported_version=='4\xa781' and raw.version=='4.81' and raw.version_provisional
     normal=parse_identity('TYPE FTAVER 4.81 SNR671')
     assert not normal.version_provisional and '0xA7' not in normal.warning
-    assert '5.12+' in normal.warning and not normal.verified
+    assert '5.12+' in normal.warning and normal.verified and normal.compatibility_assumed
     modern=parse_identity('PREVEX VER5.12 SNR675 2005')
     assert not modern.warning and not modern.legacy_format
 
@@ -103,7 +103,7 @@ def test_profile_mismatch_keeps_genuine_firmware_details():
     from prevex_hmi.devices.identification import resolve_profile,Identification
     identity=parse_identity('TYPE FTAVER 4\xa781 SNR671')
     config,warning,controls=resolve_profile(default_devices()[0],'BTU',identity)
-    assert 'MISMATCH' in warning and '0xA7' in warning and 'CAL LOCK [60]' in warning
+    assert 'MISMATCH' in warning and '0xA7' in warning and 'by explicit user instruction' in warning
     assert not controls and config.register_profile=='fta_4x'
     _,warning,controls=resolve_profile(default_devices()[0],'BTU',Identification('LEL','SNR673','5.12',verified=True))
     assert 'MISMATCH' in warning and 'Undocumented' in warning and not controls
