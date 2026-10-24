@@ -62,12 +62,9 @@ def main() -> int:
         return 2
     grant=None
     if args.read_only_com4 or args.controller_com4_bench:
-        from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant
+        from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant,controller_bench_settings
         grant=ReadOnlyControllerGrant(operator_commands=args.controller_com4_bench)
-        settings['mode']='hardware'
-        settings['analyzer_selection']='Auto Detect'
-        settings['connection'].update(port='COM4',baud=9600,timeout=.5,identification_page='standard')
-        settings['devices'][0].update(family='LEL',assembly='SNR671',version='4.81',address=1,address_mode='direct',pdu_offset=-1,register_profile='fta_4x',name='LEL SNR671 — real controller',id='hardware-com4-snr671')
+        settings=controller_bench_settings(settings)
     window=MainWindow(settings,settings_path,data_path,hardware_grant=grant)
     window.show()
     errors=[]

@@ -5,6 +5,17 @@ grant for each launched process. Default is FC03 only; the explicit operator
 flag adds only the user-requested ACK/RESET exception documented in670 Rev Q.
 """
 from dataclasses import dataclass
+import copy
+
+
+def controller_bench_settings(settings: dict) -> dict:
+    """Prepare only the previously authorized endpoint; never save a grant."""
+    result=copy.deepcopy(settings)
+    result['mode']='hardware'
+    result['analyzer_selection']='Auto Detect'
+    result['connection'].update(port='COM4',baud=9600,timeout=.5,identification_page='standard')
+    result['devices'][0].update(family='LEL',assembly='SNR671',version='4.81',address=1,address_mode='direct',pdu_offset=-1,register_profile='fta_4x',name='LEL SNR671 — real controller',id='hardware-com4-snr671')
+    return result
 
 
 @dataclass(frozen=True)

@@ -1,3 +1,10 @@
+# Normal-launch controller session entry (2026-10-24)
+
+- Fixed the confusing physical-access error when starting the normal executable with saved hardware settings but without a command-line grant. Added **Connect SNR671 / COM4**, an explicit UI entry to the already authorized controller bench session. The CLI launchers still work and share the same preparation helper.
+- The action prepares COM4/9600/packet1/PDU-1/standard identity and Auto Detect in memory, then stops any old worker before connecting. Fresh SNR671/FTA identity verification and the exact endpoint grant remain required. Saved configuration does not authorize hardware; ungranted startup opens no port and points to the named button. Only confirmed Operator/Admin ACK/RESET remain permitted; other physical writes are unchanged and blocked.
+- Tests:80 targeted interface/profile/hardware-replay/monitoring/bench-command regressions passed in47.33s. New coverage checks ungranted normal launch, no transport/scan before authorization, the button's fixed endpoint, preservation of saved settings and rejection of another port. No real port opened or command sent.
+- Rebuilt Windows executable; packaged simulation smoke passed(exit0,46 updates,42 Diagnostics updates,max heartbeat gap110ms,physical_access=false). Operating/interface guides and README updated. Previous full650-test milestone remains recorded below.
+
 # Interface improvements and named LEL series profiles (2026-10-24)
 
 - Completed serial-port enumeration with descriptions, Refresh, saved/missing-port presentation, preservation of connection settings and rejection before opening an unavailable port. Simulation needs no COM adapter.

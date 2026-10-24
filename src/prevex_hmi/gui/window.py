@@ -79,6 +79,8 @@ class MainWindow(QMainWindow):
         self.connect_button=QPushButton('Connect');self.connect_button.clicked.connect(lambda:self.begin('connect'));toolbar.addWidget(self.connect_button)
         self.disconnect_button=QPushButton('Disconnect');self.disconnect_button.clicked.connect(lambda:self.begin('disconnect'));toolbar.addWidget(self.disconnect_button)
         self.test_button=QPushButton('Test Connection');self.test_button.clicked.connect(lambda:self.begin('test'));toolbar.addWidget(self.test_button)
+        self.bench_button=QPushButton('Connect SNR671 / COM4');self.bench_button.clicked.connect(self.start_controller_bench);toolbar.addWidget(self.bench_button)
+        self.bench_button.setToolTip('Previously authorized controller bench: COM4, 9600, packet address1. Monitoring plus confirmed Operator/Admin Acknowledge/Reset only. No calibration or other physical writes.')
         self.selection_label=QLabel();toolbar.addWidget(self.selection_label,1);root.addLayout(toolbar)
         self.identity_label=QLabel('Instrument identification: not connected');self.identity_label.setWordWrap(True);root.addWidget(self.identity_label)
         self.warning=QLabel();self.warning.setObjectName('warning');self.warning.setWordWrap(True);self.warning.hide();root.addWidget(self.warning)
@@ -251,11 +253,22 @@ class MainWindow(QMainWindow):
         if self.worker and self.worker.isRunning():self.worker.stop()
         else:self.worker_finished()
 
+    def start_controller_bench(self):
+        from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant,controller_bench_settings
+        self.settings=controller_bench_settings(self.settings)
+        self.hardware_grant=ReadOnlyControllerGrant(operator_commands=True)
+        self.refresh_connection_labels()
+        self.begin('connect')
+
     def set_connection_buttons(self,enabled):
-        for button in (self.choose_button,self.connect_button,self.test_button):button.setEnabled(enabled)
+        for button in (self.choose_button,self.connect_button,self.test_button,self.bench_button):button.setEnabled(enabled)
 
     def start_worker(self,*,test_only=False):
         if self.settings['mode']=='hardware':
+            if self.hardware_grant is None:
+                self.worker_error('No port was opened. For the previously authorized controller, click Connect SNR671 / COM4. Other physical endpoints require separate authorization.')
+                self.set_connection_buttons(True)
+                return
             try:require_available_port(self.settings['connection']['port'])
             except (ValueError,OSError) as error:
                 self.worker_error(str(error));self.set_connection_buttons(True);return

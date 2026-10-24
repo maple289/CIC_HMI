@@ -8,6 +8,8 @@ Choose Analyzer Type offers Auto Detect (default), LEL 670 Series, LEL 700 Serie
 
 The COM dropdown uses PySerial enumeration and shows each port description and device name. Refresh rescans without restarting. The previous choice remains visible with an unavailable label if removed. Hardware connection/test attempts require a currently enumerated port; simulation needs no serial adapter. Existing baud, timeout, identity-page and additional serial-setting fields are preserved. Physical adapters still use the documented 8N1 format.
 
+For the previously authorized SNR671 controller, **Connect SNR671 / COM4** starts the same scoped bench session as the optional command-line launcher, directly from the normal application. Settings and authorization are prepared in memory only. Plain startup with saved hardware settings opens no port and points to this button; no hidden launch flag is necessary to reach the approved session. Other physical endpoints remain gated.
+
 Auto Detect uses FC03 only. Recognized assembly information selects the LEL series. A positive identity conflicting with the manual family or series loads the detected interpretation, displays a warning and blocks commands. Generic PREVEX text or a version beginning with 7 does not establish 700-series identity.
 
 ## Reading and connection displays

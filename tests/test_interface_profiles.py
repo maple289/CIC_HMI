@@ -59,11 +59,42 @@ def test_port_settings_preserve_other_serial_fields(app,tmp_path,monkeypatch):
 
 
 def test_no_port_prevents_worker_creation(app,tmp_path,monkeypatch):
+    from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant
     monkeypatch.setattr('prevex_hmi.gui.serial_ports.list_ports.comports',lambda:[])
     settings=load_settings(tmp_path/'settings.json');settings['mode']='hardware'
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False)
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False,hardware_grant=ReadOnlyControllerGrant())
     w.start_worker()
     assert w.worker is None and 'available COM port' in w.warning.text()
+    w.close()
+
+
+def test_normal_launch_guides_to_explicit_bench_button_without_opening_port(app,tmp_path,monkeypatch):
+    settings=load_settings(tmp_path/'settings.json');settings['mode']='hardware'
+    monkeypatch.setattr('prevex_hmi.gui.window.require_available_port',lambda _:pytest.fail('Unapproved launch must not scan/open transport'))
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
+    assert w.worker is None and w.hardware_grant is None
+    assert 'click Connect SNR671 / COM4' in w.warning.text() and w.bench_button.isEnabled()
+    w.close()
+
+
+def test_bench_button_prepares_only_authorized_session_without_saving_grant(app,tmp_path,monkeypatch):
+    settings=load_settings(tmp_path/'settings.json');original=copy.deepcopy(settings)
+    path=tmp_path/'settings.json';saved=path.read_bytes()
+    w=MainWindow(settings,path,tmp_path,start_worker=False)
+    calls=[]
+    monkeypatch.setattr(w,'start_worker',lambda **kwargs:calls.append((copy.deepcopy(w.settings),w.hardware_grant)))
+    w.bench_button.click()
+    assert len(calls)==1
+    prepared,grant=calls[0]
+    assert grant.operator_commands and prepared['mode']=='hardware'
+    assert prepared['connection']['port']=='COM4' and prepared['connection']['baud']==9600
+    assert prepared['devices'][0]['assembly']=='SNR671' and prepared['devices'][0]['address']==1
+    assert prepared['devices'][0]['register_profile']=='fta_4x'
+    assert settings==original and path.read_bytes()==saved
+    from prevex_hmi.devices.models import DeviceConfig
+    grant.validate(prepared,DeviceConfig(**prepared['devices'][0]))
+    prepared['connection']['port']='COM5'
+    with pytest.raises(PermissionError):grant.validate(prepared,DeviceConfig(**prepared['devices'][0]))
     w.close()
 
 
