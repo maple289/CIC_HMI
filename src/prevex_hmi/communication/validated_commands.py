@@ -30,6 +30,7 @@ class ValidatedOperatingCommands(CommandController):
             profile=profile_for(self.config)
             grant=ValidatedControlGrant(self.connection['port'],self.connection['baud'],self.config.addressing.packet_address,self.config.pdu_offset,self.config.assembly,self.config.version,identity.text,self.connection['timeout'])
             before=self.bus.read(profile,self.config.addressing,2,1)[2]
+            if before not in profile.statuses:raise PermissionError('Operating STATUS is undocumented/unverified')
             if code not in (0x100,0x200) and before in (4,5,6,7,11,12):raise PermissionError('Instrument busy/warming up')
             timeout=60
             if code not in (0x100,0x200):
@@ -38,7 +39,6 @@ class ValidatedOperatingCommands(CommandController):
                 if code==0x900 and lock:raise PermissionError('Calibration/security lock active; Save All blocked')
                 if code in range(0x300,0x900,0x100):
                     if lock:raise PermissionError('Hardware/software calibration lock active')
-                    if before not in (0,1,2):raise PermissionError('Resolve analyzer fault before calibration/test')
                     minutes=self.bus.read(profile,self.config.addressing,28,1)[28]
                     if not 1<=minutes<=4:raise PermissionError('Calibration interval invalid/unverified')
                     timeout=minutes*60*(2 if code in (0x500,0x800) else 1)+120

@@ -377,7 +377,7 @@ class MainWindow(QMainWindow):
             if button and receipt.get('reply_received') and (previous is None or previous[:3]!=key[:3]):button.feedback(True)
             elif button and receipt['state'] in ('UNKNOWN','REJECTED') and not receipt.get('reply_received'):button.feedback(False)
         state=receipt['state'];color='#efb753'
-        title={'CHECKING':'Checking target','SENDING':'Command sent; waiting for reply','PENDING':'Acknowledged — monitoring STATUS','STARTED':'Execution sequence observed','COMPLETED_OBSERVED':'STATUS sequence ended','CONTROLLER_REPLIED':'Controller replied','STATE_CHANGED':'Controller replied — state changed','NO_STATE_CHANGE':'Controller replied — state unchanged','UNKNOWN':'Outcome unknown — do not retry','REJECTED':'Command not sent'}.get(state,state)
+        title={'CHECKING':'Checking target','SENDING':'Command sent; waiting for reply','PENDING':'Acknowledged — monitoring STATUS','WAITING_STATUS':'Waiting for execution evidence','STARTED':'Execution sequence observed','COMPLETED_OBSERVED':'STATUS sequence ended','CONTROLLER_REPLIED':'Controller replied','STATE_CHANGED':'Controller replied — state changed','NO_STATE_CHANGE':'Controller replied — state unchanged','UNKNOWN':'Outcome unknown — do not retry','REJECTED':'Command not sent'}.get(state,state)
         if state in ('STATE_CHANGED','COMPLETED_SIMULATED','COMPLETED_OBSERVED','VERIFIED'):color='#39c6a4'
         elif state in ('CONTROLLER_REPLIED','NO_STATE_CHANGE'):color='#69a7ed'
         elif state in ('UNKNOWN','REJECTED','FAILED'):color='#f27778'
@@ -427,7 +427,7 @@ class MainWindow(QMainWindow):
         elif role not in ('Operator','Administrator'):reason='Sign in as Operator or Administrator. Viewer accounts cannot use commands.'
         elif physical and not bench and not documented:
             reason='Read-only connection. Use Enable Acknowledge / Reset for the approved SNR671 bench session.' if self.command_bench_target_matches() else 'Read-only: operating commands are unverified for this firmware/profile.'
-        elif control.get('pending'):reason='Command in progress; wait for STATUS outcome.'
+        elif control.get('pending'):reason='Command pending; waiting for STATUS evidence.'
         elif control.get('ambiguous'):reason='Command outcome unknown. Review state and reconnect; do not retry.'
         elif not control.get('verified'):reason='Commands unavailable: identity or selected profile is unresolved.'
         elif physical and documented:reason='Documented670 operating commands available. Each requires target confirmation. Save All requires Administrator.'
@@ -448,12 +448,11 @@ class MainWindow(QMainWindow):
             if snapshot and code in range(0x300,0x900,0x100):
                 lock_register=27 if profile_for(active_config).revision=='700' else 60
                 allow=allow and lock_register in snapshot['raw'] and not snapshot['raw'][lock_register]&(1 if lock_register==27 else 3) and snapshot['raw'].get(2) not in (4,5,6,7,11,12)
-                if physical and documented:allow=allow and snapshot['raw'].get(2) in (0,1,2)
             button.setEnabled(bool(allow));button.setToolTip('Verified simulator identity, current communication and Operator/Administrator session required')
             if code not in commands_for(active_config):button.setToolTip('Legacy firmware command behavior is unverified.' if profile_for(active_config).revision=='fta_4x' else '700-series Rev D: Lock/Unlock have no effect over Modbus; Save Settings permits factory changes. Not available in operational controls.' if profile_for(active_config).revision=='700' else 'Not supported by the selected profile.')
             if physical:button.setToolTip(('Real controller:670 Rev Q p90. Operator/Administrator login and explicit confirmation required.' if bench else 'Start the explicitly authorized command bench session to test Acknowledge/Reset.') if code in (0x100,0x200) else 'Unavailable for the current physical firmware/profile; see the command-readiness explanation above.')
             if physical and code in documented:button.setToolTip('Documented670 command. Fresh identity/status/lock checks, target confirmation and audit required. Save All: Administrator only.')
-        if control.get('pending'):self.command_message.setText('Command active: monitoring STATUS. Duplicate commands disabled.')
+        if control.get('pending'):self.command_message.setText('Command pending: waiting for STATUS evidence. Duplicate commands disabled.')
         elif control.get('ambiguous'):self.command_message.setText('Unknown command outcome. No retry; reconnect and review state.')
         elif self.settings['mode']=='hardware':self.command_message.setText('Documented commands require individual confirmation; write acknowledgment does not prove execution.' if documented else 'Real controller: sign in as Operator/Administrator to test Acknowledge or Reset. Each action requires confirmation.' if bench else 'Read-only controller test. No commands enabled in this session.')
 
@@ -462,6 +461,9 @@ class MainWindow(QMainWindow):
         config=self.snapshot['config']
         physical=self.settings['mode']=='hardware'
         effects=({0x100:'Can silence horn/service indications.',0x200:'Can clear alarms and initiate ignition after Flameout.',0x300:'Uses zero gas and changes zero calibration.',0x400:'Uses span gas and changes span calibration.',0x500:'Uses zero/span gases and changes calibration.',0x600:'Activates zero-gas test.',0x700:'Activates span-gas test.',0x800:'Activates zero/span gas tests.',0x900:'PERSISTENT CHANGE: saves settings to EEPROM. A reply cannot prove persistence.',0xF00:'Sets software calibration lock.',0x1000:'Clears software calibration lock; does not bypass hardware lock.'}.get(code,'')) if physical else ''
+        if physical and code in range(0x300,0x900,0x100) and self.snapshot['raw'].get(2) not in (0,1,2):
+            active=DeviceConfig(**config);status=self.snapshot['raw'].get(2)
+            effects+=f'\nCurrent STATUS {status}: {profile_for(active).status(status)}. Command may operate gas valves/change calibration while this condition remains.'
         answer=QMessageBox.question(self,'Confirm analyzer command',f"Target: {config['name']} / {config['family']} / address {config['address']}\n{COMMANDS[code]} (0x{code:04X})\n{effects}\nExecute this {'REAL CONTROLLER' if physical else 'simulated'} command once?",QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
         if answer!=QMessageBox.Yes:return
         self.active_command=code

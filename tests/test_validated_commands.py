@@ -58,6 +58,7 @@ def test_documented_words_send_only_register8_once_and_record_receipt(control,co
         assert service.pending and service.pending.timeout>=360
         for status in (4,5,6,7,0):service.observe(dict(raw={2:status},quality='GOOD'))
         assert store.audit_rows()[0][4]=='COMPLETED_OBSERVED'
+        assert service.receipt['status_after']==0
     elif code in (0xF00,0x1000):assert store.audit_rows()[0][4]=='VERIFIED'
     else:assert store.audit_rows()[0][4]=='SENT_UNVERIFIED'
     service.execute(code,'admin',confirmed=True)
@@ -70,14 +71,14 @@ def test_prohibited_words_never_construct_writer(control,code):
     assert not state['writes'] and len(state['clients'])==1
 
 
-@pytest.mark.parametrize('failure',['role','confirmation','lock','busy','fault','unknown_lock','interval','save_operator','identity'])
+@pytest.mark.parametrize('failure',['role','confirmation','lock','busy','unknown_status','unknown_lock','interval','save_operator','identity'])
 def test_preflight_rejects_without_transmission(control,failure):
     service,state,_=control;token='admin';confirmed=True;code=0x300
     if failure=='role':token='viewer'
     elif failure=='confirmation':confirmed=False
     elif failure=='lock':state['lock']=1
     elif failure=='busy':state['status']=4
-    elif failure=='fault':state['status']=25
+    elif failure=='unknown_status':state['status']=0x2020
     elif failure=='unknown_lock':state['lock']=0x2020
     elif failure=='interval':state['minutes']=0
     elif failure=='save_operator':token='operator';code=0x900
@@ -130,6 +131,8 @@ def test_command_buttons_follow_documented_profile_role_and_lock_state(tmp_path)
         w.update_command_buttons()
         assert {code for code,b in w.command_buttons.items() if b.isEnabled()}==WORDS
         assert w.command_access_button.isHidden()
+        w.snapshot['raw'][2]=25;w.update_command_buttons()
+        assert all(w.command_buttons[code].isEnabled() for code in range(0x300,0x900,0x100))
         role[0]='Operator';w.update_command_buttons()
         assert not w.command_buttons[0x900].isEnabled() and w.command_buttons[0x300].isEnabled()
         w.snapshot['raw'][60]=1;w.update_command_buttons()
@@ -138,3 +141,24 @@ def test_command_buttons_follow_documented_profile_role_and_lock_state(tmp_path)
         role[0]='Viewer';w.update_command_buttons()
         assert not any(b.isEnabled() for b in w.command_buttons.values())
     finally:w.worker=None;w.close();app.processEvents()
+
+
+@pytest.mark.parametrize('fault',[8,25,26])
+@pytest.mark.parametrize('code',[0x300,0x600])
+def test_authorized_fault_state_commands_send_once_without_false_outcome(control,fault,code):
+    service,state,store=control;state['status']=fault
+    service.execute(code,'admin',confirmed=True)
+    assert state['writes']==[(7,code,1)] and service.pending and service.receipt['reply_received']
+    service.observe(dict(raw={2:fault},quality='GOOD'))
+    assert store.audit_rows()[0][4]=='WAITING_STATUS' and service.pending
+    count=len(store.audit_rows())
+    service.observe(dict(raw={2:fault},quality='GOOD'))
+    assert len(store.audit_rows())==count
+    if code==0x300:
+        for status in (4,6,7,0):service.observe(dict(raw={2:status},quality='GOOD'))
+        assert store.audit_rows()[0][4]=='COMPLETED_OBSERVED' and service.pending is None
+    else:
+        service.clock=lambda:service.pending.started+service.pending.timeout+1
+        service.observe(dict(raw={2:fault},quality='GOOD'))
+        assert store.audit_rows()[0][4]=='UNKNOWN' and service.pending is None and service.ambiguous
+    assert state['writes']==[(7,code,1)]

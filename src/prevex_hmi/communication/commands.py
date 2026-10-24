@@ -93,6 +93,15 @@ class CommandController:
         elif 'register_ages' in snapshot and age>max(0,self.clock()-pending.started):
             return  # A cached pre-command STATUS is not execution evidence.
         elif status in (3,8,9,10) or status in (13,14,15,16,17,18,19,20,21,22,23,24,25,26,27):
+            if self.receipt is not None:self.receipt['status_after']=status
+            if getattr(self.bus.transport,'physical',False) and not pending.saw_active and self.receipt and self.receipt.get('before_status')==status:
+                if self.clock()-pending.started>pending.timeout:
+                    self.record(pending.actor,pending.code,'UNKNOWN',f'Existing STATUS {status} unchanged; execution not confirmed within{pending.timeout:g}s; no retry')
+                    self.pending=None;self.ambiguous=True
+                elif not self.receipt.get('waiting_existing_fault'):
+                    self.receipt['waiting_existing_fault']=True
+                    self.record(pending.actor,pending.code,'WAITING_STATUS',f'Existing STATUS {status} remains; acknowledgment is not proof of execution. Waiting for a new sequence.')
+                return
             self.record(pending.actor,pending.code,"FAILED",f"Command outcome: {profile_for(self.config).status(status)}")
             self.pending=None
         elif status in (4,5,6,7):
@@ -101,6 +110,7 @@ class CommandController:
             pending.saw_active=True
             if self.receipt is not None:self.receipt['status_after']=status
         elif pending.saw_active and status in (0,1,2):
+            if self.receipt is not None:self.receipt['status_after']=status
             physical=getattr(self.bus.transport,'physical',False)
             self.record(pending.actor,pending.code,"COMPLETED_OBSERVED" if physical else "COMPLETED_SIMULATED","Observed STATUS sequence ended; calibration accuracy not independently verified" if physical else "Simulator sequence ended with normal/alarm operating status; not hardware validation")
             self.pending=None
