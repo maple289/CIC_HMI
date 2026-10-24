@@ -139,6 +139,18 @@ def test_hardware_gui_replays_real_signals_and_blocks_injection_and_commands(tmp
             w.show_command_receipt(dict(code=0x100,state='NO_STATE_CHANGE',reply_received=True,before=dict(status=25,relays=4,service=161),after=dict(status=25,relays=4,service=161)))
             assert 'Controller replied' in w.command_proof.text() and 'Reply received: YES' in w.command_proof.text()
             assert 'STATUS: 25 → 25' in w.command_proof.text()
+        else:
+            assert not w.command_access_button.isEnabled()
+            w.users.create_user('admin','bench-test-password')
+            w.session=w.users.authenticate('admin','bench-test-password');w.update_command_buttons()
+            assert w.command_access_button.isEnabled() and 'Read-only' in w.command_access_note.text()
+            assert 'firmware4.81' in w.command_access_note.text()
+            # Activation is an explicit separate action, never caused by login.
+            assert all(not b.isEnabled() for b in w.command_buttons.values())
+            activations=[]
+            monkeypatch.setattr(w,'start_controller_bench',lambda:activations.append(True))
+            w.command_access_button.click()
+            assert activations==[True]
         assert all(not b.isEnabled() for b in w.simulation_controls)
         assert (tmp_path/'hardware.sqlite3').exists() and not (tmp_path/'simulation.sqlite3').exists()
         w.worker.request('reading',42)

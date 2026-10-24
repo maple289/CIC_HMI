@@ -149,3 +149,31 @@ class BusEngine:
                 if code==0x100:self.transport.acknowledge()
                 else:self.transport.reset_alarms()
             finally:self._last_end=self.clock()
+
+    def activate_validated_controls(self,grant,config,*,confirmed,role):
+        from .serial_transport import ReadOnlySerialTransport,ValidatedOperatingTransport
+        if not confirmed or role not in ('Operator','Administrator'):raise PermissionError('Confirmed role required')
+        grant.validate(config)
+        with self._lock:
+            if self.closed:raise RuntimeError('Bus closed')
+            if isinstance(self.transport,ValidatedOperatingTransport):
+                if self.transport.control_grant!=grant:raise PermissionError('Control scope changed')
+                return
+            if type(self.transport) is not ReadOnlySerialTransport:raise PermissionError('Normal read-only serial connection required')
+            # One worker owns the bus. Release the old COM handle before opening
+            # a scoped transport; no concurrent owner or generic write API.
+            self.transport.close()
+            self.transport=ValidatedOperatingTransport(grant.port,control_grant=grant,config=config,hardware_authorized=True,addressing_reviewed=True,baud=grant.baud,timeout=grant.timeout,client_factory=self.transport._client_factory)
+            self.transport.trace=self._trace
+
+    def validated_operating_command(self,code):
+        from .serial_transport import ValidatedOperatingTransport
+        from .validated_controls import WORDS
+        if not isinstance(self.transport,ValidatedOperatingTransport) or code not in WORDS:raise PermissionError('No validated command capability')
+        with self._lock:
+            if self.closed:raise RuntimeError('Bus closed')
+            deadline=max(self.clock(),(self._last_start or 0)+self.minimum_interval,(self._last_end or 0)+35/self.baud)
+            self.sleep(max(0,deadline-self.clock()));self._last_start=self.clock()
+            self._active={'address':self.transport.control_grant.address,'register':8,'count':1,'family':'VALIDATED_OPERATING_COMMAND'}
+            try:self.transport.operating_command(code)
+            finally:self._last_end=self.clock()

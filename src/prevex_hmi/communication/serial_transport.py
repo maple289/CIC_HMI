@@ -25,6 +25,7 @@ class ReadOnlySerialTransport:
         if baud not in (300, 600, 1200, 2400, 4800, 9600, 19200) or not 0.05 <= timeout <= 5:
             raise ValueError("Invalid serial settings")
         self.trace: Callable[[bool, bytes], None] = lambda *_: None
+        self._client_factory=client_factory
         self._received = bytearray()
         self._client = client_factory(port=port, baudrate=baud, bytesize=8, parity="N", stopbits=1,
                                       timeout=timeout, retries=0, trace_packet=self._trace_packet)
@@ -93,3 +94,25 @@ class ControllerBenchTransport(ReadOnlySerialTransport):
 
     def acknowledge(self) -> None:self._operator_action(0x0100)
     def reset_alarms(self) -> None:self._operator_action(0x0200)
+
+
+class ValidatedOperatingTransport(ReadOnlySerialTransport):
+    """Scoped command8 capability; created only after confirmed role preflight."""
+    def __init__(self,*args,control_grant,config,**kwargs):
+        control_grant.validate(config)
+        if not args or args[0].upper()!=control_grant.port.upper() or kwargs.get('baud',9600)!=control_grant.baud:
+            raise PermissionError('Control transport endpoint differs')
+        self.control_grant,self.control_config=control_grant,config
+        super().__init__(*args,**kwargs)
+
+    def operating_command(self,code):
+        from .validated_controls import WORDS
+        self.control_grant.validate(self.control_config)
+        if code not in WORDS:raise PermissionError('Unsupported/prohibited operating command')
+        pdu=self.control_config.addressing.pdu(8)
+        self._received.clear()
+        try:reply=self._client.write_register(pdu,code,device_id=self.control_grant.address)
+        except (ModbusException,OSError) as error:
+            raise TimeoutError('Command acknowledgment lost; do not retry') from error
+        if reply.isError() or reply.address!=pdu or reply.registers!=[code]:
+            raise ProtocolError('Command echo mismatch; outcome unknown')

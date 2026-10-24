@@ -18,6 +18,8 @@ from prevex_hmi.logging_db.store import Historian
 from prevex_hmi.security.users import UserStore
 from prevex_hmi.profiles import PROFILES, profile_for
 from prevex_hmi.simulator.bus import SimulatedBus
+from prevex_hmi.communication.validated_controls import validated_670
+from prevex_hmi.profiles.common import COMMANDS
 
 log=logging.getLogger(__name__)
 
@@ -80,6 +82,8 @@ class MonitoringWorker(QThread):
             if physical and self.hardware_grant:self.hardware_grant.validate_identity(identity)
             effective,warning,verified=resolve_profile(configured,self.settings['analyzer_selection'],identity)
             controls_verified=bool(self.hardware_grant and self.hardware_grant.operator_commands and self.settings['analyzer_selection'] in ('Auto Detect','LEL','LEL 670 Series') and 'PROFILE MISMATCH' not in warning) if physical else verified
+            validated_controls=bool(physical and effective and verified and validated_670(effective))
+            if validated_controls:controls_verified=True
             info={**asdict(identity),'warning':warning,'controls_verified':controls_verified,'test_only':self.test_only}
             if effective:
                 if effective.family == 'FID': effective=replace(effective,units=configured.units or 'US')
@@ -95,10 +99,13 @@ class MonitoringWorker(QThread):
             database.retain()
             users=UserStore(self.data_path/'users.sqlite3')
             command_class=CommandController
-            if physical and self.hardware_grant and self.hardware_grant.operator_commands:
+            if validated_controls:
+                from prevex_hmi.communication.validated_commands import ValidatedOperatingCommands
+                command_class=ValidatedOperatingCommands
+            elif physical and self.hardware_grant and self.hardware_grant.operator_commands:
                 from prevex_hmi.communication.bench_commands import BenchOperatorCommands
                 command_class=BenchOperatorCommands
-            controller=command_class(bus,effective,database,users,identity_verified=controls_verified,expected_identity=identity)
+            controller=command_class(bus,effective,database,users,identity_verified=controls_verified,expected_identity=identity,**({'connection':connection} if validated_controls else {}))
             last_emit=last_identity=time.monotonic()
             last_logged=last_event=None
             while not self.stop_requested.is_set():
@@ -161,7 +168,7 @@ class MonitoringWorker(QThread):
                                 if value is not None: database.measurement(snapshot['last_success'],effective.id,number,float(value),unit,'INSTRUMENT_FAULT_LCD' if number==1 and snapshot['reading_source']=='controller_lcd_fault' else snapshot['instrument_quality'],status)
                         last_logged=snapshot['last_success']
                     database.commit()
-                    snapshot['control']={'verified':controller.identity_verified,'pending':controller.pending is not None,'ambiguous':controller.ambiguous,'message':controller.result,'receipt':getattr(controller,'receipt',None)}
+                    snapshot['control']={'verified':controller.identity_verified,'pending':controller.pending is not None,'ambiguous':controller.ambiguous,'message':controller.result,'receipt':getattr(controller,'receipt',None),'physical_commands':list(COMMANDS) if validated_controls else []}
                     self.updated.emit(snapshot,bus.diagnostics())
                     self.events_ready.emit(database.events())
                     self.audit_ready.emit(database.audit_rows())

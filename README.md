@@ -4,7 +4,9 @@
 
 Offline Windows monitoring for CIC PREVEX LEL, BTU and FID analyzers. Development in progress; physical-device compatibility is unverified. The initial physical transport will remain read-only. No hardware access is part of automated testing.
 
-**Serial-port access:** the user has authorized read-only connections on all available serial ports. Choose Hardware and an available port, then use Connect or Test Connection without additional authorization prompts or launch flags. Only the selected port is opened. Real writes remain restricted to the separate, confirmed SNR671 COM4 Acknowledge/Reset bench exception.
+**Serial-port access:** the user has authorized read-only connections on all available serial ports. Choose Hardware and an available port, then use Connect or Test Connection without additional authorization prompts or launch flags. Only the selected port is opened. Operating writes require the supported, individually confirmed command workflow below.
+
+**Operating controls:** the user subsequently approved documented commands for validated firmware. Recognized LEL6705.12-5.x instruments now expose the full documented command set after sign-in, with individual confirmation and fresh identity/lock/status checks. SAVE ALL requires Administrator. The provisional4.81 controller remains limited to its existing Acknowledge/Reset exception; the supplied manual explicitly covers5.12+, so its additional commands/lock behavior remain unverified. See [command readiness](Docs/COMMAND_READINESS.md).
 
 ## Development environment
 

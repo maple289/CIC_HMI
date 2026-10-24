@@ -41,7 +41,7 @@ Green means acknowledgment, not successful execution. The receipt and command au
 
 Cold Start, internal commands, output-test bypasses and prohibited register writes remain excluded. The simulation command path emits serialized FC06 request/echo frames; physical commands cannot use it.
 
-**Physical restriction:** the existing user-authorized COM4/SNR671 bench path still permits only individually confirmed Acknowledge and Reset. Calibration, tests, SAVE ALL, LOCK CAL and all other physical writes remain disabled. The new request prepares and tests these functions in simulation; it does not expand the physical bench allowlist. All real 700-series controls remain blocked pending validation and explicit authorization.
+**Physical controls:** the provisional4.81 COM4/SNR671 bench path still permits only individually confirmed Acknowledge and Reset. The user subsequently approved the full documented command set for validated firmware: recognized6705.12-5.x now exposes calibration, tests, SAVE ALL and software lock/unlock after sign-in, with per-command confirmation, fresh checks and audit. SAVE ALL requires Administrator. A scoped fixed-register8 transport is created only after a confirmed command.700 physical controls remain unvalidated and blocked. See COMMAND_READINESS.md for the exact firmware boundary and the current older controller's limitations.
 
 ## Profile comparison and validation boundary
 
