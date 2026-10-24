@@ -55,7 +55,7 @@ class AnalyzerChoice(QDialog):
         self.manual=QDoubleSpinBox();self.manual.setDecimals(3);self.manual.setRange(.001,1000000);self.manual.setValue(d.manual_maximum or d.fullscale)
         self.use_fallback=QCheckBox("Use manual maximum if register3 is unavailable");self.use_fallback.setChecked(d.manual_maximum is not None)
         for name,widget in [("Instrument name",self.name),("Connection source",self.mode),("Simulated instrument",self.sim_family),("Serial port",self.port),("Baud rate / 8N1",self.baud),("Timeout",self.timeout),("Displayed ADDRESS",self.address),("Packet-address compatibility",self.address_mode),("Register-to-PDU offset",self.offset),("Identity page",self.page),("Manual assembly fallback",self.assembly),("Manual software fallback",self.version),("FID unit context (verify physically)",self.units),("Simulated FID FULLSCLE",self.fullscale),("Refresh interval",self.interval),("Gauge range source",self.range_mode),("Manual display maximum",self.manual),("Fallback",self.use_fallback)]:form.addRow(name,widget)
-        warning=QLabel("Hardware monitoring requires an explicitly authorized read-only session. Commands remain blocked until firmware behavior is validated. Display overrides change only the gauge scale.")
+        warning=QLabel("Available serial ports connect directly for read-only monitoring. Real commands remain restricted to the existing SNR671 Acknowledge/Reset bench action. Display overrides change only the gauge scale.")
         warning.setWordWrap(True);root.addWidget(warning)
         self.packet_address=QLabel();form.addRow("Effective packet address",self.packet_address)
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)

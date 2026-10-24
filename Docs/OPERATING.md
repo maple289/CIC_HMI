@@ -1,10 +1,16 @@
+# Normal serial-port connections
+
+Read-only use of all available serial ports is authorized. Select Hardware, choose an enumerated COM port and connection settings, and press **Connect** or **Test Connection**. No additional authorization prompt, session grant or special launcher is required for ordinary monitoring. A saved hardware connection can resume on startup when its selected port is available. The application opens only that selected port, not every detected port. Removed/unavailable ports remain blocked until an available port is selected.
+
+Normal physical connections use the read-only transport and never acquire command permission from port settings or identity. Test Connection always uses a read-only transport, even within a bench session. Moving a bench session to another endpoint drops its special command permission. Register-page restrictions and unresolved profile/protocol definitions still apply independently of port access.
+
 # Authorized SNR671 controller bench operation
 
 For the previously authorized legacy LEL controller, open the application normally and click **Connect SNR671 / COM4**. This starts the scoped bench session from the interface; special launch flags are optional. The alternatives remain `scripts/launch_controller_bench.cmd` or the executable with `--controller-com4-bench`. Only the tested COM4/9600/packet1/PDU-1 endpoint is opened. Sign in/create a local Administrator to enable Acknowledge and Reset; each action requires confirmation. The result card distinguishes a reply from observed state changes or an unknown outcome. No calibration or general configuration writes are enabled. Close any prior bench instance first so only one owner uses COM4. Use `launch_controller_readonly.cmd` for monitoring without commands. For the observed older FTA8001H fault state, the primary gauge mirrors the fresh controller LCD(-99%LFL). Brief nonnumeric intervals retain the last numeric gauge value for at most four seconds from its actual sample time. Retention is display-only, visibly stale and independent of the connection indicator. Raw register1 remains in Diagnostics. See SNR671_BENCH.md for evidence and limitations.
 
-If saved hardware settings are loaded without an active session grant, the application displays guidance to the named bench button and opens no port. The button prepares the known endpoint in memory and requires fresh matching identification. It does not save an authorization flag, authorize other endpoints or execute a command during connection.
+The bench button prepares the known endpoint and its limited command grant in memory and requires fresh matching identification. It does not save a command authorization flag or execute any command during connection. Normal monitoring on any available port uses Connect/Test Connection and needs no bench grant.
 
-The following general preview instructions describe simulation and default hardware gating; the scoped bench launch above is the explicit exception.
+The following general preview instructions describe simulation and monitoring; the scoped bench action above is the only physical command exception.
 
 # Operating the single-analyzer preview
 
@@ -14,7 +20,7 @@ Start `scripts/launch_windows.cmd`, or run `.venv/Scripts/python.exe scripts/run
 
 **Choose Analyzer Type** offers Auto Detect(default), LEL, BTU and FID. Manual type selection also selects the matching simulated instrument; Auto Detect offers a separate simulated-family choice. Only fields applicable to the selected family are shown. For LEL, choose700 or legacy simulation. Click OK to confirm the choice, stop the old session, clear old readings and start one new connection. Cancel preserves the previous settings. Existing multi-device settings migrate to one selected instrument; the original is backed up as `settings.v1-backup.json`.
 
-COM port, baud, timeout, nonzero address, address compatibility and register offset are saved. Minus-one addressing requires a displayed address of at least2; the dialog shows the resulting nonzero packet address. Physical connections remain blocked; selecting hardware opens no port. No real Modbus writes are implemented.
+COM port, baud, timeout, nonzero address, address compatibility and register offset are saved. Minus-one addressing requires a displayed address of at least2; the dialog shows the resulting nonzero packet address. Hardware monitoring connects read-only on the selected available port without another authorization step. Ordinary connections have no write capability; only the separate confirmed SNR671 bench action permits its established Acknowledge/Reset exception.
 
 **Test Connection** stops monitoring, performs identification and a read-only response check, then reports family/model/version/serial without enabling controls. Choose Connect to start polling. Unknown identity permits an explicit manual profile but keeps commands disabled. A mismatch uses the detected family's definitions and displays a warning; choose the matching type or Auto Detect to resolve it.
 

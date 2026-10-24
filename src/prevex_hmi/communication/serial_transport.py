@@ -1,4 +1,4 @@
-"""Read-only adapter. No GUI/CLI path opens hardware in the initial release."""
+"""Read-only serial adapter used by the user-approved available-port policy."""
 from __future__ import annotations
 
 from collections.abc import Callable

@@ -2,6 +2,8 @@
 
 General physical-device compatibility remains PENDING. An explicitly authorized, limited read-only COM4 test was completed on2026-10-23; see the bench evidence below. Physical controls remain disabled except the explicitly granted, confirmed SNR671 Acknowledge/Reset bench path. New calibration/test/settings commands are simulator-only; see the 2026-10-24 interface/series update below.
 
+On2026-10-24 the user authorized read-only access on all available serial ports without further approval prompts. This removes the per-session port-access gate for ordinary Connect/Test Connection and saved hardware startup. Only the selected enumerated port is opened; normal transport remains read-only. This authorization does not validate an analyzer's register/protocol behavior or expand any physical command allowlist. Test Connection downgrades even a bench grant to a read-only transport; endpoint changes drop the special bench capability.
+
 | ID | Evidence / question | Current behavior and required verification |
 | --- | --- | --- |
 | A1 | LEL PDF p5/printed89 and BTU p5/printed73: packet address = displayed ADDRESS minus1, including displayed1 -> packet0. | No packet0 is allowed, including reads. No broadcast. Record displayed and packet addresses separately. Read-only authorized bench test must determine direct vs minus-one behavior using nonzero candidates. |

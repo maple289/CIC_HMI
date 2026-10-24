@@ -54,12 +54,13 @@ class MonitoringWorker(QThread):
             simulation=None
             physical=self.settings['mode']=='hardware'
             if physical:
-                if self.hardware_grant is None:
-                    raise PermissionError('Physical access requires an explicitly authorized read-only session. No port was opened.')
-                self.hardware_grant.validate(self.settings,configured)
-                from prevex_hmi.communication.serial_transport import ReadOnlySerialTransport,ControllerBenchTransport
-                factory=ControllerBenchTransport if self.hardware_grant.operator_commands else ReadOnlySerialTransport
-                options={'bench_grant':self.hardware_grant} if self.hardware_grant.operator_commands else {}
+                from prevex_hmi.communication.serial_transport import ReadOnlySerialTransport,ControllerBenchTransport,available_ports
+                if self.hardware_grant is not None:self.hardware_grant.validate(self.settings,configured)
+                elif connection['port'] not in available_ports():
+                    raise ValueError('Select an available serial port. No port was opened.')
+                bench=bool(self.hardware_grant and self.hardware_grant.operator_commands)
+                factory=ControllerBenchTransport if bench else ReadOnlySerialTransport
+                options={'bench_grant':self.hardware_grant} if bench else {}
                 transport=factory(connection['port'],hardware_authorized=True,addressing_reviewed=True,baud=connection['baud'],timeout=connection['timeout'],**options)
             else:
                 actual=next(d for d in default_devices() if d.family == self.settings['simulated_family'])
@@ -76,9 +77,9 @@ class MonitoringWorker(QThread):
                 simulation=SimulatedBus([actual]);transport=simulation
             bus=BusEngine(transport,baud=connection['baud'])
             identity=detect(bus,configured.addressing,alternate_page=connection.get('identification_page') == 'alternate')
-            if physical:self.hardware_grant.validate_identity(identity)
+            if physical and self.hardware_grant:self.hardware_grant.validate_identity(identity)
             effective,warning,verified=resolve_profile(configured,self.settings['analyzer_selection'],identity)
-            controls_verified=bool(self.hardware_grant.operator_commands and self.settings['analyzer_selection'] in ('Auto Detect','LEL','LEL 670 Series') and 'PROFILE MISMATCH' not in warning) if physical else verified
+            controls_verified=bool(self.hardware_grant and self.hardware_grant.operator_commands and self.settings['analyzer_selection'] in ('Auto Detect','LEL','LEL 670 Series') and 'PROFILE MISMATCH' not in warning) if physical else verified
             info={**asdict(identity),'warning':warning,'controls_verified':controls_verified,'test_only':self.test_only}
             if effective:
                 if effective.family == 'FID': effective=replace(effective,units=configured.units or 'US')
@@ -94,7 +95,7 @@ class MonitoringWorker(QThread):
             database.retain()
             users=UserStore(self.data_path/'users.sqlite3')
             command_class=CommandController
-            if physical and self.hardware_grant.operator_commands:
+            if physical and self.hardware_grant and self.hardware_grant.operator_commands:
                 from prevex_hmi.communication.bench_commands import BenchOperatorCommands
                 command_class=BenchOperatorCommands
             controller=command_class(bus,effective,database,users,identity_verified=controls_verified,expected_identity=identity)
@@ -133,7 +134,7 @@ class MonitoringWorker(QThread):
                 now=time.monotonic()
                 if now-last_identity >= 30:
                     check=detect(bus,effective.addressing)
-                    if physical:self.hardware_grant.validate_identity(check)
+                    if physical and self.hardware_grant:self.hardware_grant.validate_identity(check)
                     last_identity=now
                     if (identity.verified and (not check.verified or (check.family,check.model,check.version,check.serial) != (identity.family,identity.model,identity.version,identity.serial))) or (check.family and check.family != effective.family):
                         raise OSError('Instrument identity changed or became unverifiable. Polling stopped; reconnect to identify again.')

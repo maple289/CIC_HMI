@@ -17,6 +17,40 @@ IDENTITY=b'TYPE FTAVER 4\xa781 SNR671'.ljust(32,b' ')
 RAW={1:32769,2:25,3:100,4:4,5:10240,6:12800,7:15360,9:63548,11:0,15:0,23:815,24:246,28:1,29:2047,30:512,38:0,39:32769,42:1226,43:15360,50:27136,51:11577,52:14624,53:9548,54:17996,55:8224,56:512,59:161}
 
 
+@pytest.mark.parametrize('port',['COM1','COM7','COM18'])
+@pytest.mark.parametrize('test_only',[False,True])
+def test_available_ports_are_readonly_without_bench_grant(tmp_path,monkeypatch,port,test_only):
+    from prevex_hmi.gui.worker import MonitoringWorker
+    from prevex_hmi.devices.identification import Identification
+    app=QApplication.instance() or QApplication([])
+    settings=load_settings(tmp_path/'settings.json');settings['mode']='hardware'
+    settings['connection'].update(port=port,baud=9600)
+    settings['devices']=[asdict(default_devices()[0])]
+    calls=[];instances=[]
+    class ReadOnly:
+        physical=True
+        def __init__(self,*args,**kwargs):
+            assert args[0]==port and 'bench_grant' not in kwargs
+            self.trace=lambda *_:None;self.closed=False;instances.append(self)
+        def read(self,address,pdu,count):
+            calls.append((address,pdu,count))
+            return [RAW.get(n,0) for n in range(pdu+1,pdu+count+1)]
+        def close(self):self.closed=True
+    monkeypatch.setattr('prevex_hmi.communication.serial_transport.available_ports',lambda:[port])
+    monkeypatch.setattr('prevex_hmi.communication.serial_transport.ReadOnlySerialTransport',ReadOnly)
+    monkeypatch.setattr('prevex_hmi.communication.serial_transport.ControllerBenchTransport',lambda *a,**k:pytest.fail('General ports must never construct a write-capable transport'))
+    monkeypatch.setattr('prevex_hmi.gui.worker.detect',lambda *a,**k:Identification('LEL','SNR675','5.11',verified=True))
+    worker=MonitoringWorker(settings,tmp_path,test_only=test_only)
+    updates=[];errors=[];identified=[]
+    worker.updated.connect(lambda snapshot,diagnostics:(updates.append(snapshot),worker.stop()))
+    worker.failed.connect(errors.append);worker.identified.connect(identified.append)
+    worker.run()
+    assert not errors and identified and calls and instances[0].closed
+    assert not identified[0]['controls_verified']
+    if not test_only:assert updates and not updates[0]['control']['verified']
+    assert worker.hardware_grant is None
+
+
 def settings_for(path):
     settings=load_settings(path)
     settings.update(mode='hardware',analyzer_selection='Auto Detect')

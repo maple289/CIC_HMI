@@ -4,6 +4,8 @@
 
 Offline Windows monitoring for CIC PREVEX LEL, BTU and FID analyzers. Development in progress; physical-device compatibility is unverified. The initial physical transport will remain read-only. No hardware access is part of automated testing.
 
+**Serial-port access:** the user has authorized read-only connections on all available serial ports. Choose Hardware and an available port, then use Connect or Test Connection without additional authorization prompts or launch flags. Only the selected port is opened. Real writes remain restricted to the separate, confirmed SNR671 COM4 Acknowledge/Reset bench exception.
+
 ## Development environment
 
 Use Python 3.12 x64. Create a project-local environment and install locked development dependencies:

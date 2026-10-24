@@ -68,13 +68,25 @@ def test_no_port_prevents_worker_creation(app,tmp_path,monkeypatch):
     w.close()
 
 
-def test_normal_launch_guides_to_explicit_bench_button_without_opening_port(app,tmp_path,monkeypatch):
+@pytest.mark.parametrize('action',['connect','test'])
+@pytest.mark.parametrize('port',['COM4','COM7'])
+def test_normal_controls_use_available_ports_without_session_grants(app,tmp_path,monkeypatch,action,port):
+    from prevex_hmi.gui.worker import MonitoringWorker
+    from test_monitoring import until
     settings=load_settings(tmp_path/'settings.json');settings['mode']='hardware'
-    monkeypatch.setattr('prevex_hmi.gui.window.require_available_port',lambda _:pytest.fail('Unapproved launch must not scan/open transport'))
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
-    assert w.worker is None and w.hardware_grant is None
-    assert 'click Connect SNR671 / COM4' in w.warning.text() and w.bench_button.isEnabled()
-    w.close()
+    settings['connection'].update(port=port,baud=9600)
+    calls=[]
+    class Capture(MonitoringWorker):
+        def run(self):calls.append((self.settings['connection']['port'],self.hardware_grant,self.test_only))
+    monkeypatch.setattr('prevex_hmi.gui.window.MonitoringWorker',Capture)
+    monkeypatch.setattr('prevex_hmi.gui.window.require_available_port',lambda selected:None if selected==port else pytest.fail('Unexpected port'))
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False)
+    w.begin(action)
+    until(app,lambda:bool(calls) and not w.worker.isRunning())
+    assert calls==[(port,None,action=='test')]
+    assert w.hardware_grant is None and 'READ ONLY' in w.banner.text()
+    w.close();app.processEvents()
+
 
 
 def test_bench_button_prepares_only_authorized_session_without_saving_grant(app,tmp_path,monkeypatch):
@@ -96,6 +108,26 @@ def test_bench_button_prepares_only_authorized_session_without_saving_grant(app,
     prepared['connection']['port']='COM5'
     with pytest.raises(PermissionError):grant.validate(prepared,DeviceConfig(**prepared['devices'][0]))
     w.close()
+
+
+def test_test_connection_is_readonly_and_port_change_drops_bench_capability(app,tmp_path,monkeypatch):
+    from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant,controller_bench_settings
+    from prevex_hmi.gui.worker import MonitoringWorker
+    from test_monitoring import until
+    settings=controller_bench_settings(load_settings(tmp_path/'settings.json'))
+    calls=[]
+    class Capture(MonitoringWorker):
+        def run(self):calls.append((self.hardware_grant,self.test_only))
+    monkeypatch.setattr('prevex_hmi.gui.window.MonitoringWorker',Capture)
+    monkeypatch.setattr('prevex_hmi.gui.window.require_available_port',lambda _:None)
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False,hardware_grant=ReadOnlyControllerGrant(operator_commands=True))
+    w.start_worker(test_only=True)
+    until(app,lambda:bool(calls) and not w.worker.isRunning())
+    assert calls[0][1] and not calls[0][0].operator_commands
+    w.settings['connection']['port']='COM7';w.begin('connect')
+    until(app,lambda:len(calls)==2 and not w.worker.isRunning())
+    assert calls[1]==(None,False) and w.hardware_grant is None
+    w.close();app.processEvents()
 
 
 def test_hold_is_four_seconds_display_only_keeps_zero_and_recovers(app,monkeypatch):

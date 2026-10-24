@@ -5,6 +5,7 @@ import copy
 import csv
 from pathlib import Path
 import time
+from dataclasses import replace
 from PySide6.QtCore import Qt,Signal,QTimer
 from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
 import pyqtgraph as pg
@@ -230,7 +231,7 @@ class MainWindow(QMainWindow):
     def refresh_connection_labels(self):
         c=self.settings['connection'];d=self.config
         self.selection_label.setText(f"{self.settings['analyzer_selection']} | Address {d.address} | {c['baud']} baud / 8N1 | {self.settings['mode'].upper()}")
-        self.banner.setText('SIMULATION MODE | One synthetic instrument | No physical port open' if self.settings['mode']=='simulation' else ('LIVE CONTROLLER BENCH TEST | ACK/RESET require confirmation | Sensor assembly disconnected' if self.hardware_grant.operator_commands else 'LIVE CONTROLLER BENCH TEST | READ ONLY | Sensor assembly disconnected') if self.hardware_grant else 'HARDWARE ACCESS BLOCKED | Explicit authorization required')
+        self.banner.setText('SIMULATION MODE | One synthetic instrument | No physical port open' if self.settings['mode']=='simulation' else ('LIVE CONTROLLER BENCH TEST | ACK/RESET require confirmation | Sensor assembly disconnected' if self.hardware_grant.operator_commands else 'LIVE CONTROLLER BENCH TEST | READ ONLY | Sensor assembly disconnected') if self.hardware_grant else f'LIVE HARDWARE | READ ONLY | {c["port"] or "Select a serial port"}')
         for widget in self.simulation_controls:widget.setEnabled(self.settings['mode']=='simulation')
 
     def invalidate(self,reason='Disconnected'):
@@ -248,6 +249,13 @@ class MainWindow(QMainWindow):
         self.refresh_profile_settings()
 
     def begin(self,action):
+        if action in ('connect','test') and self.settings['mode']=='hardware' and self.hardware_grant is not None:
+            try:
+                self.hardware_grant.validate(self.settings,self.config)
+                if self.config.family!='LEL' or self.settings['analyzer_selection'] not in ('Auto Detect','LEL','LEL 670 Series'):
+                    self.hardware_grant=None
+            except (PermissionError,ValueError):self.hardware_grant=None
+            self.refresh_connection_labels()
         self.next_action=action;self.invalidate('Connection stopped; readings invalidated')
         self.set_connection_buttons(False)
         if self.worker and self.worker.isRunning():self.worker.stop()
@@ -265,14 +273,11 @@ class MainWindow(QMainWindow):
 
     def start_worker(self,*,test_only=False):
         if self.settings['mode']=='hardware':
-            if self.hardware_grant is None:
-                self.worker_error('No port was opened. For the previously authorized controller, click Connect SNR671 / COM4. Other physical endpoints require separate authorization.')
-                self.set_connection_buttons(True)
-                return
             try:require_available_port(self.settings['connection']['port'])
             except (ValueError,OSError) as error:
                 self.worker_error(str(error));self.set_connection_buttons(True);return
-        self.worker=MonitoringWorker(copy.deepcopy(self.settings),self.data_path,self,test_only=test_only,hardware_grant=self.hardware_grant)
+        worker_grant=replace(self.hardware_grant,operator_commands=False) if test_only and self.hardware_grant else self.hardware_grant
+        self.worker=MonitoringWorker(copy.deepcopy(self.settings),self.data_path,self,test_only=test_only,hardware_grant=worker_grant)
         owner=self.worker
         def current():return self.worker is owner and not self.next_action and not self.closing
         self.worker.updated.connect(self.update_data);self.worker.identified.connect(self.identification_result)
