@@ -1,3 +1,8 @@
+# COM4 connection recovery (2026-10-24)
+
+- Investigated the reported connection failure after the4.81 release. Application logs showed COM4 PermissionError/Access denied before identification; both the previous connection-layout executable and new firmware481-controls executable were running. Gracefully closed the verified older instance; no process was forcibly terminated.
+- Authorized FC03-only COM4 verification then detected SNR671, reported4§81 / normalized4.81, and the LEL670 FTA profile. The check closed its port handle and sent zero operating/configuration writes. After the HMI windows had closed, reopened the current firmware481-controls executable and verified its actual UI displayed Connection Established, COMMUNICATION GOOD, fresh measurements and the expected controller fault indicators. The current HMI remains monitoring; no command button or authentication dialog was operated. No source change or executable rebuild was required; avoid simultaneous HMI instances using the same COM port.
+
 # User-approved 4.81 operating command compatibility (2026-10-24)
 
 - The user explicitly states that 4.81 documentation is unavailable and instructs treating its registers as the 5.12 map and releasing all operating buttons. Updated AGENTS.md to record this approval. Recognized documented 670 assemblies reporting exactly4.81 now use the documented eleven-command register8 allowlist under a visible user-approved compatibility assumption. Other unknown firmware, undocumented models, mismatched profiles and unvalidated700 physical controls remain restricted.
