@@ -11,7 +11,7 @@ from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant
 from prevex_hmi.communication.protocol import frame,validate_read
 from prevex_hmi.gui.window import MainWindow
 from prevex_hmi.profiles import profile_for,commands_for
-from prevex_hmi.gui.presentation import measurement
+from prevex_hmi.gui.presentation import measurement,FaultDisplayCache
 
 IDENTITY=b'TYPE FTAVER 4\xa781 SNR671'.ljust(32,b' ')
 RAW={1:32769,2:25,3:100,4:4,5:10240,6:12800,7:15360,9:63548,11:0,15:0,23:815,24:246,28:1,29:2047,30:512,38:0,39:32769,42:1226,43:15360,50:27136,51:11577,52:14624,53:9548,54:17996,55:8224,56:512,59:161}
@@ -47,6 +47,32 @@ def test_fault_word_uses_current_lcd_but_never_clamps_normal_negative_measuremen
     assert measurement(snapshot,1)[0] is None
     snapshot['raw'][2]=0;snapshot['raw'][4]=0
     assert float(measurement(snapshot,1)[0])==pytest.approx(-127.99609375)
+
+
+def test_numeric_fault_display_survives_native_flashing_but_expires_and_clears():
+    config=replace(default_devices()[0],assembly='SNR671',version='4.81',register_profile='fta_4x')
+    snapshot=dict(config=asdict(config),raw=dict(RAW),quality='GOOD',register_ages={})
+    cache=FaultDisplayCache();cache.update(snapshot,100)
+    assert measurement(snapshot,1)[0]==-99
+    def lcd(text):
+        data=text.encode().ljust(10,b' ')
+        snapshot['raw'].update({51+i//2:int.from_bytes(data[i:i+2],'big') for i in range(0,10,2)})
+    lcd('TC2 FAIL');cache.update(snapshot,102)
+    assert measurement(snapshot,1)[0]==-99 and snapshot['fault_lcd_reading']['held']
+    lcd('');cache.update(snapshot,104)
+    assert measurement(snapshot,1)[0]==-99
+    cache.update(snapshot,107)
+    assert measurement(snapshot,1)[0] is None
+    lcd('-99 %LFL');cache.update(snapshot,108)
+    snapshot['quality']='OFFLINE';cache.update(snapshot,109)
+    snapshot['quality']='GOOD';lcd('TC2 FAIL');cache.update(snapshot,110)
+    assert measurement(snapshot,1)[0] is None
+    lcd('-99 %LFL');cache.update(snapshot,111)
+    lcd('60 degC');cache.update(snapshot,112)
+    assert measurement(snapshot,1)[0] is None
+    lcd('-99 %LFL');cache.update(snapshot,113)
+    snapshot['config']['id']='different-device';lcd('TC2 FAIL');cache.update(snapshot,114)
+    assert measurement(snapshot,1)[0] is None
 
 
 @pytest.mark.parametrize('field,value',[('port','COM5'),('baud',19200),('identification_page','alternate')])

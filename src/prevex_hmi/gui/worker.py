@@ -12,7 +12,7 @@ from prevex_hmi.communication.scheduler import PollingScheduler
 from prevex_hmi.devices.identification import detect, resolve_profile
 from prevex_hmi.devices.configuration import default_devices
 from prevex_hmi.devices.models import DeviceConfig, utc_now
-from prevex_hmi.gui.presentation import measurement,uses_controller_fault_display
+from prevex_hmi.gui.presentation import measurement,uses_controller_fault_display,FaultDisplayCache
 from prevex_hmi.logging_db.store import Historian
 from prevex_hmi.security.users import UserStore
 from prevex_hmi.profiles import PROFILES, profile_for
@@ -93,6 +93,7 @@ class MonitoringWorker(QThread):
             controller=command_class(bus,effective,database,users,identity_verified=controls_verified,expected_identity=identity)
             last_emit=last_identity=time.monotonic()
             last_logged=last_event=None
+            fault_display=FaultDisplayCache()
             while not self.stop_requested.is_set():
                 try: message=self.messages.get_nowait()
                 except Empty: message=None
@@ -130,6 +131,7 @@ class MonitoringWorker(QThread):
                         raise OSError('Instrument identity changed or became unverifiable. Polling stopped; reconnect to identify again.')
                 if now-last_emit >= 0.25:
                     snapshot=state.snapshot(now)
+                    fault_display.update(snapshot,now)
                     snapshot['source']='hardware' if physical else 'simulation'
                     snapshot['instrument_quality']='INSTRUMENT_FAULT' if snapshot['raw'].get(2) not in (None,0,1,2,4,5,6,7,11,12) else 'GOOD'
                     snapshot['reading_source']='controller_lcd_fault' if uses_controller_fault_display(snapshot) else 'process_register'

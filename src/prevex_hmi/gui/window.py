@@ -269,6 +269,8 @@ class MainWindow(QMainWindow):
             if n==2 and value is not None:widget.setText(profile_for(config).status(int(value)))
             else:widget.setText(f'{value:.{precision(family,n,snapshot["raw"].get(3,100))}f} {unit}' if value is not None else '--')
             quality.setText(('COMM GOOD | CONTROLLER FAULT' if snapshot.get('source')=='hardware' and snapshot.get('instrument_quality')=='INSTRUMENT_FAULT' else 'GOOD') if value is not None else snapshot['quality'] if snapshot['quality']!='GOOD' else unit.upper())
+            if n==1 and value is not None and snapshot.get('fault_lcd_reading',{}).get('held'):
+                quality.setText('FAULT | Numeric LCD sample retained during flashing')
         value,unit=measurement(snapshot)
         marker=(snapshot['last_success'],snapshot['quality'])
         if marker!=self.last_sample:

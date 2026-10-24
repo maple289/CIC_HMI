@@ -1,3 +1,9 @@
+# Stable HMI value during controller LCD flashing (2026-10-23)
+
+- Confirmed from live history that the native LCD alternates-99%LFL,TC2 FAIL and blanks. The HMI had mirrored those messages into temporary missing numeric readings.
+- Added a scoped, bounded cache of the last fresh numeric fault-LCD sample. Known TC2 FAIL/blank intervals do not renew sample time. Expiry(6s at the current2s poll interval),communication loss,profile/fault changes or other menus invalidate the retained value. Fault indicators remain active and retained samples are labeled explicitly.
+- Real25s HMI test passed:92 updates,81 steady-99.00 numeric samples,eight retained LCD-message updates,max heartbeat gap125ms,writes0. Full regression603 passed in26.50s,including flashing,expiry,offline/recovery,menu and device changes. Rebuilt executable smoke passed before restart. GitHub publication remains pending prior explicit approval for the supplied manual and bench notes.
+
 # Match the real controller fault reading (2026-10-23)
 
 - Corrected the legacy FTA fault-state display: raw8001H was being converted to approximately-128%LFL while the controller LCD showed-99. The primary reading now explicitly uses fresh LCD51–55 for this specific current fault state and displays-99.00%LFL; raw1 remains in Diagnostics. Normal signed measurements are not clamped or replaced.
