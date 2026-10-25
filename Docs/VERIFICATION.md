@@ -1,3 +1,9 @@
+# Display-only retention validation (2026-10-25)
+
+The user explicitly requests a stable last-value display until a new number arrives. The live trend now bridges confirmed fresh blank/nonnumeric older-FTA fault LCD phases using dashed amber held segments, retaining the first-missing time and marking the gauge/card stale. It does not alter source measurements, controller state, historian/CSV values or command inputs. Holds cannot span profile changes or manufacture a first reading, and fresh primary/LCD responses remain mandatory; actual source/communication loss still expires the display and breaks the trend.
+
+Final stable-lcd-trends build was physically observed on the read-only SNR671COM4 session after the user powered it on. Captured held/recovery events around19:26:08 and19:26:18UTC, visually verified continuous teal/dashed-amber trace, and confirmed348 polls at100% success with0 timeout/CRC/protocol errors. Held metadata stays in presentation objects; raw missing samples remain unavailable. Initial no-response attempts while the controller was confirmed off did not retain or fabricate a value. Left live monitoring active; no physical operating command or configuration write was issued. This validates this display behavior on the observed faulted controller, not complete device/firmware or calibration compatibility.
+
 # Real-time trend gap investigation (2026-10-25)
 
 - Observed the user's focused-connection-test HMI on COM4 through its existing Diagnostics view; did not open another serial handle, stop polling or issue any operating command. Poll counters advanced2088 to2208 over approximately23 seconds with100% success and zero timeouts, CRC errors or protocol errors. A subsequent check reached2419 polls with the same100%/zero-error counters. This observation does not establish that other sessions can never lose communication, but no serial interruption occurred in this window.

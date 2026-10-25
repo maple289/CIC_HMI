@@ -171,7 +171,10 @@ def test_native_fault_flashing_has_no_retained_measurement_in_data_pipeline(app,
     now[0]=102;gauge.set_snapshot(snapshot)
     assert gauge.state.value==-99 and gauge.held
     assert measurement(snapshot)[0] is None and 'fault_lcd_reading' not in snapshot
-    now[0]=104.1;gauge.expire();assert gauge.state.reading=='--'
+    now[0]=104.1;gauge.expire()
+    assert gauge.state.value==-99 and gauge.lcd_hold
+    now[0]=108.1;gauge.expire()  # No fresh LCD/communication replies arrived.
+    assert gauge.state.reading=='--'
     gauge.close()
 
 

@@ -15,6 +15,7 @@ from prevex_hmi.gui.connection_dialog import AnalyzerChoice,LoginDialog
 from prevex_hmi.gui.connection_result import ConnectionTestResult
 from prevex_hmi.gui.gauge import CircularGauge
 from prevex_hmi.gui.compact_readouts import CompactReadouts
+from prevex_hmi.gui.trend_display import DisplayTrend
 from prevex_hmi.gui.command_button import CommandButton
 from prevex_hmi.gui.serial_ports import require_available_port
 from prevex_hmi.gui.indicators import IndicatorPanel
@@ -69,6 +70,7 @@ class MainWindow(QMainWindow):
         self.test_view_active=False;self.return_page=0
         self.snapshot_received_at=0.0
         self.snapshot_family=None;self.readouts={};self.history_rows=[];self.series=deque(maxlen=1800)
+        self.display_trend=DisplayTrend();self.trend_scope=None;self.blank_started_wall=None;self.readout_retained=False
         self.last_sample=None;self.update_count=0;self.closing=False;self.next_action=None
         self.last_receipt_key=None;self.active_command=None
         self.command_dispatching=False;self.session='';self.users=UserStore(data_path/'users.sqlite3')
@@ -147,6 +149,8 @@ class MainWindow(QMainWindow):
         self.controller_display=QLabel();self.controller_display.setWordWrap(True);info.insertWidget(info.count()-1,self.controller_display)
         self.readout_container=CompactReadouts();self.readout_grid=self.readout_container.grid;readings.addWidget(self.readout_container)
         self.overview_plot=self.make_plot();self.overview_plot.setMinimumHeight(180);self.overview_curve=self.overview_plot.plot(pen=pg.mkPen('#45cbb0',width=2),connect='finite');readings.addWidget(self.overview_plot)
+        self.overview_held_curve=self.overview_plot.plot(pen=pg.mkPen('#e7b55e',width=2,style=Qt.DashLine),connect='finite')
+        self.overview_hold_note=QLabel('Solid: measured | Dashed amber: held while LCD is nonnumeric (display only)');self.overview_hold_note.setWordWrap(True);readings.addWidget(self.overview_hold_note)
         scroll.setWidget(content);body.addWidget(scroll,1)
         commands=QFrame();commands.setObjectName('panel');commands.setFixedWidth(220);column=QVBoxLayout(commands)
         label=QLabel('Commands');label.setObjectName('heading');column.addWidget(label)
@@ -188,6 +192,8 @@ class MainWindow(QMainWindow):
     def build_trends(self):
         layout=self.page('Live trends','Signed engineering values. Mouse-wheel zoom and drag to pan; communication gaps break the line.')
         self.trend_plot=self.make_plot();self.trend_curve=self.trend_plot.plot(pen=pg.mkPen('#45cbb0',width=2),connect='finite');layout.addWidget(self.trend_plot)
+        self.trend_held_curve=self.trend_plot.plot(pen=pg.mkPen('#e7b55e',width=2,style=Qt.DashLine),connect='finite')
+        self.trend_hold_note=QLabel('Solid: measured | Dashed amber: held while LCD is nonnumeric (display only)');self.trend_hold_note.setWordWrap(True);layout.addWidget(self.trend_hold_note)
 
     def build_history(self):
         layout=self.page('History / CSV','Current instrument stream. Up to5000 primary records per query; UTC timestamps retained in CSV.')
@@ -261,6 +267,7 @@ class MainWindow(QMainWindow):
 
     def invalidate(self,reason='Disconnected'):
         self.snapshot=None;self.identity={};self.series.clear();self.last_sample=None;self.history_rows=[];self.command_dispatching=False
+        self.display_trend.clear();self.trend_scope=None;self.blank_started_wall=None;self.readout_retained=False
         self.gauge.set_snapshot(None);self.indicators.update_snapshot(None)
         self.set_connection_status(False);self.monitor_updated.setText('No current measurement');self.identity_label.setText(reason)
         self.controller_display.clear()
@@ -268,7 +275,9 @@ class MainWindow(QMainWindow):
         self.last_receipt_key=None;self.active_command=None
         for button in self.command_buttons.values():button.reset()
         for value,quality in self.readouts.values():value.setText('--');quality.setText('UNAVAILABLE')
-        for curve in (self.overview_curve,self.trend_curve,self.history_curve):curve.setData([],[])
+        for curve in (self.overview_curve,self.trend_curve,self.overview_held_curve,self.trend_held_curve,self.history_curve):curve.setData([],[])
+        for label in (self.overview_hold_note,self.trend_hold_note):label.setText('Solid: measured | Dashed amber: held while LCD is nonnumeric (display only)')
+        if 1 in self.readouts:self.readouts[1][0].setStyleSheet('');self.readouts[1][0].setToolTip('')
         self.history_table.setRowCount(0);self.event_table.setRowCount(0);self.audit_table.setRowCount(0);self.traffic.setRowCount(0)
         self.summary.setText(reason);self.update_command_buttons()
         self.refresh_profile_settings()
@@ -375,6 +384,9 @@ class MainWindow(QMainWindow):
         config=DeviceConfig(**snapshot['config']);family=config.family
         if (family,profile_for(config).revision)!=self.snapshot_family:self.build_readouts(family,config)
         self.gauge.set_snapshot(snapshot);self.indicators.update_snapshot(snapshot)
+        retained=bool(self.gauge.held and self.gauge.lcd_hold)
+        if retained and self.blank_started_wall is None:self.blank_started_wall=time.time()
+        elif not retained:self.blank_started_wall=None
         lcd_numbers=range(51,56)
         if snapshot.get('source')=='hardware' and all(measurement(snapshot,n)[0] is not None for n in lcd_numbers):
             lcd=b''.join(snapshot['raw'][n].to_bytes(2,'big') for n in lcd_numbers).decode('latin-1').strip()
@@ -388,16 +400,31 @@ class MainWindow(QMainWindow):
             if n==1:self.readout_names[n].setText('READING [LCD51–55; raw1]' if uses_controller_fault_display(snapshot) else 'READING [1]')
             if family=='BTU' and n==42:widget.setText('--');quality.setText('UNAVAILABLE: meaning not documented');continue
             value,unit=measurement(snapshot,n)
+            if n==1:
+                self.readout_retained=retained
+                style='color:#e7b55e;' if retained else ''
+                if widget.styleSheet()!=style:widget.setStyleSheet(style)
+                widget.setToolTip('Last numeric value held while the controller LCD is nonnumeric; not a new measurement.' if retained else '')
+                if retained:value,unit=self.gauge.state.value,self.gauge.state.unit
             if n==2 and value is not None:widget.setText(profile_for(config).status(int(value)))
             else:widget.setText(f'{value:.{precision(family,n,snapshot["raw"].get(3,100))}f} {unit}' if value is not None else '--')
             quality.clear()
         self.readout_container.refresh_height()
         value,unit=measurement(snapshot)
-        marker=(snapshot['last_success'],snapshot['quality'])
+        scope=tuple(snapshot['config'].get(k) for k in ('id','family','assembly','version','address','register_profile'))
+        if scope!=self.trend_scope:
+            self.series.clear();self.display_trend.clear();self.last_sample=None;self.trend_scope=scope
+        marker=(snapshot['last_success'],snapshot['quality'],value,retained)
         if marker!=self.last_sample:
-            stamp=datetime.fromisoformat(snapshot['last_success']).timestamp() if value is not None else time.time()
+            stamp=time.time()  # Display observation time; historian retains actual source timestamps.
             self.series.append((stamp,float(value) if value is not None else float('nan')));self.last_sample=marker
-        for curve in (self.overview_curve,self.trend_curve):curve.setData([a for a,b in self.series],[b for a,b in self.series])
+            self.display_trend.append(stamp,value,self.gauge.state.value if retained else None)
+            solid,held=self.display_trend.curves()
+            for curve in (self.overview_curve,self.trend_curve):curve.setData(*solid)
+            for curve in (self.overview_held_curve,self.trend_held_curve):curve.setData(*held)
+        note=f"Numeric reading missing since {datetime.fromtimestamp(self.blank_started_wall).strftime('%H:%M:%S')} | Last value held; not logged as new data" if retained else 'Solid: measured | Dashed amber: held while LCD is nonnumeric (display only)'
+        for label in (self.overview_hold_note,self.trend_hold_note):label.setText(note)
+        if retained:unit=self.gauge.state.unit
         self.overview_plot.setLabel('left','Measurement',units=unit if value is not None else '')
         self.trend_plot.setLabel('left','Measurement',units=unit if value is not None else '')
         stats=diagnostics['bus'];rate=stats['success_rate']
@@ -418,6 +445,9 @@ class MainWindow(QMainWindow):
         connected=bool(snapshot and snapshot['quality']=='GOOD' and snapshot.get('last_success') and
                        snapshot.get('age',0) is not None and snapshot.get('age',0)+time.monotonic()-self.snapshot_received_at <= max(5,snapshot['config']['interval']*3))
         self.set_connection_status(connected)
+        if not connected and self.readout_retained and 1 in self.readouts:
+            self.readouts[1][0].setText('--');self.readouts[1][0].setStyleSheet('');self.readouts[1][0].setToolTip('');self.readout_retained=False
+            for label in (self.overview_hold_note,self.trend_hold_note):label.setText('No current communication; held display ended')
 
     def show_command_receipt(self,receipt):
         key=(receipt.get('id') or receipt.get('time'),receipt['code'],receipt.get('reply_received'),receipt['state'])

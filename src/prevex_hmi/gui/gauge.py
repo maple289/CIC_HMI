@@ -9,7 +9,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from prevex_hmi.gui.presentation import format_reading, measurement, severity
+from prevex_hmi.gui.presentation import format_reading, measurement, severity,fresh_missing_lcd
 from prevex_hmi.devices.models import DeviceConfig
 from prevex_hmi.profiles import profile_for
 
@@ -108,6 +108,7 @@ class CircularGauge(QWidget):
         self._scope = None
         self._last_valid = None
         self._deadline = 0.0
+        self._numeric_deadline=0.0;self.lcd_hold=False;self.blank_since=None
         self._latest = GaugeState()
         self.expiry = QTimer(self); self.expiry.setInterval(100)
         self.expiry.timeout.connect(self.expire); self.expiry.start()
@@ -121,6 +122,7 @@ class CircularGauge(QWidget):
         scope = None if snapshot is None else tuple(snapshot['config'].get(k) for k in ('id','family','assembly','version','address','register_profile'))
         if scope != self._scope or snapshot is None:
             self._last_valid = None; self._deadline = 0.0
+            self._numeric_deadline=0.0;self.lcd_hold=False;self.blank_since=None
         self._scope = scope
         state = gauge_state(snapshot)
         self._latest = state
@@ -129,11 +131,22 @@ class CircularGauge(QWidget):
             age = max(snapshot.get('register_ages',{}).get(n,0) for n in numbers)
             if age <= 4:
                 self._last_valid = state; self._deadline = now + 4 - age
+                self._numeric_deadline=self._deadline
             else:
                 state = replace(state, value=None, reading='--', status='Reading unavailable')
+        self.lcd_hold=bool(snapshot is not None and self._last_valid is not None and state.value is None and fresh_missing_lcd(snapshot))
+        if self.lcd_hold:
+            if self.blank_since is None:self.blank_since=now
+            limit=max(5,snapshot['config']['interval']*3)
+            age=max(snapshot.get('age',0),*(snapshot.get('register_ages',{}).get(n,0) for n in (1,2,4,51,52,53,54,55)))
+            self._deadline=now+max(0,limit-age)
+        else:self.blank_since=None;self._deadline=self._numeric_deadline
         self.held = bool(self._last_valid is not None and now < self._deadline and (state.value is None or snapshot.get('quality') != 'GOOD'))
         if self.held:
-            state = replace(self._last_valid, status='Retained reading • stale', color='#8290a5')
+            state = replace(state if self.lcd_hold else self._last_valid,
+                            value=self._last_valid.value,reading=self._last_valid.reading,unit=self._last_valid.unit,
+                            status=f'LCD text • held {now-self.blank_since:.0f}s' if self.lcd_hold else 'Retained reading • stale',
+                            color='#efb753' if self.lcd_hold else '#8290a5')
         self.display_quality = 'RETAINED_STALE' if self.held else 'CURRENT' if state.value is not None else 'UNAVAILABLE'
         self._set_state(state)
 
@@ -146,6 +159,7 @@ class CircularGauge(QWidget):
     def expire(self):
         if self._last_valid is not None and time.monotonic() >= self._deadline:
             self._last_valid = None; self.held = False
+            self.lcd_hold=False;self.blank_since=None
             self.display_quality = 'UNAVAILABLE'
             self._set_state(replace(self._latest, value=None, reading='--', status='Reading unavailable', color='#8290a5'))
 

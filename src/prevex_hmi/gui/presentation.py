@@ -29,6 +29,16 @@ def direct_controller_fault_reading(snapshot: dict):
     return Decimal(match[1]),'%LFL'
 
 
+def fresh_missing_lcd(snapshot: dict) -> bool:
+    """Retain through fresh nonnumeric fault LCD replies, never a lost link."""
+    if not uses_controller_fault_display(snapshot):return False
+    raw=snapshot['raw'];ages=snapshot.get('register_ages',{})
+    limit=max(5,snapshot['config']['interval']*3)
+    if snapshot.get('age',0) is None or snapshot.get('age',0)>limit:return False
+    if not all(n in raw and ages.get(n,0)<=limit for n in range(51,56)):return False
+    return direct_controller_fault_reading(snapshot)[0] is None
+
+
 
 def measurement(snapshot: dict, number: int = 1) -> tuple[Decimal | None, str]:
     if snapshot["quality"] != "GOOD":
