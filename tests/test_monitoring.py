@@ -178,7 +178,7 @@ def test_mismatch_and_hardware_access_gate(app,tmp_path):
         assert 'MISMATCH' in w.warning.text() and not w.identity['controls_verified']
         assert w.snapshot['config']['family']=='LEL'
         w.settings=copy.deepcopy(w.settings);w.settings['mode']='hardware';w.begin('connect')
-        until(app,lambda:w.worker is not None and not w.worker.isRunning())
+        until(app,lambda:w.worker is not None and not w.worker.isRunning() and w.next_action is None and 'No port was opened' in w.warning.text())
         assert w.snapshot is None and 'No port was opened' in w.warning.text()
     finally:
         w.close();app.processEvents()

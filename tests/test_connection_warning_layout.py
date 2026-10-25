@@ -61,6 +61,7 @@ def test_admin_test_connection_does_not_change_profile_or_activate_commands(app,
     settings['connection'].update(port='COM4',baud=9600)
     settings['devices']=[asdict(default_devices()[0])]
     w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False)
+    w.show()
     if not legacy:w.warning.setText('Previous compatibility warning');w.warning.show()
     try:
         results=[]
@@ -71,6 +72,10 @@ def test_admin_test_connection_does_not_change_profile_or_activate_commands(app,
             w.begin('test');wait(app,lambda:bool(w.identity) and not w.worker.isRunning())
             wait(app,lambda:w.connection_test_dialog is not None and not w.test_in_progress)
             assert w.connection_test_dialog.isVisible()
+            assert w.test_view_active and w.pages.currentWidget() is w.test_page
+            assert w.navigation.isHidden() and w.disconnect_button.isHidden() and w.bench_button.isHidden()
+            assert not w.gauge.isVisibleTo(w) and not w.indicators.isVisibleTo(w)
+            assert all(not button.isVisibleTo(w) for button in w.command_buttons.values())
             assert w.connection_test_dialog.result_label.text()=='Connection test passed'
             assert 'COM4' in w.connection_test_dialog.details.text()
             assert ('SNR671' if legacy else 'SNR675') in w.connection_test_dialog.details.text()
@@ -125,6 +130,32 @@ def test_unknown_identity_is_not_reported_as_identified_success(app,tmp_path):
         assert 'identification unresolved' in dialog.result_label.text()
         assert 'Unknown analyzer identity' in dialog.details.text()
     finally:dialog.close()
+
+
+@pytest.mark.parametrize('action',['Back','Connect and monitor'])
+def test_focused_test_view_returns_without_stale_live_widgets(app,tmp_path,action):
+    from PySide6.QtWidgets import QPushButton
+    settings=load_settings(tmp_path/'settings.json')
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False);w.show()
+    try:
+        w.navigation.setCurrentRow(1 if action=='Back' else 0)
+        w.begin('test')
+        assert w.test_view_active and not w.gauge.isVisibleTo(w)
+        wait(app,lambda:w.connection_test_dialog is not None and not w.test_in_progress)
+        result=w.connection_test_dialog
+        button=next(b for b in result.findChildren(QPushButton) if b.text()==action)
+        button.click()
+        wait(app,lambda:not w.test_view_active)
+        assert w.navigation.isVisible() and w.connection_test_dialog is None
+        if action=='Connect and monitor':
+            wait(app,lambda:w.snapshot is not None and w.snapshot['quality']=='GOOD')
+            assert w.gauge.isVisibleTo(w) and w.disconnect_button.isVisible()
+        else:
+            assert w.snapshot is None and w.pages.currentIndex()==1
+            assert not w.worker.isRunning()
+    finally:
+        w.close()
+        wait(app,lambda:not w.worker or not w.worker.isRunning());app.processEvents()
 
 
 def test_legacy_warning_distinguishes_raw_separator_and_firmware_scope():

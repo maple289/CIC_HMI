@@ -66,6 +66,7 @@ class MainWindow(QMainWindow):
         self.hardware_grant=hardware_grant
         self.worker=None;self.snapshot=None;self.identity={};self.diagnostics={}
         self.test_in_progress=False;self.test_result_info=None;self.test_result_error='';self.connection_test_dialog=None
+        self.test_view_active=False;self.return_page=0
         self.snapshot_received_at=0.0
         self.snapshot_family=None;self.readouts={};self.history_rows=[];self.series=deque(maxlen=1800)
         self.last_sample=None;self.update_count=0;self.closing=False;self.next_action=None
@@ -92,6 +93,7 @@ class MainWindow(QMainWindow):
         self.navigation.addItems(['Gauge','Live trends','History / CSV','Alarm history','Diagnostics','Command audit','Profile settings']);body.addWidget(self.navigation)
         self.pages=QStackedWidget();body.addWidget(self.pages,1);root.addLayout(body,1);self.setCentralWidget(central)
         self.build_gauge();self.build_trends();self.build_history();self.build_events();self.build_diagnostics();self.build_audit();self.build_profile_settings()
+        self.build_connection_test_page()
         self.navigation.currentRowChanged.connect(self.pages.setCurrentIndex);self.navigation.setCurrentRow(0)
         self.navigation.currentRowChanged.connect(lambda index:self.refresh_profile_settings() if index==6 else None)
         self.apply_theme();self.refresh_connection_labels();self.build_readouts(self.config.family)
@@ -110,6 +112,25 @@ class MainWindow(QMainWindow):
         heading=QLabel(title);heading.setObjectName('heading');layout.addWidget(heading)
         label=QLabel(subtitle);label.setWordWrap(True);layout.addWidget(label);self.pages.addWidget(page)
         return layout
+
+    def build_connection_test_page(self):
+        self.test_page=QScrollArea();self.test_page.setWidgetResizable(True)
+        content=QWidget();self.test_page_layout=QVBoxLayout(content)
+        heading=QLabel('Test Connection');heading.setObjectName('heading');self.test_page_layout.addWidget(heading)
+        self.test_progress=QLabel('Checking communication and instrument identification...')
+        self.test_progress.setWordWrap(True);self.test_page_layout.addWidget(self.test_progress)
+        self.test_page_layout.addStretch()
+        self.test_page.setWidget(content);self.pages.addWidget(self.test_page)
+
+    def set_test_view(self,active):
+        was_active=self.test_view_active
+        if active and not self.test_view_active:self.return_page=max(0,self.navigation.currentRow())
+        self.test_view_active=active
+        self.navigation.setVisible(not active)
+        for widget in (self.banner,self.identity_label,self.login_button,self.disconnect_button,self.bench_button):widget.setVisible(not active)
+        self.warning.setVisible(not active and bool(self.warning.text()))
+        if active:self.pages.setCurrentWidget(self.test_page)
+        elif was_active:self.pages.setCurrentIndex(self.return_page)
 
     def build_gauge(self):
         layout=self.page('Gauge','One active analyzer. Digital parameters follow its manufacturer GAUGES menu.')
@@ -253,8 +274,10 @@ class MainWindow(QMainWindow):
         self.refresh_profile_settings()
 
     def begin(self,action):
-        if self.connection_test_dialog:self.connection_test_dialog.close()
+        if self.connection_test_dialog:
+            self.connection_test_dialog.close();self.connection_test_dialog.deleteLater();self.connection_test_dialog=None
         self.test_in_progress=action=='test';self.test_result_info=None;self.test_result_error=''
+        self.set_test_view(action=='test');self.test_progress.setVisible(action=='test')
         if action in ('connect','test') and self.settings['mode']=='hardware' and self.hardware_grant is not None:
             try:
                 self.hardware_grant.validate(self.settings,self.config)
@@ -278,7 +301,7 @@ class MainWindow(QMainWindow):
         for button in (self.choose_button,self.connect_button,self.test_button,self.bench_button):button.setEnabled(enabled)
 
     def start_worker(self,*,test_only=False):
-        if test_only:self.test_in_progress=True
+        if test_only:self.test_in_progress=True;self.set_test_view(True)
         if self.settings['mode']=='hardware':
             try:require_available_port(self.settings['connection']['port'])
             except (ValueError,OSError) as error:
@@ -311,11 +334,15 @@ class MainWindow(QMainWindow):
         info=self.test_result_info or {}
         error=self.test_result_error
         if not info and not error:error='The check ended without an identification result.'
-        self.connection_test_dialog=ConnectionTestResult(self.settings,info,error,self)
-        self.connection_test_dialog.open()
+        self.connection_test_dialog=ConnectionTestResult(self.settings,info,error,self.test_page,embedded=True)
+        self.connection_test_dialog.setMaximumWidth(900)
+        self.connection_test_dialog.connect_requested.connect(lambda:self.begin('connect'))
+        self.connection_test_dialog.back_requested.connect(lambda:self.begin('disconnect'))
+        self.test_page_layout.insertWidget(2,self.connection_test_dialog)
+        self.test_progress.hide();self.connection_test_dialog.show();self.set_test_view(True)
         self.summary.setText(self.connection_test_dialog.result_label.text()+' | Monitoring stopped')
         self.indicators.summary.setText('MONITORING STOPPED | One-time test complete; click Connect for live data')
-        self.statusBar().showMessage('Test Connection complete. See the result window; click Connect to monitor continuously.')
+        self.statusBar().showMessage('Test Connection complete. Click Connect and monitor for live data, or Back to return.')
 
     def identification_result(self,info):
         if self.next_action or self.closing:return
@@ -331,7 +358,7 @@ class MainWindow(QMainWindow):
         if info.get('register_revision')=='fta_4x':detected+=' (older-firmware register subset)'
         text=f"Selected: {info.get('selected_profile',self.settings['analyzer_selection'])} | Detected: {detected or info.get('family') or 'UNKNOWN'} | Assembly: {info.get('model') or 'unavailable'} | Software: {firmware} | Serial: {info.get('serial') or 'unavailable'} | Communication: {info.get('communication','not verified')}"
         if info.get('test_only'):text+=' | TEST ONLY: monitoring and controls remain inactive'
-        self.identity_label.setText(text);self.warning.setText(info.get('warning',''));self.warning.setVisible(bool(info.get('warning')))
+        self.identity_label.setText(text);self.warning.setText(info.get('warning',''));self.warning.setVisible(bool(info.get('warning')) and not self.test_view_active)
         self.monitor_model.setText(info.get('text',''))
         self.inspect_register.clear()
         family=info.get('config',{}).get('family',self.config.family)
@@ -535,7 +562,7 @@ class MainWindow(QMainWindow):
 
     def worker_error(self,text):
         if self.test_in_progress:self.test_result_error=text
-        self.invalidate('OFFLINE');self.warning.setText(text);self.warning.show();self.statusBar().showMessage(text)
+        self.invalidate('OFFLINE');self.warning.setText(text);self.warning.setVisible(not self.test_view_active);self.statusBar().showMessage(text)
 
     def apply_theme(self):
         dark=self.settings.get('theme','dark')=='dark';self.gauge.dark=dark;self.gauge.update()
@@ -563,6 +590,7 @@ class MainWindow(QMainWindow):
         self.apply_theme()
 
     def closeEvent(self,event):
+        self.closing=True;self.next_action=None
         if self.worker and self.worker.isRunning():
             self.closing=True;self.worker.stop();self.setEnabled(False);event.ignore()
         else:

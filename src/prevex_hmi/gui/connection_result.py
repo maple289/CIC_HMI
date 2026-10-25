@@ -1,11 +1,15 @@
 """Explicit results for a one-shot, read-only connection check."""
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt,Signal
 from PySide6.QtWidgets import QDialog,QLabel,QPushButton,QVBoxLayout
 
 
 class ConnectionTestResult(QDialog):
-    def __init__(self,settings,info=None,error='',parent=None):
+    connect_requested=Signal()
+    back_requested=Signal()
+
+    def __init__(self,settings,info=None,error='',parent=None,*,embedded=False):
         super().__init__(parent)
+        if embedded:self.setWindowFlags(Qt.Widget)
         info=info or {}
         responding=bool(info.get('communication_ok') and not error)
         identified=bool(responding and info.get('family') and info.get('config'))
@@ -24,6 +28,10 @@ class ConnectionTestResult(QDialog):
         if info.get('warning'):lines+=['',f"Compatibility / identification: {info['warning']}"]
         self.details=QLabel('\n'.join(lines));self.details.setWordWrap(True);self.details.setTextFormat(Qt.PlainText);self.details.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(self.details)
-        self.instructions=QLabel('This was a one-time read-only check. Monitoring is stopped and the serial port has been released. No operating commands were sent. Close this result and click Connect to start continuous monitoring.')
+        self.instructions=QLabel('This was a one-time read-only check. Monitoring is stopped and the serial port has been released. No operating commands were sent. '+('Click Connect and monitor to start live readings, or Back to return without connecting.' if embedded else 'Close this result and click Connect to start continuous monitoring.'))
         self.instructions.setWordWrap(True);layout.addWidget(self.instructions)
-        close=QPushButton('OK');close.clicked.connect(self.accept);layout.addWidget(close)
+        if embedded:
+            connect=QPushButton('Connect and monitor');connect.clicked.connect(self.connect_requested);layout.addWidget(connect)
+            back=QPushButton('Back');back.clicked.connect(self.back_requested);layout.addWidget(back)
+        else:
+            close=QPushButton('OK');close.clicked.connect(self.accept);layout.addWidget(close)
