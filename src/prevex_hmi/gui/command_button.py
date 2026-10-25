@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 class CommandButton(QWidget):
     def __init__(self, text, callback, parent=None):
         super().__init__(parent)
+        self.setFixedHeight(48)
         row = QHBoxLayout(self); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(9)
         self.button = QPushButton(text); self.button.setObjectName('industrialCommand')
         self.button.setMinimumHeight(46); self.button.clicked.connect(callback); row.addWidget(self.button, 1)

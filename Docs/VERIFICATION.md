@@ -1,3 +1,7 @@
+# Profile-library presentation scope (2026-10-25)
+
+The new dropdowns expose the existing LEL670/LEL700/BTU/FID profiles; no register mapping, engineering conversion, command permission or transport/protocol validation flag was changed. BTU/FID entries are explicitly preliminary with existing unit/protocol ambiguities and hardware verification pending. A library preview of another profile has no current raw/engineering values and cannot request a live register read. Activating a selection requires reviewing the normal connection settings dialog and confirming OK; identity mismatch and physical control gates continue to apply. UI/simulator geometry and profile-selection tests do not establish physical BTU/FID/700 compatibility. The command result was relocated and its container fixed to prevent button/LED shifts, without executing any real command to test the layout.
+
 # User bench confirmation: SNR671 firmware4.81 operating commands (2026-10-25)
 
 The user reports simulating normal operational inputs (flame temperature and flow) on the connected real SNR671 controller and confirms that all available HMI operating commands operated properly. Record command-operation compatibility for this SNR671/4.81 bench setup as **USER BENCH-VERIFIED**, superseding the prior untested status for those commands on this controller. This is human-reported physical-controller evidence, not a software-simulator result and not an agent-executed command test. The user previously separately confirmed the Zero/Span/Full Test reactions while the controller was faulted.

@@ -22,7 +22,7 @@ Start `scripts/launch_windows.cmd`, or run `.venv/Scripts/python.exe scripts/run
 
 ## Choose and connect
 
-**Choose Analyzer Type** offers Auto Detect(default), LEL, BTU and FID. Manual type selection also selects the matching simulated instrument; Auto Detect offers a separate simulated-family choice. Only fields applicable to the selected family are shown. For LEL, choose700 or legacy simulation. Click OK to confirm the choice, stop the old session, clear old readings and start one new connection. Cancel preserves the previous settings. Existing multi-device settings migrate to one selected instrument; the original is backed up as `settings.v1-backup.json`.
+**Choose Analyzer Type** uses an Analyzer profile dropdown: Auto Detect(default), LEL 670 Series, LEL 700 Series, BTU and FID. Manual type selection also selects the matching simulated instrument; Auto Detect offers a separate simulated-family choice. A validation-status note identifies documented/simulator coverage, the limited SNR6714.81 user bench verification, and preliminary BTU/FID hardware/units/protocol limitations. Only fields applicable to the selected family are shown. Click OK to confirm the choice, stop the old session, clear old readings and start one new connection. Cancel preserves the previous settings. Existing multi-device settings migrate to one selected instrument; the original is backed up as `settings.v1-backup.json`.
 
 COM port, baud, timeout, nonzero address, address compatibility and register offset are saved. Minus-one addressing requires a displayed address of at least2; the dialog shows the resulting nonzero packet address. Hardware monitoring connects read-only on the selected available port without another authorization step. Supported documented670 operating writes require sign-in, per-command confirmation and fresh checks. Firmware4.81 uses the same operating set by user instruction, with a visible unverified-compatibility note.
 
@@ -46,6 +46,8 @@ The top panel shows one current STATUS enum and separate relay/service bits. Onl
 
 ## Commands and local accounts
 
+The command buttons and individual three-second LEDs occupy a separate, fixed-row rail. Command responses, execution progress and errors appear in the scrollable **Command result** card beside the connected analyzer information. Long messages cannot resize the button rows or move their LEDs. At compact window widths the result card moves below the gauge/information; the command rail stays independent. The alarm panel remains pinned above the readings while only the readings area scrolls.
+
 Guest/Viewer is the initial role; controls remain disabled. Use **Sign in / create account** to create the first local Administrator with a password of at least12 characters. There is no default password. Sign out through the same button. Passwords use salted PBKDF2 hashes. The account store supports Viewer, Operator and Administrator; creating additional users is an Administrator-only API operation, with a management UI remaining future work.
 
 Operator/Administrator sessions may run approved simulator commands and documented6705.12-5.x operating commands. SAVE ALL on hardware requires Administrator. Each action requires target confirmation, a current connection, fresh matching identification and applicable calibration-lock/status checks. Pending or unknown outcomes block duplicates. Commands are sent once, audited and evaluated using STATUS; pre-command cached STATUS samples are ignored. Ambiguous timeouts are never retried; reconnect and review state. A write acknowledgment is not proof of execution. Ack/reset/save may report sent/unverified because no unique success signature is documented.
@@ -59,6 +61,8 @@ For700 LEL, Save Settings and Modbus Lock/Unlock are unavailable under the revis
 - Alarm history: latest500 status/communication transitions, independent of measurement logging.
 - Diagnostics: poll/error counts, response timing, bounded TX/RX data, documented read-only inspection. Traffic columns have stable widths; drag header dividers to resize them and use horizontal scrolling for long hexadecimal frames. Inject simulated timeout/CRC/protocol/unknown-identity/lost-command-ack faults. Set fault to `none` for recovery; backoff can take up to60s. Forced readings and STATUS codes support offline testing.
 - Command audit: user, target, command, outcome and detail, including rejections and unknown results.
+
+**Profile settings** has a Profile dropdown for the connected analyzer and the four existing manufacturer-based profiles: LEL 670 Series, LEL 700 Series, BTU(preliminary), FID(preliminary). Browsing a different profile previews its documented inventory with unavailable raw/live values; it does not reconfigure the connection or interpret the current instrument using the other register map. Read selected setting is enabled only for a live matching profile. **Use selected profile...** opens the normal connection-settings dialog with that selection for review; OK applies it through the existing stop/invalidate/reconnect sequence, while Cancel changes nothing. Physical command/protocol gates are unchanged; preliminary labels do not establish hardware compatibility.
 
 ## User data and deployment
 

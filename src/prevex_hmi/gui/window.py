@@ -7,7 +7,7 @@ from pathlib import Path
 import time
 from dataclasses import replace
 from PySide6.QtCore import Qt,Signal,QTimer
-from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget
+from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget,QSizePolicy
 import pyqtgraph as pg
 from prevex_hmi.devices.configuration import save_settings
 from prevex_hmi.devices.models import DeviceConfig
@@ -15,6 +15,8 @@ from prevex_hmi.gui.connection_dialog import AnalyzerChoice,LoginDialog
 from prevex_hmi.gui.connection_result import ConnectionTestResult
 from prevex_hmi.gui.gauge import CircularGauge
 from prevex_hmi.gui.compact_readouts import CompactReadouts
+from prevex_hmi.gui.analyzer_hero import AnalyzerHero
+from prevex_hmi.gui.profile_library import PROFILE_CHOICES,PROFILE_STATUS,library_config
 from prevex_hmi.gui.trend_display import DisplayTrend
 from prevex_hmi.gui.command_button import CommandButton
 from prevex_hmi.gui.serial_ports import require_available_port
@@ -136,36 +138,50 @@ class MainWindow(QMainWindow):
 
     def build_gauge(self):
         layout=self.page('Gauge','One active analyzer. Digital parameters follow its manufacturer GAUGES menu.')
-        self.indicators=IndicatorPanel();layout.addWidget(self.indicators)
         body=QHBoxLayout();layout.addLayout(body,1)
+        left=QWidget();left_layout=QVBoxLayout(left);left_layout.setContentsMargins(0,0,0,0)
+        self.indicators=IndicatorPanel();self.indicators.summary.setWordWrap(True);left_layout.addWidget(self.indicators)
         scroll=QScrollArea();scroll.setWidgetResizable(True);content=QWidget();content.setMinimumWidth(600)
-        readings=QVBoxLayout(content);readings.setContentsMargins(4,4,10,4)
-        hero=QHBoxLayout();self.gauge=CircularGauge();hero.addWidget(self.gauge,3)
-        info=QVBoxLayout();self.monitor_name=QLabel();self.monitor_name.setObjectName('heading');self.monitor_name.setWordWrap(True);info.addWidget(self.monitor_name)
+        self.monitor_scroll=scroll
+        readings=QVBoxLayout(content);readings.setContentsMargins(0,0,6,4)
+        self.gauge=CircularGauge()
+        self.analyzer_info=QFrame();self.analyzer_info.setMinimumWidth(200)
+        info=QVBoxLayout(self.analyzer_info);info.setContentsMargins(0,4,0,4);self.monitor_name=QLabel();self.monitor_name.setObjectName('heading');self.monitor_name.setWordWrap(True);info.addWidget(self.monitor_name)
         self.monitor_model=QLabel();self.monitor_model.setWordWrap(True);info.addWidget(self.monitor_model)
         self.monitor_status=QLabel('Connection Status: ● No Connection');self.monitor_status.setWordWrap(True);info.addWidget(self.monitor_status)
         self.monitor_updated=QLabel();self.monitor_updated.setWordWrap(True);info.addWidget(self.monitor_updated)
-        self.range_help=QLabel('Blue: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nAlarm bands use instrument thresholds');self.range_help.setWordWrap(True);info.addWidget(self.range_help);info.addStretch();hero.addLayout(info,2);readings.addLayout(hero)
+        self.range_help=QLabel('Blue: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nAlarm bands use instrument thresholds');self.range_help.setWordWrap(True);info.addWidget(self.range_help);info.addStretch()
         self.controller_display=QLabel();self.controller_display.setWordWrap(True);info.insertWidget(info.count()-1,self.controller_display)
+        self.command_result_card=QFrame();self.command_result_card.setObjectName('panel');self.command_result_card.setMinimumWidth(260)
+        result_layout=QVBoxLayout(self.command_result_card);result_layout.setContentsMargins(10,10,10,10)
+        result_title=QLabel('Command result');result_title.setObjectName('heading');result_layout.addWidget(result_title)
+        self.command_result_scroll=QScrollArea();self.command_result_scroll.setWidgetResizable(True)
+        result_content=QWidget();result_body=QVBoxLayout(result_content);result_body.setContentsMargins(0,0,0,0)
+        self.command_proof=QLabel('No command sent in this session');self.command_proof.setWordWrap(True)
+        self.command_proof.setTextFormat(Qt.PlainText);self.command_proof.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.command_proof.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred);result_body.addWidget(self.command_proof)
+        self.command_message=QLabel('Select an available command after signing in.');self.command_message.setWordWrap(True)
+        self.command_message.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred);result_body.addWidget(self.command_message);result_body.addStretch()
+        self.command_result_scroll.setWidget(result_content);result_layout.addWidget(self.command_result_scroll,1)
+        self.hero=AnalyzerHero(self.gauge,self.analyzer_info,self.command_result_card);readings.addWidget(self.hero)
         self.readout_container=CompactReadouts();self.readout_grid=self.readout_container.grid;readings.addWidget(self.readout_container)
         self.overview_plot=self.make_plot();self.overview_plot.setMinimumHeight(180);self.overview_curve=self.overview_plot.plot(pen=pg.mkPen('#45cbb0',width=2),connect='finite');readings.addWidget(self.overview_plot)
         self.overview_held_curve=self.overview_plot.plot(pen=pg.mkPen('#e7b55e',width=2,style=Qt.DashLine),connect='finite')
         self.overview_hold_note=QLabel('Solid: measured | Dashed amber: held while LCD is nonnumeric (display only)');self.overview_hold_note.setWordWrap(True);readings.addWidget(self.overview_hold_note)
-        scroll.setWidget(content);body.addWidget(scroll,1)
-        commands=QFrame();commands.setObjectName('panel');commands.setFixedWidth(220);column=QVBoxLayout(commands)
+        scroll.setWidget(content);left_layout.addWidget(scroll,1);body.addWidget(left,1)
+        commands=QFrame();commands.setObjectName('panel');commands.setFixedWidth(220);column=QVBoxLayout(commands);column.setSpacing(6);column.setAlignment(Qt.AlignTop)
         label=QLabel('Commands');label.setObjectName('heading');column.addWidget(label)
         self.role_label=QLabel('Guest / Viewer');column.addWidget(self.role_label)
         self.command_access_note=QLabel(commands);self.command_access_note.hide()
         self.command_access_button=QPushButton('Enable Acknowledge / Reset')
         self.command_access_button.setMinimumHeight(44);self.command_access_button.clicked.connect(self.activate_command_bench)
-        column.addWidget(self.command_access_button)
+        result_layout.addWidget(self.command_access_button)
         self.command_buttons={}
         for code,name in COMMANDS.items():
             label={0x300:'ZERO CAL',0x400:'SPAN CAL',0x500:'FULL CAL',0x600:'ZERO TEST',0x700:'SPAN TEST',0x800:'FULL TEST',0x900:'SAVE ALL',0xF00:'LOCK CAL'}.get(code,name.upper())
             button=CommandButton(label,lambda checked=False,code=code:self.send_command(code));column.addWidget(button);self.command_buttons[code]=button
-        self.command_message=QLabel('Sign in and verify connection to authorize simulated commands.');self.command_message.setWordWrap(True);column.addWidget(self.command_message);column.addStretch()
-        self.command_proof=QLabel('No command sent in this session');self.command_proof.setWordWrap(True);column.insertWidget(column.indexOf(self.command_message),self.command_proof)
-        command_scroll=QScrollArea();command_scroll.setWidgetResizable(True);command_scroll.setFixedWidth(236);command_scroll.setWidget(commands);body.addWidget(command_scroll)
+        column.addStretch()
+        self.command_scroll=QScrollArea();self.command_scroll.setWidgetResizable(True);self.command_scroll.setFixedWidth(236);self.command_scroll.setWidget(commands);body.addWidget(self.command_scroll)
 
     def build_readouts(self,family,config=None):
         config=config or self.config
@@ -209,23 +225,47 @@ class MainWindow(QMainWindow):
         self.event_table=table(['UTC timestamp','Instrument','Transition','Quality']);layout.addWidget(self.event_table)
 
     def build_audit(self):
-        layout=self.page('Command audit','Modbus acknowledgments and STATUS outcomes are distinct. Real controller bench controls are limited to confirmed Acknowledge/Reset.')
+        layout=self.page('Command audit','Modbus acknowledgments and STATUS outcomes are distinct. Operating commands require matching identity, permissions, current controller checks and confirmation.')
         self.audit_table=table(['UTC timestamp','Instrument','User','Command word','Result','Detail']);layout.addWidget(self.audit_table)
 
     def build_profile_settings(self):
         layout=self.page('Profile settings','Documented register inventory. Select a row to read its current value. Factory, communication and unvalidated settings remain read-only; no generic write path.')
+        row=QHBoxLayout();row.addWidget(QLabel('Profile'))
+        self.profile_selector=QComboBox();self.profile_selector.addItem('Connected analyzer','connected')
+        for name in PROFILE_CHOICES:self.profile_selector.addItem(name+(' (preliminary)' if name in ('BTU','FID') else ''),name)
+        row.addWidget(self.profile_selector,1)
+        use=QPushButton('Use selected profile...');use.clicked.connect(self.use_library_profile);row.addWidget(use);layout.addLayout(row)
         self.profile_note=QLabel();self.profile_note.setWordWrap(True);layout.addWidget(self.profile_note)
         self.setting_group=QComboBox();self.setting_group.addItem('All menus')
         self.setting_group.currentTextChanged.connect(lambda _:self.refresh_profile_settings())
         layout.addWidget(self.setting_group)
         self.settings_table=table(['Register','Menu','Parameter','Raw','Value','Units','Documented access','Restrictions / reference'])
         self.settings_table.setSelectionBehavior(QAbstractItemView.SelectRows);layout.addWidget(self.settings_table)
-        read=QPushButton('Read selected setting (FC03)');read.clicked.connect(self.read_setting);layout.addWidget(read)
+        self.read_setting_button=QPushButton('Read selected setting (FC03)');self.read_setting_button.clicked.connect(self.read_setting);layout.addWidget(self.read_setting_button)
+        self.profile_selector.currentIndexChanged.connect(lambda _:self.refresh_profile_settings())
+
+    def selected_library_profile(self):
+        active=DeviceConfig(**self.snapshot['config']) if self.snapshot else self.config
+        selection=self.profile_selector.currentData()
+        matches=selection in ('connected',profile_name(active))
+        return (active if matches else library_config(selection)),matches
+
+    def use_library_profile(self):
+        selection=self.profile_selector.currentData()
+        proposed=copy.deepcopy(self.settings)
+        if selection!='connected':proposed['analyzer_selection']=selection
+        dialog=AnalyzerChoice(proposed,self)
+        if dialog.exec()!=QDialog.Accepted:return
+        settings=dialog.settings()
+        try:save_settings(self.settings_path,settings)
+        except (OSError,ValueError) as error:QMessageBox.warning(self,'Save failed',str(error));return
+        self.settings=settings;self.refresh_connection_labels();self.begin('connect')
 
     def refresh_profile_settings(self):
-        config=DeviceConfig(**self.snapshot['config']) if self.snapshot else self.config
+        config,matches=self.selected_library_profile()
         profile=profile_for(config)
-        self.profile_note.setText(profile_name(config)+' — '+('Documentation and simulator tested; physical verification pending.' if profile.revision=='700' else 'Existing baseline; physical validation is limited to documented bench observations.' if config.family=='LEL' else 'Existing analyzer profile.'))
+        self.profile_note.setText(profile_name(config)+' — '+PROFILE_STATUS[profile_name(config)]+(' Current analyzer profile.' if matches else ' Library preview: no live values. Use selected profile to review connection settings and confirm a change.'))
+        self.read_setting_button.setEnabled(bool(matches and self.snapshot and self.snapshot['quality']=='GOOD' and self.worker and self.worker.isRunning() and not self.worker.test_only))
         groups=sorted({r.category for r in profile.registers.values() if r.safe_read})
         if [self.setting_group.itemText(i) for i in range(1,self.setting_group.count())]!=groups:
             self.setting_group.blockSignals(True);self.setting_group.clear();self.setting_group.addItems(['All menus',*groups]);self.setting_group.blockSignals(False)
@@ -233,11 +273,12 @@ class MainWindow(QMainWindow):
         for n,r in sorted(profile.registers.items()):
             if not r.safe_read or n>=257 or r.access=='command':continue
             if self.setting_group.currentText() not in ('All menus',r.category):continue
-            value,unit=measurement(self.snapshot,n) if self.snapshot else (None,r.unit)
-            rows.append((n,r.category,r.name,self.snapshot['raw'].get(n,'--') if self.snapshot else '--',str(value) if value is not None else '--',unit if value is not None else r.unit,r.access,r.restrictions+' | '+r.source))
+            value,unit=measurement(self.snapshot,n) if self.snapshot and matches else (None,r.unit)
+            rows.append((n,r.category,r.name,self.snapshot['raw'].get(n,'--') if self.snapshot and matches else '--',str(value) if value is not None else '--',unit if value is not None else r.unit,r.access,r.restrictions+' | '+r.source))
         fill_table(self.settings_table,rows)
 
     def read_setting(self):
+        if not self.read_setting_button.isEnabled():return
         row=self.settings_table.currentRow()
         if row>=0:self.request('inspect',int(self.settings_table.item(row,0).text()))
 
