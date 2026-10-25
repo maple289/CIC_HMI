@@ -1,3 +1,8 @@
+# Compact Commands panel text removal (2026-10-25)
+
+- Removed the requested command-readiness/firmware explanation from the visible Commands panel and removed the static LED acknowledgment/audit legend. The readiness label remains hidden for internal status handling; the buttons move upward without leaving the explanatory blocks' space. Roles, per-command confirmation, firmware/lock/connection checks, LED behavior and audit outcomes are unchanged. Compatibility information remains in identification and command confirmation.
+- Verification: both existing Administrator/Operator/Viewer command-button GUI regression cases passed (2 tests in1.16s). New executable built at dist/compact-commands/PREVEX-HMI/PREVEX-HMI.exe. Packaged simulation smoke passed (exit0,46 updates,42 Diagnostics updates,max GUI heartbeat gap125ms,physical_access=false). Diff checks passed; no physical connection or real command was used. Close the previous HMI before opening this version to avoid COM-port contention.
+
 # COM4 connection recovery (2026-10-24)
 
 - Investigated the reported connection failure after the4.81 release. Application logs showed COM4 PermissionError/Access denied before identification; both the previous connection-layout executable and new firmware481-controls executable were running. Gracefully closed the verified older instance; no process was forcibly terminated.

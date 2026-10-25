@@ -128,11 +128,10 @@ class MainWindow(QMainWindow):
         commands=QFrame();commands.setObjectName('panel');commands.setFixedWidth(220);column=QVBoxLayout(commands)
         label=QLabel('Commands');label.setObjectName('heading');column.addWidget(label)
         self.role_label=QLabel('Guest / Viewer');column.addWidget(self.role_label)
-        self.command_access_note=QLabel();self.command_access_note.setWordWrap(True);column.addWidget(self.command_access_note)
+        self.command_access_note=QLabel(commands);self.command_access_note.hide()
         self.command_access_button=QPushButton('Enable Acknowledge / Reset')
         self.command_access_button.setMinimumHeight(44);self.command_access_button.clicked.connect(self.activate_command_bench)
         column.addWidget(self.command_access_button)
-        legend=QLabel('LED: acknowledgment only\nExecution: see command audit');legend.setWordWrap(True);column.addWidget(legend)
         self.command_buttons={}
         for code,name in COMMANDS.items():
             label={0x300:'ZERO CAL',0x400:'SPAN CAL',0x500:'FULL CAL',0x600:'ZERO TEST',0x700:'SPAN TEST',0x800:'FULL TEST',0x900:'SAVE ALL',0xF00:'LOCK CAL'}.get(code,name.upper())
