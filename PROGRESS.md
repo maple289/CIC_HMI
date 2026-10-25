@@ -1,3 +1,9 @@
+# Real-time trend gap diagnosis (2026-10-25)
+
+- Investigated the current user's HMI without taking COM4 or sending commands. Live Diagnostics showed120 additional successful polls (2088 to2208),100% success and0 timeout/CRC/protocol errors during the captured interval; later2419 polls retained those counters. Successful register50-55 replies alternate numeric `-99 %LFL` LCD text with ten spaces while the controller is faulted. Captured the actual blank and numeric frames and validated CRCs in replay.
+- The fault-state trend source is the controller LCD because process register1 contains the observed FTA fault sentinel0x8001. Blank LCD replies correctly produce unavailable values/NaN trend gaps. The main gauge's four-second display-only hold is not logged or graphed as fresh data. No communication or polling defect was established during the observation; no source or executable change was made. Detailed evidence in Docs/VERIFICATION.md and ignored tmp/live-trend-gap-observation.json.
+- Added replay regressions for numeric/blank/numeric replies and all-space flashing:3 targeted tests passed in0.48s. Returned the user's HMI to Gauge; Connection Established/COMMUNICATION GOOD remained. No real writes, settings changes or port handover occurred. Existing analyzer faults and broader physical validation remain pending.
+
 # Focused Test Connection view (2026-10-25)
 
 - Replaced the modal result over an inactive dashboard with a dedicated Test Connection page. During the one-shot check and its result, the gauge, measurement cards, alarm/status/relay indicators, operating Commands panel, monitoring sidebar, sign-in and Disconnect/bench controls are hidden. The result retains connection settings, identity, specific errors/compatibility notes and explicit monitoring-stopped instructions. Connect and monitor restores live polling; Back restores the previous page without opening a port. Relevant selection/retry controls remain available.

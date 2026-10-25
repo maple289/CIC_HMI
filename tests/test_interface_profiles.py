@@ -158,20 +158,36 @@ def test_hold_age_never_renews_on_cached_words_and_switch_clears(app,monkeypatch
     gauge.close()
 
 
-def test_native_fault_flashing_has_no_retained_measurement_in_data_pipeline(app,monkeypatch):
+@pytest.mark.parametrize('lcd_text',[b'TC2 FAIL  ',b'          '])
+def test_native_fault_flashing_has_no_retained_measurement_in_data_pipeline(app,monkeypatch,lcd_text):
     from test_hardware_monitoring import RAW
     now=[100.0]
     monkeypatch.setattr('prevex_hmi.gui.gauge.time',SimpleNamespace(monotonic=lambda:now[0]))
     config=replace(default_devices()[0],assembly='SNR671',version='4.81',register_profile='fta_4x')
     snapshot=sample();snapshot.update(config=asdict(config),raw=dict(RAW))
     gauge=CircularGauge();gauge.set_snapshot(snapshot);assert gauge.state.value==-99
-    data=b'TC2 FAIL  '
+    data=lcd_text
     snapshot['raw'].update({51+i//2:int.from_bytes(data[i:i+2],'big') for i in range(0,10,2)})
     now[0]=102;gauge.set_snapshot(snapshot)
     assert gauge.state.value==-99 and gauge.held
     assert measurement(snapshot)[0] is None and 'fault_lcd_reading' not in snapshot
     now[0]=104.1;gauge.expire();assert gauge.state.reading=='--'
     gauge.close()
+
+
+def test_recorded_live_blank_lcd_reply_is_valid_communication_not_a_measurement():
+    from prevex_hmi.communication.protocol import decode_read
+    config=replace(default_devices()[0],assembly='SNR671',version='4.81',register_profile='fta_4x')
+    snapshot=sample();snapshot['config']=asdict(config)
+    snapshot['raw'].update({1:0x8001,2:20,4:12})
+    numeric='01 03 0C 6A 00 2D 39 39 20 25 4C 46 4C 20 20 9D E9'
+    blank='01 03 0C 6A 00 20 20 20 20 20 20 20 20 20 20 24 2C'
+    for frame,expected in ((numeric,-99),(blank,None),(numeric,-99)):
+        words=decode_read(bytes.fromhex(frame),1,6)  # Includes CRC validation.
+        snapshot['raw'].update(dict(enumerate(words,50)))
+        value,_=measurement(snapshot)
+        assert value==expected
+        assert snapshot['quality']=='GOOD' and snapshot['raw'][1]==0x8001
 
 
 def test_connection_is_independent_of_instrument_fault_and_held_gauge(app,tmp_path):
