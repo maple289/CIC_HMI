@@ -1,3 +1,7 @@
+# Test Connection live presentation verification (2026-10-25)
+
+Reproduced successful SNR6714.81 identification followed by disconnected main-screen labels in the prior one-shot check. The serial port closes intentionally after testing; that screen was reporting stopped monitoring rather than a failed check. The new connection-test-result build presents success/partial-identification/failure in a dedicated dialog with settings, detected identity and compatibility/error details after port cleanup. Physically verified this dialog using FC03-only COM4 reads and inspected its rendering; the result was Connection test passed, SNR671/4.81, valid Modbus response. Normal monitoring was restored afterward. No operating commands, lock changes or configuration writes were issued; existing hardware-validation limits are unchanged.
+
 # Calibration versus test investigation (2026-10-25)
 
 - The user reports physical Zero Test, Span Test and Full Test valve reactions. Read the running HMI's hardware.sqlite3 audit in query-only mode, including its current WAL; no serial connection was opened and no command was sent by the agent. Recorded tests0x0600/0700/0800 have valid acknowledgments and observed STATUS4/5/6/7 sequences before return to STATUS20 (Flow low). The existing FAILED terminal audit label reflects that returning fault, not absence of a valve sequence or proof that a test was never executed. This establishes observed sequence behavior only, not calibration accuracy or full hardware compatibility.

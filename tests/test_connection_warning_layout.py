@@ -69,6 +69,13 @@ def test_admin_test_connection_does_not_change_profile_or_activate_commands(app,
                 w.users.create_user('admin','test-identity-password')
                 w.session=w.users.authenticate('admin','test-identity-password')
             w.begin('test');wait(app,lambda:bool(w.identity) and not w.worker.isRunning())
+            wait(app,lambda:w.connection_test_dialog is not None and not w.test_in_progress)
+            assert w.connection_test_dialog.isVisible()
+            assert w.connection_test_dialog.result_label.text()=='Connection test passed'
+            assert 'COM4' in w.connection_test_dialog.details.text()
+            assert ('SNR671' if legacy else 'SNR675') in w.connection_test_dialog.details.text()
+            assert 'Monitoring is stopped' in w.connection_test_dialog.instructions.text()
+            assert all(item.closed for item in instances)
             results.append(copy.deepcopy(w.identity))
             assert w.snapshot is None and not w.identity['controls_verified']
             assert not any(b.isEnabled() for b in w.command_buttons.values())
@@ -87,6 +94,37 @@ def test_admin_test_connection_does_not_change_profile_or_activate_commands(app,
         assert all(item.closed for item in instances)
         if legacy:assert all(pdu+1 not in (8,60,62) for _,pdu,_ in calls)
     finally:w.close();app.processEvents()
+
+
+@pytest.mark.parametrize('failure',['missing_port','worker_timeout'])
+def test_connection_failure_has_explicit_result_without_controls(app,tmp_path,monkeypatch,failure):
+    from prevex_hmi.gui.worker import MonitoringWorker
+    settings=load_settings(tmp_path/'settings.json');settings['mode']='hardware';settings['connection']['port']='COM4'
+    error='COM4 is no longer available' if failure=='missing_port' else 'Identification timed out; no valid Modbus response'
+    def available(_):
+        if failure=='missing_port':raise ValueError(error)
+    class FailedCheck(MonitoringWorker):
+        def run(self):self.failed.emit(error)
+    monkeypatch.setattr('prevex_hmi.gui.window.require_available_port',available)
+    monkeypatch.setattr('prevex_hmi.gui.window.MonitoringWorker',FailedCheck)
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False)
+    try:
+        w.begin('test');wait(app,lambda:w.connection_test_dialog is not None)
+        assert w.connection_test_dialog.result_label.text()=='Connection test failed'
+        assert error in w.connection_test_dialog.details.text()
+        assert not w.test_in_progress and w.snapshot is None
+        assert not any(b.isEnabled() for b in w.command_buttons.values())
+    finally:w.close();app.processEvents()
+
+
+def test_unknown_identity_is_not_reported_as_identified_success(app,tmp_path):
+    from prevex_hmi.gui.connection_result import ConnectionTestResult
+    settings=load_settings(tmp_path/'settings.json')
+    dialog=ConnectionTestResult(settings,dict(communication_ok=True,warning='Unknown analyzer identity'))
+    try:
+        assert 'identification unresolved' in dialog.result_label.text()
+        assert 'Unknown analyzer identity' in dialog.details.text()
+    finally:dialog.close()
 
 
 def test_legacy_warning_distinguishes_raw_separator_and_firmware_scope():

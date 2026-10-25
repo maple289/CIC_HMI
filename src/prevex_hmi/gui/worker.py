@@ -94,6 +94,7 @@ class MonitoringWorker(QThread):
                 info['loaded_profile']=profile_name(effective)
                 info['register_revision']=profile_for(effective).revision
             info['communication']='Valid Modbus response' if bus.stats.successes else 'No valid Modbus response'
+            info['communication_ok']=bool(bus.stats.successes)
             self.identified.emit(info)
             if self.test_only or effective is None: return
             scheduler=PollingScheduler(bus,[effective])

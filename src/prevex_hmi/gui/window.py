@@ -12,6 +12,7 @@ import pyqtgraph as pg
 from prevex_hmi.devices.configuration import save_settings
 from prevex_hmi.devices.models import DeviceConfig
 from prevex_hmi.gui.connection_dialog import AnalyzerChoice,LoginDialog
+from prevex_hmi.gui.connection_result import ConnectionTestResult
 from prevex_hmi.gui.gauge import CircularGauge
 from prevex_hmi.gui.compact_readouts import CompactReadouts
 from prevex_hmi.gui.command_button import CommandButton
@@ -64,6 +65,7 @@ class MainWindow(QMainWindow):
         self.settings,self.settings_path,self.data_path=settings,settings_path,data_path
         self.hardware_grant=hardware_grant
         self.worker=None;self.snapshot=None;self.identity={};self.diagnostics={}
+        self.test_in_progress=False;self.test_result_info=None;self.test_result_error='';self.connection_test_dialog=None
         self.snapshot_received_at=0.0
         self.snapshot_family=None;self.readouts={};self.history_rows=[];self.series=deque(maxlen=1800)
         self.last_sample=None;self.update_count=0;self.closing=False;self.next_action=None
@@ -251,6 +253,8 @@ class MainWindow(QMainWindow):
         self.refresh_profile_settings()
 
     def begin(self,action):
+        if self.connection_test_dialog:self.connection_test_dialog.close()
+        self.test_in_progress=action=='test';self.test_result_info=None;self.test_result_error=''
         if action in ('connect','test') and self.settings['mode']=='hardware' and self.hardware_grant is not None:
             try:
                 self.hardware_grant.validate(self.settings,self.config)
@@ -274,10 +278,13 @@ class MainWindow(QMainWindow):
         for button in (self.choose_button,self.connect_button,self.test_button,self.bench_button):button.setEnabled(enabled)
 
     def start_worker(self,*,test_only=False):
+        if test_only:self.test_in_progress=True
         if self.settings['mode']=='hardware':
             try:require_available_port(self.settings['connection']['port'])
             except (ValueError,OSError) as error:
-                self.worker_error(str(error));self.set_connection_buttons(True);return
+                self.worker_error(str(error));self.set_connection_buttons(True)
+                if test_only:self.finish_connection_test()
+                return
         worker_grant=replace(self.hardware_grant,operator_commands=False) if test_only and self.hardware_grant else self.hardware_grant
         self.worker=MonitoringWorker(copy.deepcopy(self.settings),self.data_path,self,test_only=test_only,hardware_grant=worker_grant)
         owner=self.worker
@@ -295,11 +302,25 @@ class MainWindow(QMainWindow):
         self.set_connection_buttons(True)
         if action=='connect':self.start_worker()
         elif action=='test':self.start_worker(test_only=True)
-        else:self.update_command_buttons()
+        else:
+            self.update_command_buttons()
+            if self.test_in_progress:self.finish_connection_test()
+
+    def finish_connection_test(self):
+        self.test_in_progress=False
+        info=self.test_result_info or {}
+        error=self.test_result_error
+        if not info and not error:error='The check ended without an identification result.'
+        self.connection_test_dialog=ConnectionTestResult(self.settings,info,error,self)
+        self.connection_test_dialog.open()
+        self.summary.setText(self.connection_test_dialog.result_label.text()+' | Monitoring stopped')
+        self.indicators.summary.setText('MONITORING STOPPED | One-time test complete; click Connect for live data')
+        self.statusBar().showMessage('Test Connection complete. See the result window; click Connect to monitor continuously.')
 
     def identification_result(self,info):
         if self.next_action or self.closing:return
         self.identity=info
+        if info.get('test_only'):self.test_result_info=info
         if info.get('config'):
             family=info['config']['family']
             config=DeviceConfig(**info["config"])
@@ -513,6 +534,7 @@ class MainWindow(QMainWindow):
             except OSError as error:QMessageBox.warning(self,'Export failed',str(error))
 
     def worker_error(self,text):
+        if self.test_in_progress:self.test_result_error=text
         self.invalidate('OFFLINE');self.warning.setText(text);self.warning.show();self.statusBar().showMessage(text)
 
     def apply_theme(self):
