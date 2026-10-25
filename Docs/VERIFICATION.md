@@ -1,3 +1,9 @@
+# User bench confirmation: SNR671 firmware4.81 operating commands (2026-10-25)
+
+The user reports simulating normal operational inputs (flame temperature and flow) on the connected real SNR671 controller and confirms that all available HMI operating commands operated properly. Record command-operation compatibility for this SNR671/4.81 bench setup as **USER BENCH-VERIFIED**, superseding the prior untested status for those commands on this controller. This is human-reported physical-controller evidence, not a software-simulator result and not an agent-executed command test. The user previously separately confirmed the Zero/Span/Full Test reactions while the controller was faulted.
+
+The report does not provide per-command raw receipts, reference gas results, calibration accuracy, power-cycle/persistence results, a hardware-lock test matrix or coverage of every register/model/firmware variant. Those details remain unverified rather than inferred. Other670 assemblies and700/BTU/FID hardware compatibility are not promoted by this evidence. Preserve the manufacturer-documentation/version-separator uncertainty, roles, confirmation, lock/identity/freshness checks and no ambiguous retries. No source or executable change is part of recording this confirmation.
+
 # Display-only retention validation (2026-10-25)
 
 The user explicitly requests a stable last-value display until a new number arrives. The live trend now bridges confirmed fresh blank/nonnumeric older-FTA fault LCD phases using dashed amber held segments, retaining the first-missing time and marking the gauge/card stale. It does not alter source measurements, controller state, historian/CSV values or command inputs. Holds cannot span profile changes or manufacture a first reading, and fresh primary/LCD responses remain mandatory; actual source/communication loss still expires the display and breaks the trend.

@@ -1,3 +1,8 @@
+# User-confirmed SNR6714.81 operating-command support (2026-10-25)
+
+- The user reports applying simulated normal flame-temperature and flow inputs to the real SNR671 controller and confirms all available commands operated properly. Recorded the command-operation scope for this SNR671/4.81 bench setup as USER BENCH-VERIFIED in Docs/VERIFICATION.md and Docs/COMMAND_READINESS.md, distinguishing human hardware evidence from software simulation or agent actions.
+- No source/executable change, physical access or agent command execution occurred. Existing permissions, confirmation, hardware/software lock checks and no ambiguous retries remain. All-register/other-model coverage, reference-gas calibration accuracy, power-cycle/persistence checks and a detailed lock matrix remain separate validation items. Documentation-only update; diff check passed, automated tests were not rerun. Previous776-test release evidence remains applicable to the unchanged code.
+
 # Stable numeric display and retained live-trend segments (2026-10-25)
 
 - Implemented the user's request to capture missing-number start time and retain the last numeric display until fresh numeric LCD data returns. Retention is limited to confirmed fresh blank/nonnumeric LCD replies under the existing older-FTA fault-display path, with matching device/profile scope. Primary and LCD freshness still gate it. An indefinite hold is blocked without a prior numeric value or when source registers expire, the profile changes, or communication is lost. The original short gauge-only fallback remains for other unavailable conditions.
