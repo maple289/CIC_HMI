@@ -101,6 +101,19 @@ def test_wrong_firmware_never_allowed(version):
     assert not validated_670(replace(default_devices()[0],version=version))
 
 
+@pytest.mark.parametrize('code,after_role',[(0x300,'Viewer'),(0x900,'Operator')])
+def test_revoked_or_reduced_session_during_preflight_never_transmits(control,monkeypatch,code,after_role):
+    service,state,_=control;active=[True]
+    service.users.resolve=lambda _:('test','Administrator' if active[0] else after_role)
+    activate=service.bus.activate_validated_controls
+    def switch(*args,**kwargs):
+        activate(*args,**kwargs);active[0]=False
+    monkeypatch.setattr(service.bus,'activate_validated_controls',switch)
+    service.execute(code,'admin',confirmed=True)
+    assert not state['writes'] and service.receipt['state']=='REJECTED'
+    assert not service.receipt['reply_received'] and not service.ambiguous
+
+
 def test_cached_precommand_status_is_not_used_for_execution_proof(control):
     service,state,store=control
     service.execute(0x300,'admin',confirmed=True)

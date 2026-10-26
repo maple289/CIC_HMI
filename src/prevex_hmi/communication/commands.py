@@ -9,6 +9,13 @@ from prevex_hmi.profiles.common import COMMANDS
 from prevex_hmi.simulator.bus import SimulatedBus
 
 
+def require_current_session(users,token,actor,*,administrator=False):
+    name,role=users.resolve(token)
+    if name!=actor or role not in ('Operator','Administrator') or administrator and role!='Administrator':
+        raise PermissionError('Session changed or was revoked; sign in and confirm again')
+    return role
+
+
 @dataclass
 class PendingCommand:
     code: int
@@ -59,6 +66,7 @@ class CommandController:
             status=self.bus.read(profile,self.config.addressing,2,1)[2]
             if code in range(0x300,0x900,0x100) and (values[lock_register] & (1 if profile.revision == "700" else 3) or status in (4,5,6,7,11,12)):
                 raise PermissionError("Calibration is locked or instrument is busy/warming up")
+            role=require_current_session(self.users,token,actor)
             self.record(actor,code,"SENDING",f"{COMMANDS[code]} confirmed; sending once")
             # Same transaction lock, pacing and worker owner as polling. There
             # is no path from this simulation-only method to a serial write.

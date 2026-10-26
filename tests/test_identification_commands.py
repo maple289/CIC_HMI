@@ -92,6 +92,17 @@ def test_passwords_hashed_and_roles_resolved_server_side(controller):
     assert users.resolve('forged-session')==('Guest','Viewer')
 
 
+def test_revoked_session_cannot_send_after_simulated_preflight(controller,monkeypatch):
+    c,token,_,sim,store,users=controller;read=c.bus.read
+    def preflight(*args,**kwargs):
+        result=read(*args,**kwargs)
+        if args[2]==2:users.logout(token)
+        return result
+    monkeypatch.setattr(c.bus,'read',preflight)
+    c.execute(0x300,token,confirmed=True)
+    assert not sim.events and store.audit_rows()[0][4]=='REJECTED'
+
+
 @pytest.mark.parametrize('code',[0xA00,0xB00,0xC00,0xD00,0xE00,0,65535])
 def test_prohibited_commands_never_sent(controller,code):
     c,token,_,sim,_,_=controller;c.execute(code,token,confirmed=True)

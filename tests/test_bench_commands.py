@@ -64,6 +64,17 @@ def test_confirmation_roles_profile_and_prohibited_codes_block_writes(controller
     assert not client.writes
 
 
+def test_session_revoked_after_read_preflight_cannot_send_bench_command(controller,monkeypatch):
+    service,token,client,_=controller;read=service.bus.read
+    def preflight(*args,**kwargs):
+        result=read(*args,**kwargs)
+        if args[2]==59:service.users.logout(token)
+        return result
+    monkeypatch.setattr(service.bus,'read',preflight)
+    service.execute(0x100,token,confirmed=True)
+    assert not client.writes and service.receipt['state']=='REJECTED'
+
+
 def test_lost_ack_never_causes_command_retry(controller):
     service,token,client,store=controller;client.lost=True
     service.execute(0x100,token,confirmed=True)

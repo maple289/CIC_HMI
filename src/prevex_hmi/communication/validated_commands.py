@@ -1,6 +1,6 @@
 """Audited confirmed commands for the 670 command set, including the explicit user-approved4.81 assumption."""
 import uuid
-from .commands import CommandController,PendingCommand
+from .commands import CommandController,PendingCommand,require_current_session
 from .validated_controls import ValidatedControlGrant,WORDS,validated_670
 from prevex_hmi.devices.identification import detect
 from prevex_hmi.devices.models import utc_now
@@ -51,6 +51,7 @@ class ValidatedOperatingCommands(CommandController):
                 raise PermissionError('Calibration lock changed during preflight')
             if code in range(0x300,0x900,0x100) and self.bus.read(profile,self.config.addressing,28,1)[28]!=minutes:
                 raise PermissionError('Calibration interval changed during preflight')
+            require_current_session(self.users,token,actor,administrator=code==0x900)
             assumption='; firmware4.81 uses the 5.12 map by user instruction, physical compatibility unverified' if self.config.version=='4.81' else ''
             self.record(actor,code,'SENDING',f'{COMMANDS[code]} confirmed; send once{assumption}')
             sent=True;self.last_attempt[code]=self.clock()

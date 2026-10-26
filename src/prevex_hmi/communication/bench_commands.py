@@ -1,7 +1,7 @@
 """Confirmed, audited ACK/RESET exception for the user-authorized real controller."""
 import time
 import uuid
-from .commands import CommandController
+from .commands import CommandController,require_current_session
 from .hardware_session import ReadOnlyControllerGrant
 from prevex_hmi.devices.identification import detect
 from prevex_hmi.profiles import profile_for
@@ -29,6 +29,7 @@ class BenchOperatorCommands(CommandController):
             service_before=self.bus.read(profile,self.config.addressing,59,1)[59]
             if before[2] in (4,5,6,7,11,12):raise PermissionError('Controller busy or warming up')
             name='Acknowledge' if code==0x100 else 'Reset'
+            require_current_session(self.users,token,actor)
             self.record(actor,code,'SENDING',f'{name}: confirmed real-controller bench action; send once')
             self.receipt.update(state='SENDING',before={'status':before[2],'relays':before[4],'service':service_before})
             sent=True

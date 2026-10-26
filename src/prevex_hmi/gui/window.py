@@ -81,6 +81,7 @@ class MainWindow(QMainWindow):
         header=QHBoxLayout();brand=QLabel('PREVEX / HMI');brand.setObjectName('brand');header.addWidget(brand)
         self.summary=QLabel('Disconnected');header.addWidget(self.summary,1)
         self.login_button=QPushButton('Sign in / create account');self.login_button.clicked.connect(self.login);header.addWidget(self.login_button)
+        self.account_button=QPushButton('My account');self.account_button.setEnabled(False);self.account_button.clicked.connect(self.manage_account);header.addWidget(self.account_button)
         theme=QPushButton('Switch theme');theme.clicked.connect(self.toggle_theme);header.addWidget(theme);root.addLayout(header)
         self.banner=QLabel();self.banner.setObjectName('banner');root.addWidget(self.banner)
         toolbar=QHBoxLayout()
@@ -105,6 +106,7 @@ class MainWindow(QMainWindow):
         self.refresh_profile_settings()
         self.connection_watch=QTimer(self);self.connection_watch.setInterval(250)
         self.connection_watch.timeout.connect(self.refresh_connection_status);self.connection_watch.start()
+        self.account_watch=QTimer(self);self.account_watch.setInterval(1000);self.account_watch.timeout.connect(self.update_command_buttons);self.account_watch.start()
         self.statusBar().showMessage(f'Data: {data_path} | No safety function depends on the HMI')
         if start_worker:self.start_worker()
 
@@ -131,7 +133,7 @@ class MainWindow(QMainWindow):
         if active and not self.test_view_active:self.return_page=max(0,self.navigation.currentRow())
         self.test_view_active=active
         self.navigation.setVisible(not active)
-        for widget in (self.banner,self.identity_label,self.login_button,self.disconnect_button,self.bench_button):widget.setVisible(not active)
+        for widget in (self.banner,self.identity_label,self.login_button,self.account_button,self.disconnect_button,self.bench_button):widget.setVisible(not active)
         self.warning.setVisible(not active and bool(self.warning.text()))
         if active:self.pages.setCurrentWidget(self.test_page)
         elif was_active:self.pages.setCurrentIndex(self.return_page)
@@ -536,6 +538,11 @@ class MainWindow(QMainWindow):
         self.start_controller_bench()
 
     def update_command_buttons(self):
+        if hasattr(self.users,'session_info'):
+            account=self.users.session_info(self.session)
+            if self.session and not account:self.session='';self.login_button.setText('Sign in / create account')
+            self.account_button.setEnabled(bool(account))
+            self.account_button.setText('Password change required' if account and account['must_change'] else 'Account / users' if account and account['role']=='Administrator' else 'My account')
         name,role=self.users.resolve(self.session);self.role_label.setText(f'{name} / {role}')
         snapshot=self.snapshot;control=snapshot.get('control',{}) if snapshot else {}
         bench=bool(self.hardware_grant and self.hardware_grant.operator_commands and self.settings['mode']=='hardware')
@@ -614,7 +621,20 @@ class MainWindow(QMainWindow):
         if self.session:
             self.users.logout(self.session);self.session='';self.login_button.setText('Sign in');self.update_command_buttons();return
         dialog=LoginDialog(self.users,self)
-        if dialog.exec()==QDialog.Accepted:self.session=dialog.token;self.login_button.setText('Sign out');self.update_command_buttons()
+        if dialog.exec()==QDialog.Accepted:
+            self.session=dialog.token;self.login_button.setText('Sign out');self.update_command_buttons()
+            info=self.users.session_info(self.session)
+            if info and info['must_change']:self.manage_account()
+
+    def manage_account(self):
+        from prevex_hmi.gui.accounts import AccountsDialog
+        if not self.users.session_info(self.session):
+            self.update_command_buttons();QMessageBox.information(self,'Sign in required','Sign in before opening account settings.');return
+        try:AccountsDialog(self.users,self.session,self).exec()
+        except PermissionError as error:QMessageBox.warning(self,'Account unavailable',str(error))
+        info=self.users.session_info(self.session)
+        if info and info['must_change']:self.users.logout(self.session)
+        self.update_command_buttons()
 
     def load_history(self):self.request('history',self.history_hours.currentData())
 
@@ -662,6 +682,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self,event):
         self.closing=True;self.next_action=None
+        self.account_watch.stop();self.connection_watch.stop()
         if self.worker and self.worker.isRunning():
             self.closing=True;self.worker.stop();self.setEnabled(False);event.ignore()
         else:

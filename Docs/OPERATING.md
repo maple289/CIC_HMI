@@ -48,7 +48,13 @@ The top panel shows one current STATUS enum and separate relay/service bits. Onl
 
 The command buttons and individual three-second LEDs occupy a separate, fixed-row rail. Command responses, execution progress and errors appear in the scrollable **Command result** card beside the connected analyzer information. Long messages cannot resize the button rows or move their LEDs. At compact window widths the result card moves below the gauge/information; the command rail stays independent. The alarm panel remains pinned above the readings while only the readings area scrolls.
 
-Guest/Viewer is the initial role; controls remain disabled. Use **Sign in / create account** to create the first local Administrator with a password of at least12 characters. There is no default password. Sign out through the same button. Passwords use salted PBKDF2 hashes. The account store supports Viewer, Operator and Administrator; creating additional users is an Administrator-only API operation, with a management UI remaining future work.
+Guest/Viewer is the initial role; controls remain disabled. Use **Sign in / create account** to create the first local Administrator with a password of at least12 characters. There is no default password. Sign out through the same button. Passwords use salted PBKDF2 hashes. The account store supports Viewer, Operator and Administrator. After signing in, select **My account** (or **Account / users** for an Administrator). Existing accounts and passwords are preserved when upgrading.
+
+**My password** requires your current password and a matching new password of12–1024 characters. Successful changes sign out all your sessions; sign in again with the new password. Passwords remain masked and are never included in the account audit.
+
+Administrators also have **Users** and **Account audit** tabs. Create a user with a role (Viewer by default) and an initial password; requiring a personal password change on next sign-in is enabled by default. Resetting another user's password always requires them to change it at next sign-in. Until that change, the session has Viewer permissions and cannot manage accounts. Cancelling the required password change signs out. An Administrator changes their own password through My password, with their current password.
+
+Select a user to change their role, reset their password or delete their access. Role and password changes revoke the affected user's existing sessions. Deletion archives the account, preserving its name and audit history; the archived username cannot be reused. You cannot delete your own signed-in account or remove/demote the last Administrator. Role changes and deletion require confirmation. The account audit shows the latest200 changes with UTC timestamp, actor, action and target; older records remain in SQLite. Account management does not bypass instrument restrictions, identity checks or per-command confirmation.
 
 Operator/Administrator sessions may run approved simulator commands and documented6705.12-5.x operating commands. SAVE ALL on hardware requires Administrator. Each action requires target confirmation, a current connection, fresh matching identification and applicable calibration-lock/status checks. Pending or unknown outcomes block duplicates. Commands are sent once, audited and evaluated using STATUS; pre-command cached STATUS samples are ignored. Ambiguous timeouts are never retried; reconnect and review state. A write acknowledgment is not proof of execution. Ack/reset/save may report sent/unverified because no unique success signature is documented.
 
@@ -76,4 +82,8 @@ Build on Windows Python3.12 x64 using requirements-lock.txt:
 & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm build_windows.spec
 ```
 
-Launch `dist/PREVEX-HMI/PREVEX-HMI.exe`; distribute the entire folder, including `_internal`. The build is unsigned. Installer/signing, clean Windows10/11 testing, advanced retention/archival, user-management UI and hardware validation remain release work. No simulator test establishes physical compatibility; see VERIFICATION.md.
+Launch `dist/PREVEX-HMI/PREVEX-HMI.exe`; distribute the entire folder, including `_internal`. The build is unsigned. Installer/signing, clean Windows10/11 testing, advanced retention/archival and hardware validation remain release work. No simulator test establishes physical compatibility; see VERIFICATION.md.
+
+## External analyzer profiles: proposed next step
+
+[PROFILE_CONF_DESIGN.md](PROFILE_CONF_DESIGN.md) describes versioned JSON `.conf` files for future editable register and display metadata, validation and controlled reload. This release continues to use the existing Python profiles; no runtime `.conf` loader is enabled. Operational permissions and prohibited-write checks remain enforced by the application.
