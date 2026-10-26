@@ -181,11 +181,61 @@ def test_fake_physical_lock_readback_preserves_hardware_bit(control):
         assert state['lock']==expected
 
 
-def test_fake_physical_acknowledgment_without_changed_lock_is_failed(control):
+def test_fake_physical_acknowledgment_without_changed_lock_is_observed_then_failed(control):
     service,state,store=control;original=service.bus.validated_operating_command
     def ignored(code):original(code);state['lock']=0
     service.bus.validated_operating_command=ignored
     service.execute(0xF00,'admin',confirmed=True)
-    assert service.receipt['reply_received'] and service.receipt['state']=='FAILED'
+    assert service.receipt['reply_received'] and service.receipt['state']=='VERIFYING_LOCK'
+    pending=service.pending;service.clock=lambda:pending.started+pending.timeout
+    service.observe(dict(raw={60:0},quality='GOOD',register_ages={60:0}))
+    assert service.receipt['state']=='FAILED' and service.pending is None
     assert service.receipt['lock_readback']==0
     assert len(state['writes'])==1
+
+
+@pytest.mark.parametrize('code,before,after',[(0xF00,0,2),(0xF00,1,3),(0x1000,2,0),(0x1000,3,1)])
+def test_delayed_lock_change_uses_fresh_readback_and_never_resends(control,code,before,after):
+    service,state,store=control;state['lock']=before
+    original=service.bus.validated_operating_command
+    def delayed(word):original(word);state['lock']=before
+    service.bus.validated_operating_command=delayed
+    service.execute(code,'admin',confirmed=True)
+    assert service.receipt['state']=='VERIFYING_LOCK' and service.pending
+    pending=service.pending;service.clock=lambda:pending.started+1
+    # An older cached word claiming the desired state is not execution evidence.
+    service.observe(dict(raw={60:after,2:25},quality='GOOD',register_ages={60:2}))
+    assert service.pending and service.receipt['state']=='VERIFYING_LOCK'
+    service.clock=lambda:pending.started+2
+    service.observe(dict(raw={60:before},quality='GOOD',register_ages={60:0}))
+    assert service.pending
+    service.clock=lambda:pending.started+3
+    service.observe(dict(raw={60:after,2:25},quality='GOOD',register_ages={60:0}))
+    assert not service.pending and service.receipt['state']=='VERIFIED'
+    assert service.receipt['lock_readback']==after and len(state['writes'])==1
+    assert store.audit_rows()[0][4]=='VERIFIED'
+
+
+@pytest.mark.parametrize('condition',['offline','stale','no_timestamp','invalid'])
+def test_inconclusive_lock_verification_is_unknown_without_retries(control,condition):
+    service,state,store=control;original=service.bus.validated_operating_command
+    def delayed(code):original(code);state['lock']=0
+    service.bus.validated_operating_command=delayed
+    service.execute(0xF00,'admin',confirmed=True)
+    pending=service.pending;service.clock=lambda:pending.started+pending.timeout
+    snapshot=dict(raw={60:0},quality='GOOD',register_ages={60:0})
+    if condition=='offline':snapshot['quality']='OFFLINE'
+    elif condition=='stale':snapshot['register_ages'][60]=pending.timeout+1
+    elif condition=='no_timestamp':snapshot['register_ages']={}
+    else:snapshot['raw'][60]=0x2020
+    service.observe(snapshot)
+    assert service.pending is None and service.ambiguous and service.receipt['state']=='UNKNOWN'
+    assert len(state['writes'])==1
+
+
+def test_lock_pending_ui_identifies_register_verification_and_disables_duplicates(window):
+    w=window;w.snapshot['control'].update(pending=True,pending_kind='lock')
+    w.update_command_buttons()
+    assert 'CAL LOCK [60]' in w.command_message.text() and not w.command_buttons[0xF00].isEnabled()
+    w.show_command_receipt(dict(id='pending-lock',code=0xF00,state='VERIFYING_LOCK',reply_received=True))
+    assert 'verifying CAL LOCK [60]' in w.command_proof.text()

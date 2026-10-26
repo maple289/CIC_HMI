@@ -25,6 +25,15 @@ class PendingCommand:
     timeout: float = 60
 
 
+@dataclass
+class PendingLock:
+    code: int
+    actor: str
+    started: float
+    timeout: float = 8
+    kind: str = 'lock'
+
+
 class CommandController:
     def __init__(self,bus,config,store,users,*,identity_verified=False,expected_identity=None,clock=time.monotonic):
         self.bus,self.config,self.store,self.users=bus,config,store,users
@@ -78,9 +87,7 @@ class CommandController:
                 self.record(actor,code,"PENDING","Monitoring STATUS for sequence and outcome")
             elif code in (0xF00,0x1000):
                 lock=self.bus.read(profile,self.config.addressing,60,1)[60]
-                self.receipt.update(lock_register=60,lock_readback=lock)
-                ok=lock in (0,1,2,3) and bool(lock & 2) == (code == 0xF00)
-                self.record(actor,code,"VERIFIED" if ok else "FAILED","Software calibration lock verified" if ok else "Lock readback disagrees")
+                self.verify_lock_readback(actor,code,lock)
             else:
                 after=self.bus.read(profile,self.config.addressing,2,1)[2]
                 self.record(actor,code,"SENT_UNVERIFIED",f"Sent once; STATUS {status} -> {after}. No unique success signature; execution not proven.")
@@ -91,9 +98,44 @@ class CommandController:
             if sent:self.ambiguous=True
             self.record(actor,code,"UNKNOWN" if sent else "REJECTED",str(error))
 
+    def verify_lock_readback(self,actor,code,word):
+        self.receipt.update(lock_register=60,lock_readback=word)
+        if type(word) is not int or word not in (0,1,2,3):
+            self.ambiguous=True
+            self.record(actor,code,'UNKNOWN',f'CAL LOCK [60] returned invalid/unverified value {word}; execution unknown. No automatic retry.')
+        elif bool(word&2)==(code==0xF00):
+            self.record(actor,code,'VERIFIED',f'Software lock {"locked" if word&2 else "unlocked"}, verified by CAL LOCK [60]={word}; hardware lock remains independent')
+        else:
+            self.pending=PendingLock(code,actor,self.clock(),timeout=min(30,max(8,self.config.interval*4)))
+            self.record(actor,code,'VERIFYING_LOCK',f'Modbus acknowledgment received; CAL LOCK [60]={word}. Waiting up to{self.pending.timeout:g}s for software-lock readback. Command sent once; no retry.')
+
+    def observe_lock(self,snapshot):
+        pending=self.pending;elapsed=max(0,self.clock()-pending.started)
+        word=snapshot['raw'].get(60);age=snapshot.get('register_ages',{}).get(60)
+        fresh=age is not None and 0<=age<=min(elapsed,max(5,self.config.interval*3))
+        if snapshot['quality']!='GOOD':
+            self.pending=None;self.ambiguous=True
+            self.record(pending.actor,pending.code,'UNKNOWN','Communication lost while verifying CAL LOCK [60]; lock change is unconfirmed. No automatic retry; reconnect and check controller lock state.')
+        elif fresh and (type(word) is not int or word not in (0,1,2,3)):
+            self.pending=None;self.ambiguous=True
+            self.record(pending.actor,pending.code,'UNKNOWN',f'CAL LOCK [60] returned invalid/unverified value {word}; lock compatibility requires verification. No automatic retry.')
+        elif fresh and bool(word&2)==(pending.code==0xF00):
+            self.pending=None
+            self.receipt.update(lock_register=60,lock_readback=word)
+            self.record(pending.actor,pending.code,'VERIFIED',f'Software lock {"locked" if word&2 else "unlocked"}, verified by CAL LOCK [60]={word} after{elapsed:.1f}s; hardware lock remains independent')
+        elif elapsed>=pending.timeout:
+            self.pending=None
+            if fresh:
+                self.receipt.update(lock_register=60,lock_readback=word)
+                self.record(pending.actor,pending.code,'FAILED',f'Software-lock change not confirmed within{pending.timeout:g}s; CAL LOCK [60] still reads {word}. Controller may not have applied the command, or this firmware may report lock state differently. Check CAL LOCK on the controller; no automatic retry.')
+            else:
+                self.ambiguous=True
+                self.record(pending.actor,pending.code,'UNKNOWN','No fresh post-command CAL LOCK [60] verification within the observation period; execution unknown. No automatic retry; reconnect and check controller lock state.')
+
     def observe(self,snapshot):
         pending=self.pending
         if pending is None: return
+        if isinstance(pending,PendingLock):self.observe_lock(snapshot);return
         status=snapshot["raw"].get(2)
         age=snapshot.get("register_ages",{}).get(2,0)
         if snapshot["quality"] != "GOOD" or age > max(5,self.config.interval*3):
