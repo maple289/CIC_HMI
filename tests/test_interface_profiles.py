@@ -350,7 +350,7 @@ def test_gui_switches_between_670_and_700_with_one_worker_and_no_old_values(app,
             until(app,lambda:w.snapshot is not None and w.snapshot['config']['id']=='switch-'+series and w.snapshot['quality']=='GOOD')
             assert not previous.isRunning() and w.worker is not previous
             assert w.snapshot_family==('LEL',series)
-            assert (29 in w.readouts)==(series=='700')
+            assert {7,28,29,30,56}<=w.readouts.keys()
             assert (23 in w.readouts)==(series=='670')
             assert not any(button.isEnabled() for button in w.command_buttons.values())
     finally:

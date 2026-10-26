@@ -202,17 +202,18 @@ def test_compact_cards_reflow_without_clipping_or_overlap(app,tmp_path,kind):
             w.resize(width,1020);app.processEvents();app.processEvents()
             cards=container.cards;counts.append(container.columns)
             assert container.columns==container.column_count(container.width())
-            assert all(card.width()==230 for card in cards)
-            assert 0.65<230/345<0.70
-            for i,card in enumerate(cards):
-                assert card.geometry().right()<container.width()
-                assert card.geometry().bottom()<container.height()
-                assert all(not card.geometry().intersects(other.geometry()) for other in cards[i+1:])
-                for label in card.findChildren(QLabel):
-                    if label.isHidden():continue
-                    assert label.x()>=0 and label.y()>=0
-                    assert label.geometry().right()<card.width() and label.geometry().bottom()<card.height()
-                    assert label.height()>=label.heightForWidth(label.width())
+            assert all(card.width()==200 for container in w.readout_groups.values() for card in container.cards)
+            for group in w.readout_groups.values():
+                cards=group.cards
+                for i,card in enumerate(cards):
+                    assert card.geometry().right()<group.width()
+                    assert card.geometry().bottom()<group.height()
+                    assert all(not card.geometry().intersects(other.geometry()) for other in cards[i+1:])
+                    for label in card.findChildren(QLabel):
+                        if label.isHidden():continue
+                        assert label.x()>=0 and label.y()>=0
+                        assert label.geometry().right()<card.width() and label.geometry().bottom()<card.height()
+                        assert label.height()>=label.heightForWidth(label.width())
         assert counts[1]<counts[0]<=counts[2] and counts[3]==counts[1]
         assert all(not text.isHidden() for text in w.readout_names.values())
     finally:w.close();bus.close();app.processEvents()

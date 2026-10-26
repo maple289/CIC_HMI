@@ -136,6 +136,26 @@ class BusEngine:
             finally:
                 self._last_end=self.clock()
 
+    def simulated_parameter(self,config,key,raw,*,previous):
+        """Named simulator adjustments only; never routes to a serial client."""
+        from prevex_hmi.simulator.bus import SimulatedBus
+        from prevex_hmi.profiles.parameters import PARAMETERS,validate_word
+        if not isinstance(self.transport,SimulatedBus):raise PermissionError('Physical parameter adjustments are disabled')
+        validate_word(config,key,raw,previous=previous)
+        with self._lock:
+            if self.closed:raise RuntimeError('Bus closed')
+            deadline=max(self.clock(),(self._last_start or 0)+self.minimum_interval,(self._last_end or 0)+35/self.baud)
+            self.sleep(max(0,deadline-self.clock()));self._last_start=self.clock()
+            number=PARAMETERS[key][0];address=config.addressing.packet_address
+            self._active={'address':address,'register':number,'count':1,'family':'SIMULATED_PARAMETER'}
+            try:
+                target=self.transport.devices[address]
+                if (target.config.family,target.config.assembly,target.config.version,target.config.addressing)!=(config.family,config.assembly,config.version,config.addressing):raise PermissionError('Simulation target differs')
+                if target.fault!='none':raise TimeoutError('Simulated setting reply unavailable')
+                packet=frame(struct.pack('>BBHH',address,6,config.addressing.pdu(number),raw))
+                self._trace(True,packet);target.raw[number]=raw;self._trace(False,packet)
+            finally:self._last_end=self.clock()
+
     def bench_operator_command(self,code: int) -> None:
         from .serial_transport import ControllerBenchTransport
         if not isinstance(self.transport,ControllerBenchTransport) or code not in (0x100,0x200):

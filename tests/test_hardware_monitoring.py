@@ -130,7 +130,7 @@ def test_hardware_gui_replays_real_signals_and_blocks_injection_and_commands(tmp
         assert measurement(w.snapshot,5)[0]==40 and measurement(w.snapshot,6)[0]==50
         assert measurement(w.snapshot,50)[0]==106
         assert measurement(w.snapshot,1)[0]==-99 and w.gauge.state.reading=='-99.00'
-        assert w.gauge.state.minimum==-100 and 'LCD51' in w.readout_names[1].text()
+        assert w.gauge.state.minimum==-100 and 1 not in w.readout_names and 50 not in w.readout_names
         assert all(not b.isEnabled() for b in w.command_buttons.values())
         if operator_commands:
             w.users.create_user('admin','bench-test-password')

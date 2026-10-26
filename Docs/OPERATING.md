@@ -60,6 +60,18 @@ Operator/Administrator sessions may run approved simulator commands and document
 
 For700 LEL, Save Settings and Modbus Lock/Unlock are unavailable under the revised manual. Calibration/tests use LOCK STATE27. Cold Start, internal commands, relay/gas tests, Zero Adjust and generic write bypasses are unavailable. Factory configuration is read-only. Measurement logging can be toggled in Choose Analyzer Type; events and command audit continue independently.
 
+## Grouped parameter cards
+
+The monitoring cards are grouped into **Gauges**, **Calibration parameters** and **Alarm settings**, with 200px cards that reflow as the window changes. The main gauge supplies the primary reading; the duplicate Reading [1] and Output reading [50] cards are removed. Diagnostics and measurement logging still retain the original registers when polled.
+
+Calibration cards include RAW ZERO [29], RAW SPAN [30], CAL TIME [28], CAL RDNG [7] and SPAN °C [56] (SPAN VDC for FID). Each profile keeps its own names and conversions. The700 alarm group uses its separate Warning/Danger/Fault latch settings [72–74], rather than assuming legacy latch semantics.
+
+On supported670 profiles, the small **...** menu on CAL TIME, SPAN °C, WARNING, DANGER and LATCHES opens an editor for that parameter. In simulation, an Administrator can review and confirm one change at a time. CAL TIME accepts whole minutes1–4; SPAN °C uses the model's documented standard/P/D/K limits; WARNING must remain below DANGER. LATCHES exposes Warning, Danger, Fault and Horn and preserves other bits. The manual requires DANGER to latch here or externally for FMR approval. RAW ZERO, RAW SPAN and CAL RDNG remain read-only cards in this update. FAILSAFE remains read-only: the670 manual explicitly prohibits Modbus adjustment; use the controller panel.
+
+The editor checks fresh values, identity, role, lock and busy/pending state. A changed value requires reopening and confirming again. Results and before/after raw values appear in Command result and Command audit as Setting [register]. A fresh simulator FC03 readback verifies the simulated value; an ambiguous outcome blocks further actions until reconnect, with no automatic retry. Simulator verification establishes neither hardware compatibility nor EEPROM persistence.
+
+**Physical parameter adjustments remain disabled pending explicit authorization.** Their editors explain the restriction and disable Review change. Existing authorized operating commands keep their prior behavior.700, BTU and FID parameter editing remains unverified and unavailable.
+
 ## Other pages
 
 - Live trends: signed values, mouse-wheel zoom, drag pan; bounded1800 points. Solid teal segments represent measured values. During confirmed fresh blank or nonnumeric fault LCD replies from the older FTA controller, the gauge/readout retain the last numeric value and the live trace draws a dashed amber hold until a new numeric reply appears. The display identifies the first missing time and retained/stale state. This hold continues only while primary and LCD reads remain fresh; loss of communication, stale source registers, disconnect or profile changes end it. Genuine missing communication still breaks the curve. Held display points are never inserted into SQLite or CSV as new measurements; historical data continues to reflect actual numeric availability.

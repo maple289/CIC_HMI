@@ -4,8 +4,7 @@ from PySide6.QtWidgets import QGridLayout,QLayout,QSizePolicy,QWidget
 
 
 class CompactReadouts(QWidget):
-    # About67% of the previous340-350px cards at the normal window size.
-    card_width=230
+    card_width=200
     gap=8
 
     def __init__(self,parent=None):
@@ -37,8 +36,9 @@ class CompactReadouts(QWidget):
         for start in range(0,len(self.cards),columns):
             row=[]
             for card in self.cards[start:start+columns]:
-                wrapped=card.layout().heightForWidth(self.card_width)
-                row.append(max(card.minimumSizeHint().height(),wrapped if wrapped>=0 else card.sizeHint().height()))
+                margins=card.contentsMargins()
+                wrapped=card.layout().heightForWidth(self.card_width-margins.left()-margins.right())
+                row.append(max(card.minimumSizeHint().height(),wrapped+margins.top()+margins.bottom() if wrapped>=0 else card.sizeHint().height()))
             heights.append(max(row))
         return sum(heights)+self.gap*max(0,len(heights)-1)
 

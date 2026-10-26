@@ -7,7 +7,7 @@ from pathlib import Path
 import time
 from dataclasses import replace
 from PySide6.QtCore import Qt,Signal,QTimer
-from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget,QSizePolicy
+from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget,QSizePolicy,QToolButton,QMenu
 import pyqtgraph as pg
 from prevex_hmi.devices.configuration import save_settings
 from prevex_hmi.devices.models import DeviceConfig
@@ -166,7 +166,11 @@ class MainWindow(QMainWindow):
         self.command_message.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred);result_body.addWidget(self.command_message);result_body.addStretch()
         self.command_result_scroll.setWidget(result_content);result_layout.addWidget(self.command_result_scroll,1)
         self.hero=AnalyzerHero(self.gauge,self.analyzer_info,self.command_result_card);readings.addWidget(self.hero)
-        self.readout_container=CompactReadouts();self.readout_grid=self.readout_container.grid;readings.addWidget(self.readout_container)
+        self.readout_groups={}
+        for title in ('Gauges','Calibration parameters','Alarm settings'):
+            label=QLabel(title);label.setObjectName('heading');readings.addWidget(label)
+            container=CompactReadouts();readings.addWidget(container);self.readout_groups[title]=container
+        self.readout_container=self.readout_groups['Gauges'];self.readout_grid=self.readout_container.grid
         self.overview_plot=self.make_plot();self.overview_plot.setMinimumHeight(180);self.overview_curve=self.overview_plot.plot(pen=pg.mkPen('#45cbb0',width=2),connect='finite');readings.addWidget(self.overview_plot)
         self.overview_held_curve=self.overview_plot.plot(pen=pg.mkPen('#e7b55e',width=2,style=Qt.DashLine),connect='finite')
         self.overview_hold_note=QLabel('Solid: measured | Dashed amber: held while LCD is nonnumeric (display only)');self.overview_hold_note.setWordWrap(True);readings.addWidget(self.overview_hold_note)
@@ -194,18 +198,31 @@ class MainWindow(QMainWindow):
         config=config or self.config
         profile=profile_for(config) if config.family==family else PROFILES[family]
         self.snapshot_family=(family,profile.revision)
-        self.readout_container.clear_cards()
-        self.readouts={};self.readout_names={}
-        numbers=list(gauges_for(config) if config.family==family else GAUGE_REGISTERS[family])
+        for container in self.readout_groups.values():container.clear_cards()
+        self.readouts={};self.readout_names={};self.parameter_menus={}
+        from prevex_hmi.profiles.parameters import PARAMETERS,supported
+        editable={n:key for key,(n,title) in PARAMETERS.items()} if supported(config) else {}
+        numbers=list(gauges_for(config) if config.family==family else (n for n in GAUGE_REGISTERS[family] if n not in (1,50)))
         if family=='BTU':numbers.append(42)
         for i,n in enumerate(numbers):
             r=profile.register(n);frame=QFrame();frame.setObjectName('readout');box=QVBoxLayout(frame)
-            name=QLabel(f'{r.name}  [{n}]');name.setWordWrap(True);box.addWidget(name)
+            title='SPAN °C' if n==56 and family!='FID' else r.name
+            name=QLabel(f'{title}  [{n}]');name.setWordWrap(True)
+            header=QHBoxLayout();header.setContentsMargins(0,0,0,0);header.setSpacing(2);header.addWidget(name,1);box.addLayout(header)
+            if n in editable:
+                key=editable[n];button=QToolButton();button.setText('...');button.setFixedSize(24,24);button.setAutoRaise(True)
+                button.setStyleSheet('QToolButton::menu-indicator {width:0px;}')
+                button.setAccessibleName(f'{title} options');button.setToolTip(f'Adjust {title}')
+                menu=QMenu(button);menu.addAction(f'Adjust {title}…',lambda checked=False,k=key:self.edit_parameter(k))
+                button.setMenu(menu);button.setPopupMode(QToolButton.InstantPopup);header.addWidget(button,0,Qt.AlignTop)
+                self.parameter_menus[n]=button
+            if n==18:name.setToolTip('Read-only: FAILSAFE must be changed at the controller panel; Modbus adjustment is prohibited/unverified.')
             self.readout_names[n]=name
             value=QLabel('--');value.setWordWrap(True);value.setObjectName('digitalValue');box.addWidget(value)
             quality=QLabel();quality.hide()
             box.setContentsMargins(6,6,6,6);box.setSpacing(3)
-            self.readout_container.add_card(frame);self.readouts[n]=(value,quality)
+            category='Calibration parameters' if n in (7,28,29,30,56) else 'Alarm settings' if n in (5,6,17,18,72,73,74) else 'Gauges'
+            self.readout_groups[category].add_card(frame);self.readouts[n]=(value,quality)
         self.indicators.build(family,config if config.family==family else None)
         self.monitor_name.setText(profile_name(config))
         self.range_help.setText('LEL gray: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nW / D: live alarm thresholds [5 / 6]' if family=='LEL' else 'Blue: negative section\nBold marker: zero\n'+('Low / High: BTU setpoints [5 / 6]' if family=='BTU' else 'Warning / Danger: FID setpoints [5 / 6]'))
@@ -372,7 +389,8 @@ class MainWindow(QMainWindow):
         def current():return self.worker is owner and not self.next_action and not self.closing
         self.worker.updated.connect(self.update_data);self.worker.identified.connect(self.identification_result)
         self.worker.history_ready.connect(lambda rows:self.update_history(rows) if current() else None);self.worker.events_ready.connect(lambda rows:fill_table(self.event_table,rows) if current() else None)
-        self.worker.audit_ready.connect(lambda rows:fill_table(self.audit_table,[(a,b,c,f'0x{d:04X}',e,f) for a,b,c,d,e,f in rows]) if current() else None)
+        self.worker.audit_ready.connect(lambda rows:fill_table(self.audit_table,[(a,b,c,f'Setting [{d-0x10000}]' if d>=0x10000 else f'0x{d:04X}',e,f) for a,b,c,d,e,f in rows]) if current() else None)
+        self.worker.parameter_result.connect(lambda text:self.parameter_feedback(text) if current() else None)
         self.worker.inspection_ready.connect(lambda text:self.inspection_result.setText(text) if current() else None);self.worker.command_result.connect(lambda text:self.command_feedback(text) if current() else None)
         self.worker.failed.connect(self.worker_error);self.worker.finished.connect(self.worker_finished)
         self.worker.start();self.set_connection_buttons(False)
@@ -434,6 +452,7 @@ class MainWindow(QMainWindow):
         if (family,profile_for(config).revision)!=self.snapshot_family:self.build_readouts(family,config)
         self.gauge.set_snapshot(snapshot);self.indicators.update_snapshot(snapshot)
         retained=bool(self.gauge.held and self.gauge.lcd_hold)
+        self.readout_retained=retained
         if retained and self.blank_started_wall is None:self.blank_started_wall=time.time()
         elif not retained:self.blank_started_wall=None
         lcd_numbers=range(51,56)
@@ -455,10 +474,17 @@ class MainWindow(QMainWindow):
                 if widget.styleSheet()!=style:widget.setStyleSheet(style)
                 widget.setToolTip('Last numeric value held while the controller LCD is nonnumeric; not a new measurement.' if retained else '')
                 if retained:value,unit=self.gauge.state.value,self.gauge.state.unit
-            if n==2 and value is not None:widget.setText(profile_for(config).status(int(value)))
+            if n in (17,18) and value is not None:
+                word=int(value);widget.setText(' / '.join(name for i,name in enumerate(('Warning','Danger','Fault','Horn')) if word&(1<<i)) or 'None')
+                widget.setToolTip(f'Raw: 0x{word:04X}')
+            elif n==2 and value is not None:widget.setText(profile_for(config).status(int(value)))
             else:widget.setText(f'{value:.{precision(family,n,snapshot["raw"].get(3,100))}f} {unit}' if value is not None else '--')
             quality.clear()
-        self.readout_container.refresh_height()
+            # Fix the wrapped value height at the card's actual inner width;
+            # Qt's nested header layout can otherwise underestimate tall values.
+            widget.ensurePolished()
+            widget.setMinimumHeight(max(0,widget.heightForWidth(self.readout_container.card_width-14)))
+        for container in self.readout_groups.values():container.refresh_height()
         value,unit=measurement(snapshot)
         scope=tuple(snapshot['config'].get(k) for k in ('id','family','assembly','version','address','register_profile'))
         if scope!=self.trend_scope:
@@ -494,8 +520,8 @@ class MainWindow(QMainWindow):
         connected=bool(snapshot and snapshot['quality']=='GOOD' and snapshot.get('last_success') and
                        snapshot.get('age',0) is not None and snapshot.get('age',0)+time.monotonic()-self.snapshot_received_at <= max(5,snapshot['config']['interval']*3))
         self.set_connection_status(connected)
-        if not connected and self.readout_retained and 1 in self.readouts:
-            self.readouts[1][0].setText('--');self.readouts[1][0].setStyleSheet('');self.readouts[1][0].setToolTip('');self.readout_retained=False
+        if not connected and self.readout_retained:
+            self.readout_retained=False
             for label in (self.overview_hold_note,self.trend_hold_note):label.setText('No current communication; held display ended')
 
     def show_command_receipt(self,receipt):
@@ -624,6 +650,55 @@ class MainWindow(QMainWindow):
         self.active_command=code
         self.command_dispatching=True;self.update_command_buttons();self.request('command',code,self.session,True)
         self.show_command_receipt({'code':code,'state':'SENDING','reply_received':False})
+
+    def parameter_access_reason(self,key):
+        from prevex_hmi.profiles.parameters import PARAMETERS,supported
+        snapshot=self.snapshot
+        if not snapshot or not self.worker or not self.worker.isRunning():return 'Connect to an analyzer before adjusting a parameter.'
+        config=DeviceConfig(**snapshot['config'])
+        if not supported(config):return 'Adjustments are unverified for this profile.'
+        if self.settings['mode']!='simulation':return 'Physical setting adjustments are disabled pending explicit authorization. No change will be sent.'
+        if self.users.resolve(self.session)[1]!='Administrator':return 'Sign in as Administrator to adjust settings.'
+        control=snapshot.get('control',{})
+        if not control.get('verified') or control.get('pending') or control.get('ambiguous') or self.command_dispatching:return 'Identity unresolved or an action is pending/unknown.'
+        elapsed=max(0,time.monotonic()-self.snapshot_received_at)
+        limit=max(5,config.interval*3)
+        required=(2,60,PARAMETERS[key][0])+((5,6) if key in ('warning','danger') else ())
+        if snapshot['quality']!='GOOD' or snapshot.get('age') is None or snapshot['age']+elapsed>limit:return 'Communication is not current.'
+        if any(n not in snapshot['raw'] or snapshot.get('register_ages',{}).get(n,float('inf'))+elapsed>limit for n in required):return 'Wait for fresh parameter, STATUS and lock values.'
+        if snapshot['raw'][60]!=0:return 'Calibration lock is active or unverified.'
+        if snapshot['raw'][2] not in profile_for(config).statuses or snapshot['raw'][2] in (4,5,6,7,11,12):return 'Instrument is busy/warming up or STATUS is unknown.'
+        return ''
+
+    def edit_parameter(self,key):
+        from prevex_hmi.gui.parameter_editor import ParameterEditor
+        from prevex_hmi.profiles.parameters import PARAMETERS,encode
+        if not self.snapshot:return
+        config=DeviceConfig(**self.snapshot['config']);number,title=PARAMETERS[key]
+        raw=self.snapshot['raw'].get(number)
+        if raw is None:
+            self.statusBar().showMessage('Parameter has not been read yet.');return
+        target=copy.deepcopy(self.snapshot['config'])
+        dialog=ParameterEditor(config,key,raw,reason=self.parameter_access_reason(key),parent=self)
+        if dialog.exec()!=QDialog.Accepted:return
+        value=dialog.proposed()
+        try:new_raw=encode(config,key,value,previous=raw)
+        except (ValueError,PermissionError) as error:QMessageBox.warning(self,'Invalid value',str(error));return
+        old_value,unit=profile_for(config).register(number).decode(raw,config.family,config.context)
+        new_value,_=profile_for(config).register(number).decode(new_raw,config.family,config.context)
+        if new_raw==raw:self.statusBar().showMessage('Value is unchanged.');return
+        status=self.snapshot['raw'].get(2)
+        answer=QMessageBox.question(self,'Confirm parameter adjustment',f'Target: {config.name} / {config.assembly} / address {config.address}\n{title} [{number}]: {old_value} → {new_value} {unit}\nSTATUS {status}: {profile_for(config).status(status)}\nApply this simulated change once? Readback will be verified.',QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
+        if answer!=QMessageBox.Yes:return
+        reason=self.parameter_access_reason(key)
+        if reason or not self.snapshot or self.snapshot['config']!=target or self.snapshot['raw'].get(number)!=raw:
+            self.statusBar().showMessage(reason or 'Target or value changed; reopen the editor and confirm again.');return
+        self.command_dispatching=True;self.update_command_buttons()
+        self.command_message.setText(f'Adjusting {title}; waiting for readback…')
+        self.request('parameter',key,value,raw,self.session,True)
+
+    def parameter_feedback(self,text):
+        self.command_proof.setText(text);self.command_feedback(text)
 
     def command_feedback(self,text):
         if self.active_command is not None and not self.snapshot.get('control',{}).get('receipt') and ('rejected' in text.lower() or 'not sent' in text.lower()):self.command_buttons[self.active_command].feedback(False)

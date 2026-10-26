@@ -31,6 +31,7 @@ class MonitoringWorker(QThread):
     audit_ready=Signal(object)
     inspection_ready=Signal(str)
     command_result=Signal(str)
+    parameter_result=Signal(str)
     failed=Signal(str)
 
     def __init__(self,settings:dict,data_path:Path,parent=None,*,test_only=False,hardware_grant=None):
@@ -111,6 +112,8 @@ class MonitoringWorker(QThread):
                 from prevex_hmi.communication.bench_commands import BenchOperatorCommands
                 command_class=BenchOperatorCommands
             controller=command_class(bus,effective,database,users,identity_verified=controls_verified,expected_identity=identity,**({'connection':connection} if validated_controls else {}))
+            from prevex_hmi.communication.parameters import ParameterAdjustments
+            adjustments=ParameterAdjustments(controller)
             last_emit=last_identity=time.monotonic()
             last_logged=last_event=None
             while not self.stop_requested.is_set():
@@ -133,6 +136,11 @@ class MonitoringWorker(QThread):
                             if message[1] is not None: profile_for(effective).register(1).encode(message[1],effective.family,target.config.context)
                             target.forced_reading=message[1]
                         elif kind == 'status': simulation.devices[effective.addressing.packet_address].forced_status=message[1]
+                        elif kind == 'parameter':
+                            snapshot=state.snapshot(time.monotonic())
+                            updates=adjustments.execute(message[1],message[2],message[3],message[4],confirmed=message[5],current=snapshot['quality']=='GOOD')
+                            state.raw.update(updates);state.register_times.update({n:time.monotonic() for n in updates})
+                            self.parameter_result.emit(controller.result)
                         elif kind == 'command':
                             snapshot=state.snapshot(time.monotonic())
                             if snapshot['quality'] != 'GOOD':

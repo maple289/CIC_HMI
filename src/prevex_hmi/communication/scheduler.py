@@ -34,6 +34,9 @@ class PollingScheduler:
             self.jobs.append(PollJob(device.id, 1, 4, device.interval, 0, now))
             profile = profile_for(device)
             gauge_numbers=set(gauges_for(device)) | {5,6} | ({60} if 60 in profile.registers else set()) | ({27} if profile.revision == "700" else set())
+            # Removing a duplicate card does not remove the existing output
+            # observation from Diagnostics/history on legacy LEL/BTU profiles.
+            if profile.revision!='700' and 50 in GAUGE_REGISTERS[device.family]:gauge_numbers.add(50)
             if profile.revision=='fta_4x':gauge_numbers.update(range(51,56))
             if 59 in profile.registers: gauge_numbers.add(59)
             gauge_numbers-= {1,2}

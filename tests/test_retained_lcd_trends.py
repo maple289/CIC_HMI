@@ -98,13 +98,14 @@ def test_window_holds_readout_and_trace_without_mutating_measurements(app,tmp_pa
         assert blank==original and measurement(blank)[0] is None
         assert math.isnan(w.series[-1][1])  # Raw observations remain missing.
         assert w.display_trend.points[-1].held and w.display_trend.points[-1].value==-99
-        assert w.readouts[1][0].text()=='-99.00 %LFL'
+        assert 1 not in w.readouts and 50 not in w.readouts
+        assert w.gauge.state.value==-99
         assert 'Numeric reading missing since' in w.overview_hold_note.text()
         assert w.overview_held_curve.getData()[0] is not None
         now[0]=103;w.update_data(snapshot(3,b'          '),diagnostics)
         assert w.blank_started_wall==1700000102  # First-missing time is not renewed.
         now[0]=120;w.update_data(snapshot(20,b'-98 %LFL  '),diagnostics)
-        assert not w.display_trend.points[-1].held and w.readouts[1][0].text()=='-98.00 %LFL'
+        assert not w.display_trend.points[-1].held and w.gauge.state.value==-98
         assert w.blank_started_wall is None
         w.invalidate();assert not w.display_trend.points and not w.series
     finally:w.close();bus.close();app.processEvents()
