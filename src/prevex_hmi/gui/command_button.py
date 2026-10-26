@@ -1,6 +1,19 @@
 """Raised industrial button with independent acknowledgment LED."""
 from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+
+
+def lock_icon(locked):
+    """Native vector-style padlock: no dependence on emoji/font support."""
+    pixmap=QPixmap(24,24);pixmap.fill(Qt.transparent)
+    painter=QPainter(pixmap);painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(QPen(QColor('#efb753' if locked else '#e7edf7'),2))
+    painter.drawArc(7,2,10,14,0 if locked else 30*16,180*16)
+    painter.drawLine(7,9,7,12)
+    if locked:painter.drawLine(17,9,17,12)
+    painter.drawRoundedRect(4,11,16,11,2,2);painter.drawLine(12,15,12,18);painter.end()
+    return QIcon(pixmap)
 
 
 class CommandButton(QWidget):
@@ -33,3 +46,10 @@ class CommandButton(QWidget):
 
     def isEnabled(self):
         return self.button.isEnabled()
+
+    def set_lock_action(self, locked):
+        if self.button.property('lockState')==str(locked):return
+        self.button.setProperty('lockState',str(locked))
+        self.button.setText('CAL LOCK — ?' if locked is None else 'UNLOCK CAL' if locked else 'LOCK CAL')
+        self.button.setIcon(QIcon() if locked is None else lock_icon(locked))
+        self.button.setAccessibleName(self.button.text()+(' — lock state unavailable' if locked is None else ' — software lock locked' if locked else ' — software lock unlocked'))

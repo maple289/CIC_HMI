@@ -78,7 +78,8 @@ class CommandController:
                 self.record(actor,code,"PENDING","Monitoring STATUS for sequence and outcome")
             elif code in (0xF00,0x1000):
                 lock=self.bus.read(profile,self.config.addressing,60,1)[60]
-                ok=bool(lock & 2) == (code == 0xF00)
+                self.receipt.update(lock_register=60,lock_readback=lock)
+                ok=lock in (0,1,2,3) and bool(lock & 2) == (code == 0xF00)
                 self.record(actor,code,"VERIFIED" if ok else "FAILED","Software calibration lock verified" if ok else "Lock readback disagrees")
             else:
                 after=self.bus.read(profile,self.config.addressing,2,1)[2]

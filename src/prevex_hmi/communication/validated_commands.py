@@ -62,6 +62,7 @@ class ValidatedOperatingCommands(CommandController):
                 self.record(actor,code,'PENDING','Modbus acknowledgment received; monitor STATUS start/outcome')
             elif code in (0xF00,0x1000):
                 after=self.bus.read(profile,self.config.addressing,60,1)[60]
+                self.receipt.update(lock_register=60,lock_readback=after)
                 ok=after in (0,1,2,3) and bool(after&2)==(code==0xF00)
                 self.record(actor,code,'VERIFIED' if ok else 'FAILED',f'Software lock readback {after}; hardware lock remains independent')
             else:

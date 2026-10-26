@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
         self.monitor_model=QLabel();self.monitor_model.setWordWrap(True);info.addWidget(self.monitor_model)
         self.monitor_status=QLabel('Connection Status: ● No Connection');self.monitor_status.setWordWrap(True);info.addWidget(self.monitor_status)
         self.monitor_updated=QLabel();self.monitor_updated.setWordWrap(True);info.addWidget(self.monitor_updated)
-        self.range_help=QLabel('Blue: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nAlarm bands use instrument thresholds');self.range_help.setWordWrap(True);info.addWidget(self.range_help);info.addStretch()
+        self.range_help=QLabel('LEL gray: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nW / D: live alarm thresholds [5 / 6]');self.range_help.setWordWrap(True);info.addWidget(self.range_help);info.addStretch()
         self.controller_display=QLabel();self.controller_display.setWordWrap(True);info.insertWidget(info.count()-1,self.controller_display)
         self.command_result_card=QFrame();self.command_result_card.setObjectName('panel');self.command_result_card.setMinimumWidth(260)
         result_layout=QVBoxLayout(self.command_result_card);result_layout.setContentsMargins(10,10,10,10)
@@ -174,14 +174,19 @@ class MainWindow(QMainWindow):
         commands=QFrame();commands.setObjectName('panel');commands.setFixedWidth(220);column=QVBoxLayout(commands);column.setSpacing(6);column.setAlignment(Qt.AlignTop)
         label=QLabel('Commands');label.setObjectName('heading');column.addWidget(label)
         self.role_label=QLabel('Guest / Viewer');column.addWidget(self.role_label)
+        self.hardware_lock_label=QLabel('Hardware lock: unknown');self.hardware_lock_label.setWordWrap(True);column.addWidget(self.hardware_lock_label)
         self.command_access_note=QLabel(commands);self.command_access_note.hide()
         self.command_access_button=QPushButton('Enable Acknowledge / Reset')
         self.command_access_button.setMinimumHeight(44);self.command_access_button.clicked.connect(self.activate_command_bench)
         result_layout.addWidget(self.command_access_button)
         self.command_buttons={}
+        self.lock_command_code=None
         for code,name in COMMANDS.items():
+            if code==0x1000:continue
             label={0x300:'ZERO CAL',0x400:'SPAN CAL',0x500:'FULL CAL',0x600:'ZERO TEST',0x700:'SPAN TEST',0x800:'FULL TEST',0x900:'SAVE ALL',0xF00:'LOCK CAL'}.get(code,name.upper())
-            button=CommandButton(label,lambda checked=False,code=code:self.send_command(code));column.addWidget(button);self.command_buttons[code]=button
+            button=CommandButton(label,lambda checked=False,code=code:self.send_command(self.lock_command_code if code==0xF00 else code));column.addWidget(button);self.command_buttons[code]=button
+        # Both command receipts address one persistent row/LED, even as its action changes.
+        self.command_buttons[0x1000]=self.command_buttons[0xF00]
         column.addStretch()
         self.command_scroll=QScrollArea();self.command_scroll.setWidgetResizable(True);self.command_scroll.setFixedWidth(236);self.command_scroll.setWidget(commands);body.addWidget(self.command_scroll)
 
@@ -203,6 +208,7 @@ class MainWindow(QMainWindow):
             self.readout_container.add_card(frame);self.readouts[n]=(value,quality)
         self.indicators.build(family,config if config.family==family else None)
         self.monitor_name.setText(profile_name(config))
+        self.range_help.setText('LEL gray: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nW / D: live alarm thresholds [5 / 6]' if family=='LEL' else 'Blue: negative section\nBold marker: zero\n'+('Low / High: BTU setpoints [5 / 6]' if family=='BTU' else 'Warning / Danger: FID setpoints [5 / 6]'))
 
     def make_plot(self):
         plot=pg.PlotWidget(axisItems={'bottom':pg.DateAxisItem()},background='#111c2b');plot.showGrid(x=True,y=True,alpha=.15);plot.setLabel('bottom','Time (local)');return plot
@@ -566,11 +572,25 @@ class MainWindow(QMainWindow):
             reason+='\nFirmware4.81 uses the 5.12 register/command map by user instruction; hardware compatibility remains unverified.'
         self.command_access_note.setText(reason)
         enabled=bool(snapshot and snapshot['quality']=='GOOD' and control.get('verified') and not control.get('pending') and not control.get('ambiguous') and role in ('Operator','Administrator') and not self.command_dispatching and self.worker and self.worker.isRunning() and (self.settings['mode']=='simulation' or bench or documented))
+        active_config=DeviceConfig(**snapshot["config"]) if snapshot else self.config
+        profile=profile_for(active_config)
+        lock= snapshot['raw'].get(60) if snapshot else None
+        elapsed=max(0,time.monotonic()-self.snapshot_received_at) if self.snapshot_received_at else 0
+        lock_current=bool(current and snapshot.get('register_ages',{}).get(60,0)+elapsed<=max(5,active_config.interval*3) and type(lock) is int and lock in (0,1,2,3))
+        legacy_lock=profile.revision!='700' and 60 in profile.registers
+        self.lock_command_code=(0x1000 if lock&2 else 0xF00) if lock_current and legacy_lock else None
+        self.hardware_lock_label.setText(('Hardware lock: LOCKED' if lock&1 else 'Hardware lock: unlocked') if lock_current and legacy_lock else '700 lock state: see Security [27]' if profile.revision=='700' else 'Hardware lock: unknown')
+        self.hardware_lock_label.setStyleSheet('color:'+('#efb753' if lock_current and legacy_lock and lock&1 else '#adbbcf'))
         for code,button in self.command_buttons.items():
+            if code==0x1000:continue
+            if code==0xF00:
+                button.set_lock_action(bool(lock&2) if lock_current and legacy_lock else None)
+                code=self.lock_command_code or 0xF00
             physical=self.settings['mode']=='hardware'
             button.setVisible(True)
             active_config=DeviceConfig(**snapshot["config"]) if snapshot else self.config
             allow=enabled and code in (documented if documented else (0x100,0x200) if bench else commands_for(active_config))
+            if code in (0xF00,0x1000):allow=allow and self.lock_command_code is not None
             if physical and code==0x900 and role!='Administrator':allow=False
             if physical and documented and code==0x900 and snapshot and snapshot['raw'].get(60)!=0:allow=False
             if physical and documented and snapshot and snapshot['raw'].get(2) in (4,5,6,7,11,12) and code not in (0x100,0x200):allow=False
@@ -587,6 +607,7 @@ class MainWindow(QMainWindow):
 
     def send_command(self,code):
         if code not in COMMANDS or not self.command_buttons[code].isEnabled():return
+        if code in (0xF00,0x1000) and code!=self.lock_command_code:return
         config=self.snapshot['config']
         physical=self.settings['mode']=='hardware'
         effects=({0x100:'Can silence horn/service indications.',0x200:'Can clear alarms and initiate ignition after Flameout.',0x300:'Uses zero gas and changes zero calibration.',0x400:'Uses span gas and changes span calibration.',0x500:'Uses zero/span gases and changes calibration.',0x600:'Activates zero-gas test.',0x700:'Activates span-gas test.',0x800:'Activates zero/span gas tests.',0x900:'PERSISTENT CHANGE: saves settings to EEPROM. A reply cannot prove persistence.',0xF00:'Sets software calibration lock.',0x1000:'Clears software calibration lock; does not bypass hardware lock.'}.get(code,'')) if physical else ''
@@ -597,6 +618,9 @@ class MainWindow(QMainWindow):
             effects+=f'\nCurrent STATUS {status}: {profile_for(active).status(status)}. Command may operate gas valves/change calibration while this condition remains.'
         answer=QMessageBox.question(self,'Confirm analyzer command',f"Target: {config['name']} / {config['family']} / address {config['address']}\n{COMMANDS[code]} (0x{code:04X})\n{effects}\nExecute this {'REAL CONTROLLER' if physical else 'simulated'} command once?",QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
         if answer!=QMessageBox.Yes:return
+        self.update_command_buttons()
+        if not self.command_buttons[code].isEnabled() or code in (0xF00,0x1000) and code!=self.lock_command_code:
+            self.statusBar().showMessage('Command state changed during confirmation; review the current lock/connection and confirm again.');return
         self.active_command=code
         self.command_dispatching=True;self.update_command_buttons();self.request('command',code,self.session,True)
         self.show_command_receipt({'code':code,'state':'SENDING','reply_received':False})

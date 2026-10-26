@@ -140,6 +140,10 @@ class MonitoringWorker(QThread):
                                 controller.receipt={'id':uuid.uuid4().hex,'code':message[1],'state':'REJECTED','reply_received':False,'time':utc_now()}
                                 controller.record(actor,message[1],'REJECTED','Communication is not current; command not sent')
                             else: controller.execute(message[1],message[2],confirmed=message[3])
+                            receipt=controller.receipt or {}
+                            if receipt.get('lock_register')==60 and 'lock_readback' in receipt:
+                                # Publish the actual FC03 verification, never an optimistic toggle.
+                                state.raw[60]=receipt['lock_readback'];state.register_times[60]=time.monotonic()
                             self.command_result.emit(controller.result)
                     except (OSError,ValueError,PermissionError,KeyError) as error: self.command_result.emit(str(error))
                 scheduler.run_once()

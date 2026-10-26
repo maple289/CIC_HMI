@@ -22,8 +22,11 @@ class GaugeState:
     reading: str = "--"
     status: str = "Waiting for first update"
     color: str = "#8290a5"
+    status_color: str = "#8290a5"
+    negative_color: str = "#5a9fcf"
+    markers: tuple[tuple[str, float, str], ...] = ()
     bands: tuple[tuple[float, float, str], ...] = ()
-    thresholds: str = "Alarm bands awaiting setpoints"
+    thresholds: str = "Alarm thresholds unverified: awaiting setpoints"
     minimum: float = -30.0
     range_source: str = "Unavailable"
 
@@ -74,27 +77,46 @@ def gauge_state(snapshot: dict | None) -> GaugeState:
     elif snapshot["quality"] != "GOOD":
         source="Cached FULLSCLE [3]"
     bands = ()
-    thresholds = "Alarm bands awaiting setpoints"
+    thresholds = "Alarm thresholds unverified: awaiting registers 5 / 6"
+    markers = ()
+    lel = config['family'] == 'LEL'
+    status_color = color
     if snapshot["quality"] == "GOOD" and maximum is not None:
-        low, _ = measurement(snapshot, 5)
+        low, alarm_unit = measurement(snapshot, 5)
         high, _ = measurement(snapshot, 6)
-        if low is not None and high is not None and 0 <= low < high <= maximum:
+        profile = profile_for(DeviceConfig(**config))
+        valid = low is not None and high is not None and low.is_finite() and high.is_finite() and 0 <= low < high <= maximum
+        if valid and lel:
+            for number, threshold in ((5,low),(6,high)):
+                register=profile.register(number)
+                valid = valid and (register.minimum is None or threshold >= float(register.minimum)) and (register.maximum is None or threshold <= float(register.maximum))
+        if valid:
             low, high = float(low), float(high)
             if snapshot["config"]["family"] == "BTU":
                 bands = ((0, low, "#efb753"), (low, high, "#39c6a4"), (high, maximum, "#f27778"))
-                thresholds = f"Low alarm {low:g}  |  High alarm {high:g} {unit}"
+                thresholds = f"Low alarm {low:g}  |  High alarm {high:g} {alarm_unit}"
             else:
                 bands = ((0, low, "#39c6a4"), (low, high, "#efb753"), (high, maximum, "#f27778"))
-                thresholds = f"Warning {low:g}  |  Danger {high:g} {unit}"
+                thresholds = f"Warning {low:g}  |  Danger {high:g} {alarm_unit}"
+            if lel:
+                markers = (('W',low,'#efb753'),('D',high,'#f27778'))
         elif low is not None and high is not None:
-            thresholds = "Alarm thresholds outside displayed range / unverified"
+            thresholds = "Alarm thresholds unverified: invalid values / range"
+        else:
+            thresholds = "Alarm thresholds unverified: missing / stale [5 / 6]"
+    if lel:
+        # Measurement zones are independent of the instrument's STATUS enum.
+        color = '#8290a5'
+        if value is not None:
+            if value < 0:color='#8290a5'
+            elif markers:color='#f27778' if value >= markers[1][1] else '#efb753' if value >= markers[0][1] else '#39c6a4'
     if snapshot["quality"] != "GOOD":
-        thresholds = "No current reading - indicator hidden"
+        thresholds = "Alarm thresholds unverified: no current communication"
     return GaugeState(
         value=None if value is None else float(value), maximum=maximum,
         unit=unit if value is not None else "", reading=format_reading(snapshot),
         status=status if value is not None or snapshot["quality"] != "GOOD" else "Reading unavailable",
-        color=color, bands=bands, thresholds=thresholds,
+        color=color, status_color=status_color, negative_color='#8290a5' if lel else '#5a9fcf', markers=markers, bands=bands, thresholds=thresholds,
         minimum=minimum,range_source=source,
     )
 
@@ -133,7 +155,7 @@ class CircularGauge(QWidget):
                 self._last_valid = state; self._deadline = now + 4 - age
                 self._numeric_deadline=self._deadline
             else:
-                state = replace(state, value=None, reading='--', status='Reading unavailable')
+                state = replace(state, value=None, reading='--', status='Reading unavailable',color='#8290a5',status_color='#8290a5')
         self.lcd_hold=bool(snapshot is not None and self._last_valid is not None and state.value is None and fresh_missing_lcd(snapshot))
         if self.lcd_hold:
             if self.blank_since is None:self.blank_since=now
@@ -145,6 +167,7 @@ class CircularGauge(QWidget):
         if self.held:
             state = replace(state if self.lcd_hold else self._last_valid,
                             value=self._last_valid.value,reading=self._last_valid.reading,unit=self._last_valid.unit,
+                            bands=state.bands,markers=state.markers,thresholds=state.thresholds,
                             status=f'LCD text • held {now-self.blank_since:.0f}s' if self.lcd_hold else 'Retained reading • stale',
                             color='#efb753' if self.lcd_hold else '#8290a5')
         self.display_quality = 'RETAINED_STALE' if self.held else 'CURRENT' if state.value is not None else 'UNAVAILABLE'
@@ -161,7 +184,7 @@ class CircularGauge(QWidget):
             self._last_valid = None; self.held = False
             self.lcd_hold=False;self.blank_since=None
             self.display_quality = 'UNAVAILABLE'
-            self._set_state(replace(self._latest, value=None, reading='--', status='Reading unavailable', color='#8290a5'))
+            self._set_state(replace(self._latest, value=None, reading='--', status='Reading unavailable', color='#8290a5',status_color='#8290a5'))
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -183,9 +206,17 @@ class CircularGauge(QWidget):
         if self.state.maximum:
             span=self.state.maximum-self.state.minimum
             zero_fraction=-self.state.minimum/span
-            draw_arc(0,zero_fraction,"#5a9fcf")
+            draw_arc(0,zero_fraction,self.state.negative_color)
             for low, high, color in self.state.bands:
                 draw_arc((low-self.state.minimum)/span,(high-self.state.minimum)/span,color)
+            for name,value,color in self.state.markers:
+                angle=math.radians(225-(value-self.state.minimum)/span*270)
+                painter.setPen(QPen(QColor(color),3))
+                painter.drawLine(QPointF(230+134*math.cos(angle),190-134*math.sin(angle)),QPointF(230+165*math.cos(angle),190-165*math.sin(angle)))
+                painter.setFont(QFont(self.font().family(),10,QFont.Bold))
+                radius=205 if name=='D' and self.state.markers[1][1]-self.state.markers[0][1]<span*.08 else 185
+                x,y=230+radius*math.cos(angle),190-radius*math.sin(angle)
+                painter.drawText(QRectF(x-12,y-12,24,24),Qt.AlignCenter,name)
             for index in range(11):
                 angle = math.radians(225 - index * 27)
                 outer = QPointF(230 + 171 * math.cos(angle), 190 - 171 * math.sin(angle))
@@ -220,7 +251,7 @@ class CircularGauge(QWidget):
 
         label((105, 125, 250, 67), self.state.reading, 36, self.state.color, True)
         label((100, 193, 260, 30), self.state.unit, 13, muted)
-        label((100, 235, 260, 35), self.state.status, 13, self.state.color, True)
+        label((100, 235, 260, 35), self.state.status, 13, self.state.color if self.held else self.state.status_color, True)
         label((20, 331, 420, 28), self.state.range_note, 12, text)
         label((0, 361, 460, 24), self.state.range_source, 10, muted)
         label((0, 389, 460, 24), self.state.thresholds, 9, muted)
