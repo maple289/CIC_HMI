@@ -17,6 +17,23 @@ OPERATOR='operator-test-password'
 NEW='replacement-test-password'
 
 
+def test_eight_character_password_boundary_for_creation_change_and_reset(tmp_path):
+    users=UserStore(tmp_path/'password-boundary.sqlite3')
+    try:
+        with pytest.raises(ValueError):users.create_user('admin','short77')
+        users.create_user('admin','admin888');admin=users.authenticate('admin','admin888')
+        with pytest.raises(ValueError):users.create_user('viewer','short77','Viewer',session=admin)
+        users.create_user('viewer','viewer88','Viewer',session=admin)
+        viewer=users.authenticate('viewer','viewer88')
+        with pytest.raises(ValueError):users.change_password(viewer,'viewer88','short77')
+        users.change_password(viewer,'viewer88','changed8')
+        assert users.resolve(users.authenticate('viewer','changed8'))==('viewer','Viewer')
+        with pytest.raises(ValueError):users.reset_password(admin,'viewer','short77')
+        users.reset_password(admin,'viewer','reset888')
+        assert users.session_info(users.authenticate('viewer','reset888'))['must_change']
+    finally:users.close()
+
+
 @pytest.fixture
 def store(tmp_path):
     users=UserStore(tmp_path/'accounts.sqlite3');users.create_user('admin',ADMIN)

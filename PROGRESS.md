@@ -1,3 +1,9 @@
+# Eight-character minimum password policy (2026-10-25)
+
+- Lowered the minimum for initial Administrator setup, user creation, personal password changes and administrator resets from12 to8 characters. Updated all password prompts and operating instructions. Existing passwords/accounts, maximum1024 characters, whitespace rejection, salted PBKDF2 hashing, session revocation and role checks remain unchanged.
+- Added an isolated boundary regression accepting exactly8 and rejecting7 characters through creation/change/reset paths. **41 account/authentication tests passed in46.01s**; final packaged simulation smoke passed (exit0,45 updates,41 Diagnostics updates,max GUI heartbeat gap125ms,physical_access=false). Compileall/diff checks passed. No real account, password or physical analyzer was accessed or changed.
+- Built dist/password-eight/PREVEX-HMI/PREVEX-HMI.exe; evidence in tmp/password-eight.xml and tmp/password-eight-smoke/smoke-report.json.
+
 # Dynamic calibration lock and LEL measurement zones (2026-10-25)
 
 - Replaced the two persistent lock/unlock controls with one shared row and acknowledgment LED. The action/symbol follows the fresh CAL LOCK60 software bit; the hardware bit is shown independently. Unknown/stale/offline/invalid lock words disable the action. Command verification publishes its actual FC03 readback into the worker cache; no optimistic toggle from acknowledgment alone. Confirmation-time state changes require review, and all existing identity/role/lock/busy/no-retry restrictions remain.700 uses different security semantics and its ineffective/unvalidated Modbus lock controls remain disabled.

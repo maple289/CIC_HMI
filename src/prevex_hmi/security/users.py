@@ -35,8 +35,8 @@ class UserStore:
 
     @staticmethod
     def _password(password):
-        if not isinstance(password,str) or not 12<=len(password)<=1024 or not password.strip():
-            raise ValueError('Password must contain12–1024 characters')
+        if not isinstance(password,str) or not 8<=len(password)<=1024 or not password.strip():
+            raise ValueError('Password must contain 8–1024 characters')
         salt=secrets.token_bytes(32)
         return salt,hashlib.pbkdf2_hmac('sha256',password.encode(),salt,600_000)
 

@@ -40,7 +40,7 @@ class AccountPasswordDialog(QDialog):
         self.password=password_field();self.confirm=password_field()
         form.addRow('Username',self.name)
         if not target:form.addRow('Role',self.role)
-        form.addRow('New password (12–1024 characters)',self.password);form.addRow('Confirm new password',self.confirm)
+        form.addRow('New password (8–1024 characters)',self.password);form.addRow('Confirm new password',self.confirm)
         self.require_change=QCheckBox('Require password change at next sign-in');self.require_change.setChecked(True)
         if not target:form.addRow(self.require_change)
         note=QLabel('Resetting a password signs out the user’s existing sessions and requires a new password at their next sign-in.' if target else 'Give the initial password to the user through your normal secure process. The HMI never displays stored passwords.')
@@ -73,7 +73,7 @@ class AccountsDialog(QDialog):
         note.setTextFormat(Qt.PlainText);note.setWordWrap(True);form.addRow(note)
         self.current=password_field();self.current.setMaxLength(32767)
         self.password=password_field();self.confirm=password_field()
-        form.addRow('Current password',self.current);form.addRow('New password (12–1024 characters)',self.password);form.addRow('Confirm new password',self.confirm)
+        form.addRow('Current password',self.current);form.addRow('New password (8–1024 characters)',self.password);form.addRow('Confirm new password',self.confirm)
         change=QPushButton('Change my password');change.clicked.connect(self.change_password);form.addRow(change)
         self.tabs.addTab(own,'My password')
         if self.is_admin:

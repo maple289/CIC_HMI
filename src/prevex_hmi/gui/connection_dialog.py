@@ -152,7 +152,7 @@ class LoginDialog(QDialog):
         note=QLabel("Create the first local administrator to authorize confirmed commands permitted by the connection mode. No default password is provided." if self.setup else "Local accounts only. No Internet connection is required.")
         note.setWordWrap(True);form.addRow(note)
         self.name=QLineEdit();self.password=QLineEdit();self.password.setEchoMode(QLineEdit.Password)
-        form.addRow("Username",self.name);form.addRow("Password (12+ characters)",self.password)
+        form.addRow("Username",self.name);form.addRow("Password (8+ characters)",self.password)
         self.confirm=QLineEdit();self.confirm.setEchoMode(QLineEdit.Password)
         if self.setup:form.addRow("Confirm password",self.confirm)
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);form.addRow(buttons)
