@@ -129,7 +129,9 @@ class MainWindow(QMainWindow):
     def page(self,title,subtitle):
         page=QWidget();layout=QVBoxLayout(page);layout.setContentsMargins(14,4,0,0)
         heading=QLabel(title);heading.setObjectName('heading');layout.addWidget(heading)
-        label=QLabel(subtitle);label.setWordWrap(True);layout.addWidget(label);self.pages.addWidget(page)
+        if subtitle:
+            label=QLabel(subtitle);label.setWordWrap(True);layout.addWidget(label)
+        self.pages.addWidget(page)
         return layout
 
     def build_connection_test_page(self):
@@ -152,7 +154,7 @@ class MainWindow(QMainWindow):
         elif was_active:self.pages.setCurrentIndex(self.return_page)
 
     def build_gauge(self):
-        layout=self.page('Gauge','One active analyzer. Digital parameters follow its manufacturer GAUGES menu.')
+        layout=self.page('Gauge','')
         body=QHBoxLayout();layout.addLayout(body,1)
         left=QWidget();left_layout=QVBoxLayout(left);left_layout.setContentsMargins(0,0,0,0)
         self.indicators=IndicatorPanel();self.indicators.summary.setWordWrap(True);left_layout.addWidget(self.indicators)
