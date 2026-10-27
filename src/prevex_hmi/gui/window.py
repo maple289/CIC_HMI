@@ -650,6 +650,12 @@ class MainWindow(QMainWindow):
         if control.get('pending'):self.command_message.setText('Verifying software lock: waiting for CAL LOCK [60] readback. Command sent once; duplicate commands disabled.' if control.get('pending_kind')=='lock' else 'Command pending: waiting for STATUS evidence. Duplicate commands disabled.')
         elif control.get('ambiguous'):self.command_message.setText('Unknown command outcome. No retry; reconnect and review state.')
         elif self.settings['mode']=='hardware':self.command_message.setText('Documented commands require individual confirmation; write acknowledgment does not prove execution.' if documented else 'Real controller: sign in as Operator/Administrator to test Acknowledge or Reset. Each action requires confirmation.' if bench else 'Read-only controller test. No commands enabled in this session.')
+        from prevex_hmi.profiles.parameters import PARAMETERS
+        for key,(number,title) in PARAMETERS.items():
+            button=getattr(self,'parameter_menus',{}).get(number)
+            if button:
+                reason=self.parameter_access_reason(key)
+                button.setEnabled(not reason);button.setToolTip(reason or f'Adjust {title}; confirmation required')
 
     def send_command(self,code):
         if code not in COMMANDS or not self.command_buttons[code].isEnabled():return
@@ -677,8 +683,10 @@ class MainWindow(QMainWindow):
         if not snapshot or not self.worker or not self.worker.isRunning():return 'Connect to an analyzer before adjusting a parameter.'
         config=DeviceConfig(**snapshot['config'])
         if not supported(config):return 'Adjustments are unverified for this profile.'
-        if self.settings['mode']!='simulation':return 'Physical setting adjustments are disabled pending explicit authorization. No change will be sent.'
-        if self.users.resolve(self.session)[1]!='Administrator':return 'Sign in as Administrator to adjust settings.'
+        if self.users.resolve(self.session)[1] not in ('Operator','Administrator'):return 'Sign in as Operator or Administrator to adjust settings. Guest/Viewer access is read-only.'
+        if self.settings['mode']!='simulation':
+            from prevex_hmi.communication.validated_controls import validated_670
+            if not validated_670(config):return 'Physical adjustments are unverified for this firmware/profile.'
         control=snapshot.get('control',{})
         if not control.get('verified') or control.get('pending') or control.get('ambiguous') or self.command_dispatching:return 'Identity unresolved or an action is pending/unknown.'
         elapsed=max(0,time.monotonic()-self.snapshot_received_at)
@@ -699,7 +707,8 @@ class MainWindow(QMainWindow):
         if raw is None:
             self.statusBar().showMessage('Parameter has not been read yet.');return
         target=copy.deepcopy(self.snapshot['config'])
-        dialog=ParameterEditor(config,key,raw,reason=self.parameter_access_reason(key),parent=self)
+        physical=self.settings['mode']=='hardware'
+        dialog=ParameterEditor(config,key,raw,reason=self.parameter_access_reason(key),physical=physical,parent=self)
         if dialog.exec()!=QDialog.Accepted:return
         value=dialog.proposed()
         try:new_raw=encode(config,key,value,previous=raw)
@@ -708,7 +717,8 @@ class MainWindow(QMainWindow):
         new_value,_=profile_for(config).register(number).decode(new_raw,config.family,config.context)
         if new_raw==raw:self.statusBar().showMessage('Value is unchanged.');return
         status=self.snapshot['raw'].get(2)
-        answer=QMessageBox.question(self,'Confirm parameter adjustment',f'Target: {config.name} / {config.assembly} / address {config.address}\n{title} [{number}]: {old_value} → {new_value} {unit}\nSTATUS {status}: {profile_for(config).status(status)}\nApply this simulated change once? Readback will be verified.',QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
+        note='\nFirmware4.81 uses the5.12 map by your instruction; compatibility is not independently validated.' if physical and config.version=='4.81' else ''
+        answer=QMessageBox.question(self,'Confirm parameter adjustment',f'Target: {config.name} / {config.assembly} / address {config.address}\n{title} [{number}]: {old_value} → {new_value} {unit}\nSTATUS {status}: {profile_for(config).status(status)}{note}\nApply this {"REAL CONTROLLER" if physical else "simulated"} change once? Fresh readback will be verified; SAVE ALL remains separate.',QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
         if answer!=QMessageBox.Yes:return
         reason=self.parameter_access_reason(key)
         if reason or not self.snapshot or self.snapshot['config']!=target or self.snapshot['raw'].get(number)!=raw:

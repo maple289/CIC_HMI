@@ -13,6 +13,7 @@ from prevex_hmi.profiles import profile_for,profile_name
 from prevex_hmi.profiles.gauges import GAUGE_REGISTERS
 
 INTERVALS=(1,2,5,10)
+EXCLUDED_RECORDING_PARAMETERS=frozenset((2,23,24,38,39,42,50))
 
 
 def normalize_selections(selections):
@@ -23,7 +24,7 @@ def normalize_selections(selections):
     for key,numbers in selections.items():
         if key not in menus or not isinstance(numbers,list) or any(type(n) is not int or n not in menus[key] for n in numbers) or len(set(numbers))!=len(numbers):
             raise ValueError('Invalid GAUGES parameter selection')
-        result[key]=list(numbers)
+        result[key]=[n for n in numbers if n not in EXCLUDED_RECORDING_PARAMETERS]
     return result
 
 
@@ -36,6 +37,7 @@ def recording_parameters(config,main_only=False,*,selected=None):
     else:numbers=GAUGE_REGISTERS[config.family]
     result=[]
     available=tuple(dict.fromkeys((1,2,*numbers)))
+    if not main_only:available=tuple(n for n in available if n not in EXCLUDED_RECORDING_PARAMETERS)
     if selected is not None:
         if not isinstance(selected,list) or any(type(n) is not int or n not in available for n in selected) or len(set(selected))!=len(selected):raise ValueError('Invalid GAUGES parameter selection')
         available=tuple(n for n in available if n in selected)

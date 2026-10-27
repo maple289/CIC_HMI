@@ -5,7 +5,7 @@ from prevex_hmi.profiles.parameters import PARAMETERS,limits
 
 
 class ParameterEditor(QDialog):
-    def __init__(self,config,key,raw,*,reason='',parent=None):
+    def __init__(self,config,key,raw,*,reason='',physical=False,parent=None):
         super().__init__(parent)
         number,title=PARAMETERS[key];self.key=key
         self.setWindowTitle(f'Adjust {title}');self.setMinimumWidth(380)
@@ -26,7 +26,9 @@ class ParameterEditor(QDialog):
             self.value.setSuffix(f' {unit}' if unit else '');box.addWidget(self.value)
             note=QLabel(f'Allowed range: {low}–{high} {unit}\nCurrent value: {current} {unit}')
         note.setWordWrap(True);box.addWidget(note)
-        self.access_note=QLabel(reason or 'Simulator adjustment. You will review and confirm the change before it is sent.');self.access_note.setWordWrap(True);box.addWidget(self.access_note)
+        note='Real controller adjustment. Review and confirm before changing the live setting. SAVE ALL remains separate.' if physical else 'Simulator adjustment. You will review and confirm the change before it is sent.'
+        if physical and config.version=='4.81':note+=' Firmware4.81 uses the5.12 map by your instruction.'
+        self.access_note=QLabel(reason or note);self.access_note.setWordWrap(True);box.addWidget(self.access_note)
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel)
         self.save_button=buttons.button(QDialogButtonBox.Save);self.save_button.setText('Review change');self.save_button.setEnabled(not reason)
         buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);box.addWidget(buttons)

@@ -89,7 +89,8 @@ def test_correct_names_units_conversions_and_negative_values(recorder,kind):
     r,now=recorder;snapshot=sample(kind=kind);config=recordings.DeviceConfig(**snapshot['config'])
     r.start();r.tick(snapshot,received=0)
     params=recording_parameters(config);metadata=json.loads(sessions([r.path])[0]['parameters'])
-    assert metadata==params and {1,2,9,11,38,39}<={p['number'] for p in params}
+    assert metadata==params and {1,9,11}<={p['number'] for p in params}
+    assert not {2,23,24,38,39,42,50}&{p['number'] for p in params}
     assert {r[2] for r in rows(r,'recording_values')}=={p['number'] for p in params}
     for row in rows(r,'recording_values'):
         value,unit=measurement(snapshot,row[2]);assert row[4]==str(value) and row[5]==unit

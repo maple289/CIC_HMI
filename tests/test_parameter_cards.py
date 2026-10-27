@@ -31,11 +31,12 @@ def service(tmp_path):
     bus.close();store.close()
 
 
+@pytest.mark.parametrize('token',['operator','admin'])
 @pytest.mark.parametrize('key,value',[('cal_time',4),('span_temperature',125),('warning',35),('danger',55),('latches',15)])
-def test_named_adjustments_have_fresh_readback_and_audit(service,key,value):
+def test_named_adjustments_have_fresh_readback_and_audit(service,key,value,token):
     s,target=service;n=PARAMETERS[key][0];old=target.raw[n]
     if key=='latches':old=target.raw[n]=0xA5A7
-    result=s.execute(key,value,old,'admin',confirmed=True)
+    result=s.execute(key,value,old,token,confirmed=True)
     expected=encode(target.config,key,value,previous=old)
     assert result=={n:expected} and target.raw[n]==expected
     rows=s.controller.store.audit_rows()
@@ -47,7 +48,7 @@ def test_named_adjustments_have_fresh_readback_and_audit(service,key,value):
     assert s.controller.store.audit_rows()[0][4]=='REJECTED'
 
 
-@pytest.mark.parametrize('failure',['viewer','operator','confirmation','lock','bad_lock','busy','bad_status','identity','pending','unknown','changed','range','alarm_order','unsupported','revoked'])
+@pytest.mark.parametrize('failure',['viewer','confirmation','lock','bad_lock','busy','bad_status','identity','pending','unknown','changed','range','alarm_order','unsupported','revoked'])
 def test_preflight_blocks_without_simulated_write(service,failure):
     s,target=service;c=s.controller;key='cal_time';value=2;token='admin';confirmed=True
     expected=target.raw[28]

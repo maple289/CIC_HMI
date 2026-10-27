@@ -33,6 +33,9 @@ def load_settings(path: Path) -> dict:
         if not backup.exists(): backup.write_text(original,encoding="utf-8")
         save_settings(path,data)
     validate_settings(data)
+    if 'parameters_by_profile' in data.get('recording',{}):
+        from prevex_hmi.logging_db.recordings import normalize_selections
+        data['recording']['parameters_by_profile']=normalize_selections(data['recording']['parameters_by_profile'])
     return data
 
 

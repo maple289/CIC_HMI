@@ -116,3 +116,16 @@ class ValidatedOperatingTransport(ReadOnlySerialTransport):
             raise TimeoutError('Command acknowledgment lost; do not retry') from error
         if reply.isError() or reply.address!=pdu or reply.registers!=[code]:
             raise ProtocolError('Command echo mismatch; outcome unknown')
+
+    def adjust_parameter(self,key,raw,*,previous):
+        """Explicitly authorized named settings; no arbitrary register writes."""
+        from prevex_hmi.profiles.parameters import PARAMETERS,validate_word
+        self.control_grant.validate(self.control_config)
+        validate_word(self.control_config,key,raw,previous=previous)
+        pdu=self.control_config.addressing.pdu(PARAMETERS[key][0])
+        self._received.clear()
+        try:reply=self._client.write_register(pdu,raw,device_id=self.control_grant.address)
+        except (ModbusException,OSError) as error:
+            raise TimeoutError('Adjustment acknowledgment lost; outcome unknown. Do not retry.') from error
+        if reply.isError() or reply.address!=pdu or reply.registers!=[raw]:
+            raise ProtocolError('Adjustment echo mismatch; outcome unknown')

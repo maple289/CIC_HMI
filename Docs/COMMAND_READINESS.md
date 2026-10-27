@@ -36,3 +36,12 @@ The implementation accepts recognized670 assemblies with firmware5.12 through5.x
 The user subsequently specifically authorized calibration/test writes during fault states. A documented fault STATUS alone no longer blocks these controls. The active fault appears in the target confirmation and remains visible. Controller locks, role, firmware compatibility, communication and busy/pending checks still apply. A pre-existing fault remaining unchanged after acknowledgment is not proof of failure or success: one WAITING_STATUS event is recorded, the HMI continues to watch for a fresh execution sequence, and unresolved timeout becomes UNKNOWN with no retry. Undocumented/invalid STATUS data is still rejected.
 
 This implementation does not verify4.81 firmware. Its additional writes are enabled by the explicit user-approved compatibility assumption; physical behavior still needs validation. Rev D700 Lock/Unlock have no Modbus effect, and Save permits factory changes; those restrictions cannot be removed merely to light up every button.700 physical control validation remains pending. New operating writes are tested with fake clients only; no real command was executed during development.
+
+
+## Confirmed card adjustments (2026-10-26)
+
+The user explicitly authorized physical CAL TIME28, SPAN temperature56, WARNING5, DANGER6 and Warning/Danger/Fault/Horn LATCHES17 for signed-in Operator/Administrator users, including the existing670 firmware4.81 map assumption. This is authorization for future user-confirmed actions, not manufacturer/hardware validation and not permission for the agent to exercise a real command during development/testing.
+
+Each request requires current communication, fresh matching identity, unchanged target value, valid/unlocked CAL LOCK60, known/not-busy STATUS, documented ranges and valid WARNING<DANGER ordering. After the scoped transport activates, identity and preflight values are read again. Session permission is revalidated immediately before audit/send. Exactly one named FC06 setting write is sent on the existing paced bus owner, followed by FC03 verification. Unknown acknowledgment/readback outcomes block commands/adjustments until reconnect; there is no automatic retry. SAVE ALL remains separate and Administrator-only. Guest/Viewer and password-rotation-restricted accounts remain read-only.
+
+FAILSAFE18 remains explicitly prohibited for Modbus writes. No other parameter or command-register bypass is introduced.700/BTU/FID physical setting writes remain unavailable. Automated tests use fake SDK clients only.

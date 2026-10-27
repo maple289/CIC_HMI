@@ -197,3 +197,17 @@ class BusEngine:
             self._active={'address':self.transport.control_grant.address,'register':8,'count':1,'family':'VALIDATED_OPERATING_COMMAND'}
             try:self.transport.operating_command(code)
             finally:self._last_end=self.clock()
+
+    def validated_parameter(self,config,key,raw,*,previous):
+        from .serial_transport import ValidatedOperatingTransport
+        from prevex_hmi.profiles.parameters import PARAMETERS,validate_word
+        if not isinstance(self.transport,ValidatedOperatingTransport) or self.transport.control_config!=config:
+            raise PermissionError('No matching physical adjustment capability')
+        validate_word(config,key,raw,previous=previous)
+        with self._lock:
+            if self.closed:raise RuntimeError('Bus closed')
+            deadline=max(self.clock(),(self._last_start or 0)+self.minimum_interval,(self._last_end or 0)+35/self.baud)
+            self.sleep(max(0,deadline-self.clock()));self._last_start=self.clock()
+            self._active={'address':config.addressing.packet_address,'register':PARAMETERS[key][0],'count':1,'family':'VALIDATED_PARAMETER'}
+            try:self.transport.adjust_parameter(key,raw,previous=previous)
+            finally:self._last_end=self.clock()

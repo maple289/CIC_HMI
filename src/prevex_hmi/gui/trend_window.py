@@ -7,7 +7,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QPushButton,
     QLabel,QComboBox,QCheckBox,QTabWidget,QFileDialog,QMessageBox,QDateTimeEdit)
 import pyqtgraph as pg
-from prevex_hmi.logging_db.recordings import sessions,history_series,export_csv
+from prevex_hmi.logging_db.recordings import sessions,history_series,export_csv,normalize_selections
 from prevex_hmi.gui.recording_parameters import RecordingParameters
 
 
@@ -81,7 +81,7 @@ class TrendWindow(QMainWindow):
         self.update_controls()
 
     def current_options(self):
-        selections={key:list(numbers) for key,numbers in self.owner.settings.get('recording',{}).get('parameters_by_profile',{}).items()}
+        selections=normalize_selections(self.owner.settings.get('recording',{}).get('parameters_by_profile',{}))
         selections[self.recording_parameters.profile]=self.recording_parameters.selected_numbers()
         return dict(mode=self.mode.currentData(),interval=self.interval.currentData(),parameters_by_profile=selections)
 
