@@ -1,3 +1,9 @@
+# Windows CI LED timing regression (2026-10-27)
+
+- Retrieved failed GitHub Actions run40557864050 for75dcfa0: the automated-test step reported1 failed/1110 passed. The failure was test_command_led_per_button_three_seconds_and_no_completion_retrigger, which assumed a3-second precise Qt timer would always dispatch within a fixed3.1-second wait on the Windows runner. The application already uses a3000ms single-shot precise timer; a busy event loop may deliver its callback late.
+- Replaced the fixed sleep with QSignalSpy observing the actual timeout, bounded to8 seconds. The test still asserts the exact3000ms timer interval, single-shot/active state, one expiry, LED reset, independent per-button indications and no completion-message retrigger. Production application behavior and its packaged executable are unchanged.
+- Local interface/command-layout/compact-strip validation: **67 passed in27.23s** (tmp/ci-led.xml). The fix is limited to test synchronization; the full Windows workflow runs after push.
+
 # Compact active alarm/relay strip (2026-10-27)
 
 - Replaced the summary plus separate STATUS/RELAYS/SERVICE rows with one fixed50px strip. Current fault-priority instrument conditions, Fault relay and safety interlocks lead on the left, followed by alarms, service advisories and operating states. Small category gaps preserve grouping without extra headings/rows. Manufacturer labels and distinct status/relay/service meanings remain intact; Danger is an alarm, service checks are advisories and warmup/calibration/valves/heater remain operating indications. Source registers are available in tooltips and accessible names.

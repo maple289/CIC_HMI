@@ -5,7 +5,7 @@ import os
 from types import SimpleNamespace
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import pytest
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QApplication
 from prevex_hmi.devices.configuration import default_devices,load_settings
 from prevex_hmi.devices.identification import Identification,detect,resolve_profile
@@ -214,14 +214,20 @@ def test_connection_is_independent_of_instrument_fault_and_held_gauge(app,tmp_pa
 
 def test_command_led_per_button_three_seconds_and_no_completion_retrigger(app,tmp_path):
     w=MainWindow(load_settings(tmp_path/'settings.json'),tmp_path/'settings.json',tmp_path,start_worker=False)
+    led_timer=w.command_buttons[0x300].timer;expiry=QSignalSpy(led_timer.timeout)
     receipt=dict(id='one',code=0x300,state='PENDING',reply_received=True,time='now')
     w.show_command_receipt(receipt)
     assert '#39c66c' in w.command_buttons[0x300].led.styleSheet()
     assert '#303b48' in w.command_buttons[0x400].led.styleSheet()
-    QTest.qWait(3100)
+    assert led_timer.interval()==3000 and led_timer.isSingleShot() and led_timer.isActive()
+    # A loaded Windows runner may dispatch a precise Qt timer late. Observe
+    # the actual event with a bounded timeout instead of assuming 100ms slack.
+    if expiry.count()==0:assert expiry.wait(8000)
+    assert expiry.count()==1 and not led_timer.isActive()
     assert '#303b48' in w.command_buttons[0x300].led.styleSheet()
     receipt['state']='COMPLETED_SIMULATED';w.show_command_receipt(receipt)
     assert '#303b48' in w.command_buttons[0x300].led.styleSheet()
+    assert not led_timer.isActive() and expiry.count()==1
     w.show_command_receipt(dict(id='two',code=0x400,state='REJECTED',reply_received=False))
     assert '#ed575d' in w.command_buttons[0x400].led.styleSheet()
     w.invalidate();assert '#303b48' in w.command_buttons[0x400].led.styleSheet()
