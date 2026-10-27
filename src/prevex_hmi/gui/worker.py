@@ -51,6 +51,16 @@ class MonitoringWorker(QThread):
     def stop(self): self.stop_requested.set()
 
     def run(self):
+        from prevex_hmi.logging_db.maintenance import gate_for
+        gate=gate_for(self.data_path)
+        while not gate.enter_monitoring():
+            if self.stop_requested.wait(.1):return
+        try:self.run_monitoring()
+        finally:gate.leave_monitoring()
+
+    def run_monitoring(self):
+        from prevex_hmi.logging_db.maintenance import gate_for
+        maintenance_gate=gate_for(self.data_path);command_lease=False
         bus=database=users=controller=None
         try:
             configured=DeviceConfig(**self.settings['devices'][0])
@@ -123,6 +133,13 @@ class MonitoringWorker(QThread):
                 if message:
                     try:
                         kind=message[0]
+                        if kind in ('parameter','command') and not command_lease:
+                            if not maintenance_gate.enter_command():
+                                text='Database maintenance is running; no controller command sent. Review and confirm again after it finishes.'
+                                if kind=='parameter':self.parameter_result.emit(text)
+                                else:self.command_result.emit(text)
+                                continue
+                            command_lease=True
                         if physical and kind in ('fault','reading','status'):
                             raise PermissionError('Simulation injection is unavailable for a real controller')
                         if kind == 'fault': simulation.set_fault(effective.addressing.packet_address,message[1])
@@ -158,6 +175,8 @@ class MonitoringWorker(QThread):
                                 state.register_timestamps[60]=utc_now()
                             self.command_result.emit(controller.result)
                     except (OSError,ValueError,PermissionError,KeyError) as error: self.command_result.emit(str(error))
+                    finally:
+                        if command_lease and not controller.pending:maintenance_gate.leave_command();command_lease=False
                 scheduler.run_once()
                 now=time.monotonic()
                 if now-last_identity >= 30:
@@ -176,6 +195,7 @@ class MonitoringWorker(QThread):
                     try:controller.observe(snapshot)
                     except PermissionError as error:
                         controller.pending=None;controller.ambiguous=True;self.storage_warning.emit(str(error))
+                    if command_lease and not controller.pending:maintenance_gate.leave_command();command_lease=False
                     if database.error:controller.ambiguous=True
                     status=snapshot['raw'].get(2)
                     event=(snapshot['quality'],status)
@@ -206,6 +226,9 @@ class MonitoringWorker(QThread):
                 pending=controller.pending
                 try:controller.record(pending.actor,pending.code,'UNKNOWN','Session disconnected during command; never retried')
                 except PermissionError as error:self.storage_warning.emit(str(error))
-            if database: database.close()
+            try:
+                if database:database.close()
+            finally:
+                if command_lease:maintenance_gate.leave_command()
             if users: users.close()
             if bus: bus.close()

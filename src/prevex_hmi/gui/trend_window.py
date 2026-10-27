@@ -41,6 +41,7 @@ class TrendWindow(QMainWindow):
         self.stop_button.clicked.connect(self.stop_recording)
         self.export_button.clicked.connect(self.export)
         for w in (self.start_button,self.stop_button,self.export_button):row.addWidget(w)
+        self.manage_button=QPushButton('Manage Recorded Data');self.manage_button.clicked.connect(self.manage_data);row.addWidget(self.manage_button)
         self.recording_status=QLabel('Stopped | Elapsed 00:00:00');self.recording_status.setWordWrap(True);row.addWidget(self.recording_status,1);box.addLayout(row)
         self.notice=QLabel('Closing Trend does not stop recording. Intervals limit capture; new values follow the analyzer polling cadence.');self.notice.setWordWrap(True);box.addWidget(self.notice)
         self.tabs=QTabWidget();box.addWidget(self.tabs,1)
@@ -57,6 +58,12 @@ class TrendWindow(QMainWindow):
 
     @property
     def paths(self):return [self.owner.data_path/'simulation.sqlite3',self.owner.data_path/'hardware.sqlite3']
+
+    def manage_data(self):
+        from .recording_management import RecordingManagementWindow
+        if not hasattr(self,'management_window'):self.management_window=RecordingManagementWindow(self)
+        else:self.management_window.refresh()
+        self.management_window.setStyleSheet(self.owner.styleSheet());self.management_window.show();self.management_window.raise_();self.management_window.activateWindow()
 
     def build_sessions(self):
         page=QWidget();box=QVBoxLayout(page);row=QHBoxLayout()
@@ -228,6 +235,7 @@ class TrendWindow(QMainWindow):
         self.raise_();self.activateWindow();self.refresh_sessions()
 
     def closeEvent(self,event):
+        if hasattr(self,'management_window'):self.management_window.close()
         try:
             temporary=self.geometry_path.with_suffix('.tmp');temporary.write_text(json.dumps({'geometry':bytes(self.saveGeometry().toBase64()).decode('ascii')}),encoding='utf-8');temporary.replace(self.geometry_path)
         except OSError as error:self.owner.statusBar().showMessage(f'Trend geometry could not be saved: {error}')

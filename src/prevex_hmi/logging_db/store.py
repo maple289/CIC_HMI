@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sqlite3
+import time
 
 
 class Historian:
@@ -70,20 +71,42 @@ class MonitoringHistorian:
     until reconnect; no command or measurement write is retried implicitly.
     """
     def __init__(self,path,on_error,*,factory=Historian):
+        from .maintenance import gate_for
+        self.gate=gate_for(Path(path).parent);self.history_lease=False;self.pending=[]
         self.store=None;self.error='';self.on_error=on_error
+        while not self.gate.enter_history():time.sleep(.05)
         try:self.store=factory(path)
         except (sqlite3.Error,OSError) as error:self.disable(error)
+        finally:self.gate.leave_history()
+
+    def release_history(self):
+        if self.history_lease:self.gate.leave_history();self.history_lease=False
 
     def disable(self,error):
         self.error=str(error);self.on_error('History storage unavailable: '+self.error)
 
     def call(self,name,*args,default=None):
         if self.error or self.store is None:return default
-        try:return getattr(self.store,name)(*args)
+        writing=name in ('measurement','event','commit','retain','command_audit')
+        if writing and not self.history_lease:
+            if not self.gate.enter_history():
+                if name=='command_audit':raise PermissionError('Command audit temporarily unavailable during database maintenance; no command sent')
+                if name!='commit':
+                    if len(self.pending)>=100000:self.disable('Maintenance history buffer full; reconnect after maintenance')
+                    else:self.pending.append((name,args))
+                return default
+            self.history_lease=True
+        try:
+            if writing and self.pending:
+                for pending_name,pending_args in self.pending:getattr(self.store,pending_name)(*pending_args)
+                self.pending=[]
+            return getattr(self.store,name)(*args)
         except (sqlite3.Error,OSError) as error:
             try:self.store.db.rollback()
             except sqlite3.Error:pass
             self.disable(error);return default
+        finally:
+            if self.error or writing and name in ('commit','retain','command_audit'):self.release_history()
 
     def measurement(self,*args):self.call('measurement',*args)
     def event(self,*args):self.call('event',*args)
@@ -98,6 +121,10 @@ class MonitoringHistorian:
     def close(self):
         if self.store:
             try:
-                if not self.error:self.store.commit()
+                if not self.error:
+                    while not self.history_lease:
+                        if self.gate.enter_history():self.history_lease=True
+                        else:time.sleep(.05)
+                    self.call('commit')
             except (sqlite3.Error,OSError) as error:self.disable(error)
-            finally:self.store.db.close()
+            finally:self.release_history();self.store.db.close()

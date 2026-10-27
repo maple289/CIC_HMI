@@ -14,6 +14,8 @@ from prevex_hmi.profiles import profile_name
 class Recorder:
     """Deterministic session state machine, used only on the recording thread."""
     def __init__(self,data_path,*,clock=time.monotonic,store_factory=RecordingStore):
+        from .maintenance import gate_for
+        self.gate=gate_for(data_path);self.recording_lease=False;self.maintenance_waiting=False
         self.data_path=data_path;self.clock=clock;self.store_factory=store_factory
         self.store=None;self.path=None;self.session=None;self.parameters=[];self.key=None
         self.mode='manual';self.interval=1;self.main_only=False;self.armed=False
@@ -44,7 +46,10 @@ class Recorder:
         if self.started is not None:self.elapsed_final=max(0,self.clock()-self.started);self.started=None
         if self.session:
             session=self.session;self.session=None
-            self.store.end(session,reason)
+            try:self.store.end(session,reason)
+            finally:
+                if self.recording_lease:self.gate.leave_recording();self.recording_lease=False
+        elif self.recording_lease:self.gate.leave_recording();self.recording_lease=False
         self.connected=None;self.seen={};self.key=None;self.expected_profile=None
 
     def start(self):self.armed=True;self.error='';self.expected_profile=None
@@ -64,6 +69,9 @@ class Recorder:
                 self.armed=False;self.error='Analyzer profile changed; review recording parameters';return
             selected=self.selections.get(key,[1]) if self.selections is not None else None
             if selected==[]:self.armed=False;return
+            if not self.recording_lease:
+                if not self.gate.enter_recording():self.maintenance_waiting=True;return
+                self.recording_lease=True;self.maintenance_waiting=False
             path=self.data_path/('hardware.sqlite3' if snapshot.get('source')=='hardware' else 'simulation.sqlite3')
             if self.path!=path:
                 if self.store:self.store.close()
@@ -90,7 +98,7 @@ class Recorder:
         except (sqlite3.Error,OSError):self.session=None
 
     def status(self):
-        state='Error' if self.error else 'Paused — communication unavailable' if self.session and not self.connected else 'Recording' if self.session else 'Waiting for communication' if self.armed else 'Stopped'
+        state='Error' if self.error else 'Paused — communication unavailable' if self.session and not self.connected else 'Recording' if self.session else 'Waiting for database maintenance' if self.armed and self.maintenance_waiting else 'Waiting for communication' if self.armed else 'Stopped'
         return dict(state=state,error=self.error,session=self.session,mode=self.mode,interval=self.interval,main_only=self.main_only,armed=self.armed,
                     selected_parameters=[p['number'] for p in self.parameters] if self.session else [],recording_profile=self.recording_profile,
                     elapsed=max(0,self.clock()-self.started) if self.started is not None else self.elapsed_final,samples=self.samples)

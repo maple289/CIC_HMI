@@ -171,6 +171,14 @@ def frame_rows(db,session,start=None,end=None):
 
 
 def export_csv(paths,destination,*,session=None,start=None,end=None):
+    from contextlib import ExitStack
+    from .maintenance import gate_for
+    with ExitStack() as stack:
+        for directory in sorted({str(Path(p).parent.resolve()) for p in paths}):stack.enter_context(gate_for(directory).reading())
+        return _export_csv(paths,destination,session=session,start=start,end=end)
+
+
+def _export_csv(paths,destination,*,session=None,start=None,end=None):
     """Streaming read-only SQLite export, UTF-8 BOM and CRLF for Excel."""
     chosen=selected_sessions(paths,session,start,end)
     descriptors={}
@@ -212,6 +220,14 @@ def export_csv(paths,destination,*,session=None,start=None,end=None):
 
 
 def history_series(paths,session,number=1,limit=50000):
+    from contextlib import ExitStack
+    from .maintenance import gate_for
+    with ExitStack() as stack:
+        for directory in sorted({str(Path(p).parent.resolve()) for p in paths}):stack.enter_context(gate_for(directory).reading())
+        return _history_series(paths,session,number,limit)
+
+
+def _history_series(paths,session,number=1,limit=50000):
     chosen=selected_sessions(paths,session)
     if not chosen:return dict(points=[],unit='',name='',limited=False)
     row=chosen[0];parameter=next((p for p in json.loads(row['parameters']) if p['number']==number),None)

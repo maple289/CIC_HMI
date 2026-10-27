@@ -79,6 +79,8 @@ class MainWindow(QMainWindow):
         from prevex_hmi.logging_db.recorder import RecordingWorker
         self.recording_status=dict(state='Stopped',session=None,error='',elapsed=0,samples=0,armed=False)
         self.record_jobs=[]
+        from prevex_hmi.logging_db.maintenance import RecordingManagement
+        self.recording_management=RecordingManagement(data_path);self.retention_pending=False;self.retention_due=0
         self.recording_worker=RecordingWorker(data_path,settings.get('recording'),self)
         self.recording_worker.status_ready.connect(self.recording_update)
         self.recording_worker.failed.connect(lambda text:self.statusBar().showMessage(text))
@@ -117,6 +119,8 @@ class MainWindow(QMainWindow):
         self.account_watch=QTimer(self);self.account_watch.setInterval(1000);self.account_watch.timeout.connect(self.update_command_buttons);self.account_watch.start()
         self.statusBar().showMessage(f'Data: {data_path} | No safety function depends on the HMI')
         self.recording_worker.start()
+        self.retention_timer=QTimer(self);self.retention_timer.setInterval(60000);self.retention_timer.timeout.connect(self.schedule_retention);self.retention_timer.start()
+        QTimer.singleShot(1500,self.schedule_retention)
         if start_worker:self.start_worker()
 
     @property
@@ -787,6 +791,19 @@ class MainWindow(QMainWindow):
             if self.closing:self.close()
         job.finished.connect(finished);job.start()
 
+    def schedule_retention(self,*,force=False):
+        if self.closing or self.retention_pending or not force and time.monotonic()<self.retention_due:return
+        if not self.recording_management.policy_path.exists():return
+        self.retention_pending=True
+        def completed(result):
+            self.retention_pending=False;self.retention_due=time.monotonic()+3600
+            if result.get('deleted'):
+                self.trend_window.notice.setText(f"Automatic retention deleted {len(result['deleted'])} expired sessions.");self.trend_window.refresh_sessions()
+        def failed(error):
+            self.retention_pending=False;self.retention_due=time.monotonic()+60
+            self.statusBar().showMessage(f'Recording retention deferred: {error}')
+        self.record_job(self.recording_management.retention,completed,failed)
+
     def update_history(self,rows):
         self.history_rows=rows;fill_table(self.history_table,rows)
         self.history_curve.setData([datetime.fromisoformat(r[0]).timestamp() for r in rows],[r[1] if r[1] is not None else float('nan') for r in rows])
@@ -833,6 +850,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self,event):
         self.closing=True;self.next_action=None
         self.account_watch.stop();self.connection_watch.stop()
+        self.retention_timer.stop()
         self.trend_window.close();self.recording_worker.stop()
         if self.recording_worker.isRunning():self.recording_worker.wait(1000)
         if self.worker and self.worker.isRunning():
