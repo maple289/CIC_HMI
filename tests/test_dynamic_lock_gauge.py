@@ -183,11 +183,15 @@ def test_fake_physical_lock_readback_preserves_hardware_bit(control):
 
 def test_fake_physical_acknowledgment_without_changed_lock_is_observed_then_failed(control):
     service,state,store=control;original=service.bus.validated_operating_command
+    now=[0.0];service.clock=lambda:now[0]
     def ignored(code):original(code);state['lock']=0
     service.bus.validated_operating_command=ignored
     service.execute(0xF00,'admin',confirmed=True)
     assert service.receipt['reply_received'] and service.receipt['state']=='VERIFYING_LOCK'
-    pending=service.pending;service.clock=lambda:pending.started+pending.timeout
+    pending=service.pending;now[0]=pending.timeout-.001
+    service.observe(dict(raw={60:0},quality='GOOD',register_ages={60:0}))
+    assert service.receipt['state']=='VERIFYING_LOCK' and service.pending is pending
+    now[0]=pending.timeout
     service.observe(dict(raw={60:0},quality='GOOD',register_ages={60:0}))
     assert service.receipt['state']=='FAILED' and service.pending is None
     assert service.receipt['lock_readback']==0
@@ -219,6 +223,7 @@ def test_delayed_lock_change_uses_fresh_readback_and_never_resends(control,code,
 @pytest.mark.parametrize('condition',['offline','stale','no_timestamp','invalid'])
 def test_inconclusive_lock_verification_is_unknown_without_retries(control,condition):
     service,state,store=control;original=service.bus.validated_operating_command
+    service.clock=lambda:0.0  # Exact-origin clock avoids host-uptime cancellation at the deadline.
     def delayed(code):original(code);state['lock']=0
     service.bus.validated_operating_command=delayed
     service.execute(0xF00,'admin',confirmed=True)
