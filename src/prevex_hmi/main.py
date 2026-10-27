@@ -74,7 +74,9 @@ def main() -> int:
     if args.smoke_test:
         export_results=[];hidden_samples=[]
         def start_recording():
-            window.open_trend();window.recording_worker.request('start')
+            window.open_trend()
+            window.trend_window.recording_parameters.select_numbers([1,9])
+            window.trend_window.start_button.click()
         def hide_trend():
             hidden_samples.append(window.recording_status.get('samples',0));window.trend_window.close()
         def export_recording():
@@ -111,6 +113,8 @@ def main() -> int:
                 if not window.trend_window.isWindow() or not hidden_samples or window.recording_status.get('samples',0)<=hidden_samples[0] or not export_results or export_results[0]<1:
                     raise RuntimeError('Detached Trend / hidden recording / asynchronous CSV export failed')
                 if window.trend_window.live_plot.zero_line.value()!=0:raise RuntimeError('Trend zero reference missing')
+                if window.trend_window.recording_parameters.isEnabled() or window.trend_window.interval.isEnabled():raise RuntimeError('Recording selection/interval were not locked')
+                if set(window.recording_status['selected_parameters'])!=set(window.trend_window.recording_parameters.selected_numbers()):raise RuntimeError('Recording parameters differ from checked selection')
                 for index,name in [(0,"overview"),(0,"detail"),(1,"trends"),(4,"diagnostics")]:
                     window.navigation.setCurrentRow(index)
                     if name=='trends':window.open_trend()
@@ -118,7 +122,7 @@ def main() -> int:
                     target=window.trend_window if name=='trends' else window
                     if not target.grab().save(str(data_path/f"{name}.png")):
                         raise RuntimeError("Window rendering failed")
-                (data_path/"smoke-report.json").write_text(json.dumps({"result":"PASS","mode":"simulation","updates":window.update_count,"devices":1,"detected_family":window.identity.get("family"),"gauge_parameters":len(window.readouts),"diagnostics_updates":active_updates,"maximum_heartbeat_gap_ms":round(gap*1000,1),"physical_access":False,"trend_detached":True,"hidden_recording":True,"recorded_frames":window.recording_status['samples'],"exported_frames":export_results[0]},indent=2),encoding="utf-8")
+                (data_path/"smoke-report.json").write_text(json.dumps({"result":"PASS","mode":"simulation","updates":window.update_count,"devices":1,"detected_family":window.identity.get("family"),"gauge_parameters":len(window.readouts),"diagnostics_updates":active_updates,"maximum_heartbeat_gap_ms":round(gap*1000,1),"physical_access":False,"trend_detached":True,"hidden_recording":True,"recorded_frames":window.recording_status['samples'],"exported_frames":export_results[0],"recorded_parameters":window.recording_status['selected_parameters'],"recording_controls_locked":True},indent=2),encoding="utf-8")
                 print(f"PASS: single-analyzer GUI, updates={window.update_count}, detected={window.identity.get('family')}")
             except Exception as error:
                 errors.append(str(error))

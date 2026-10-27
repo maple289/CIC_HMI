@@ -86,7 +86,7 @@ def test_automatic_pause_and_recovery_reuses_session(app,window):
 
 
 def test_historical_view_and_export_use_read_jobs(app,window,tmp_path,monkeypatch):
-    w=window;w.open_trend();t=w.trend_window;t.main_only.setChecked(True);t.start_button.click()
+    w=window;w.open_trend();t=w.trend_window;t.recording_parameters.select_numbers([1,2]);t.start_button.click()
     assert t.range_start.timeZone().id()==b'UTC' and t.range_end.timeZone().id()==b'UTC'
     until(app,lambda:w.recording_status['samples']>=1);session=w.recording_status['session']
     t.stop_button.click();until(app,lambda:w.recording_status['session'] is None)

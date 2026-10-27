@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QPush
     QLabel,QComboBox,QCheckBox,QTabWidget,QFileDialog,QMessageBox,QDateTimeEdit)
 import pyqtgraph as pg
 from prevex_hmi.logging_db.recordings import sessions,history_series,export_csv
+from prevex_hmi.gui.recording_parameters import RecordingParameters
 
 
 class TrendWindow(QMainWindow):
@@ -15,19 +16,21 @@ class TrendWindow(QMainWindow):
         super().__init__(owner,Qt.Window|Qt.WindowMinMaxButtonsHint|Qt.WindowCloseButtonHint)
         self.owner=owner;self.setWindowTitle('PREVEX HMI — Trend');self.resize(1100,740);self.setMinimumSize(680,480)
         self.geometry_path=owner.data_path/'trend-window.json';self.restored=False
+        self.start_pending=False;self.stop_pending=False;self.pending_options=None;self.latest_recorded_session=None
         central=QWidget();box=QVBoxLayout(central);self.setCentralWidget(central)
         row=QHBoxLayout()
         self.mode=QComboBox();self.mode.addItem('Manual','manual');self.mode.addItem('Automatic','automatic');row.addWidget(self.mode)
         self.interval=QComboBox()
         for n in (1,2,5,10):self.interval.addItem(f'{n} second'+('s' if n!=1 else ''),n)
         row.addWidget(self.interval)
-        self.main_only=QCheckBox('Main measurement and status only');row.addWidget(self.main_only)
         options=owner.settings.get('recording',{})
-        self.mode.setCurrentIndex(max(0,self.mode.findData(options.get('mode','manual'))));self.interval.setCurrentIndex(max(0,self.interval.findData(options.get('interval',1))));self.main_only.setChecked(options.get('main_only',False))
+        self.mode.setCurrentIndex(max(0,self.mode.findData(options.get('mode','manual'))));self.interval.setCurrentIndex(max(0,self.interval.findData(options.get('interval',1))))
         row.addStretch();box.addLayout(row)
+        self.recording_parameters=RecordingParameters();box.addWidget(self.recording_parameters)
+        self.recording_parameters.set_analyzer(owner.config,options.get('parameters_by_profile',{}))
         row=QHBoxLayout();self.start_button=QPushButton('Start Recording');self.stop_button=QPushButton('Stop Recording');self.export_button=QPushButton('Export CSV')
-        self.start_button.clicked.connect(lambda:owner.recording_worker.request('start'))
-        self.stop_button.clicked.connect(lambda:owner.recording_worker.request('stop'))
+        self.start_button.clicked.connect(self.start_recording)
+        self.stop_button.clicked.connect(self.stop_recording)
         self.export_button.clicked.connect(self.export)
         for w in (self.start_button,self.stop_button,self.export_button):row.addWidget(w)
         self.recording_status=QLabel('Stopped | Elapsed 00:00:00');self.recording_status.setWordWrap(True);row.addWidget(self.recording_status,1);box.addLayout(row)
@@ -38,7 +41,9 @@ class TrendWindow(QMainWindow):
         self.held_curve=self.live_plot.plot(pen=pg.mkPen('#e7b55e',width=2,style=Qt.DashLine),connect='finite');layout.addWidget(self.live_plot)
         self.hold_note=QLabel('Solid: measured | Dashed amber: held display only; never recorded as new data');self.hold_note.setWordWrap(True);layout.addWidget(self.hold_note);self.tabs.addTab(live,'Live trend')
         self.build_sessions()
-        self.mode.currentIndexChanged.connect(self.options_changed);self.interval.currentIndexChanged.connect(self.options_changed);self.main_only.toggled.connect(self.options_changed)
+        self.mode.currentIndexChanged.connect(self.options_changed);self.interval.currentIndexChanged.connect(self.options_changed);self.recording_parameters.changed.connect(self.options_changed)
+        owner.recording_worker.failed.connect(self.recording_request_failed)
+        self.update_controls()
 
     @property
     def paths(self):return [self.owner.data_path/'simulation.sqlite3',self.owner.data_path/'hardware.sqlite3']
@@ -54,7 +59,7 @@ class TrendWindow(QMainWindow):
         self.session_choice.currentIndexChanged.connect(self.session_selected)
         self.parameter_choice.currentIndexChanged.connect(self.invalidate_history)
         row=QHBoxLayout();row.addWidget(QLabel('Export scope'))
-        self.export_scope=QComboBox();self.export_scope.addItems(['Current recording session','Selected previous session','Date/time range (all sessions)']);row.addWidget(self.export_scope)
+        self.export_scope=QComboBox();self.export_scope.addItems(['Current / latest recording session','Selected previous session','Date/time range (all sessions)']);row.addWidget(self.export_scope)
         row.addStretch();box.addLayout(row);row=QHBoxLayout()
         self.range_start=QDateTimeEdit(QDateTime.currentDateTimeUtc().addDays(-1));self.range_end=QDateTimeEdit(QDateTime.currentDateTimeUtc())
         for w in (self.range_start,self.range_end):w.setTimeZone(QTimeZone.utc());w.setDisplayFormat('yyyy-MM-dd HH:mm:ss');w.setCalendarPopup(True)
@@ -62,18 +67,56 @@ class TrendWindow(QMainWindow):
         self.tabs.addTab(page,'Recorded sessions')
 
     def options_changed(self):
-        options=dict(mode=self.mode.currentData(),interval=self.interval.currentData(),main_only=self.main_only.isChecked())
-        self.owner.recording_worker.request('options',options['mode'],options['interval'],options['main_only'])
+        if self.controls_locked():
+            status=self.pending_options or self.owner.recording_status
+            for combo,key in ((self.mode,'mode'),(self.interval,'interval')):
+                combo.blockSignals(True);combo.setCurrentIndex(max(0,combo.findData(status.get(key,combo.currentData()))));combo.blockSignals(False)
+            return
+        options=self.current_options()
+        self.owner.recording_worker.request('selection_options',options['mode'],options['interval'],options['parameters_by_profile'])
         self.owner.settings['recording']=options
         from prevex_hmi.devices.configuration import save_settings
         try:save_settings(self.owner.settings_path,self.owner.settings)
         except (OSError,ValueError) as error:self.notice.setText(f'Options apply for this run; saving preferences failed: {error}')
+        self.update_controls()
+
+    def current_options(self):
+        selections={key:list(numbers) for key,numbers in self.owner.settings.get('recording',{}).get('parameters_by_profile',{}).items()}
+        selections[self.recording_parameters.profile]=self.recording_parameters.selected_numbers()
+        return dict(mode=self.mode.currentData(),interval=self.interval.currentData(),parameters_by_profile=selections)
+
+    def controls_locked(self):
+        status=self.owner.recording_status
+        return bool(self.start_pending or self.stop_pending or status.get('session') or status.get('armed'))
+
+    def update_controls(self):
+        locked=self.controls_locked();self.recording_parameters.set_locked(locked)
+        self.interval.setEnabled(not locked);self.mode.setEnabled(not locked)
+        self.start_button.setEnabled(not locked and bool(self.recording_parameters.selected_numbers()))
+        self.stop_button.setEnabled(bool(self.owner.recording_status.get('session') or self.owner.recording_status.get('armed')) and not self.stop_pending)
+
+    def set_analyzer(self,config):
+        self.recording_parameters.set_analyzer(config,self.owner.settings.get('recording',{}).get('parameters_by_profile',{}));self.update_controls()
+
+    def start_recording(self):
+        if self.controls_locked() or not self.recording_parameters.selected_numbers():return
+        options=self.current_options();self.pending_options=options;self.start_pending=True;self.update_controls()
+        self.owner.recording_worker.request('start_selection',options['mode'],options['interval'],options['parameters_by_profile'],self.recording_parameters.profile)
+
+    def stop_recording(self):
+        self.stop_pending=True;self.update_controls();self.owner.recording_worker.request('stop')
+
+    def recording_request_failed(self,error):
+        self.start_pending=False;self.stop_pending=False;self.pending_options=None
+        self.notice.setText(error);self.update_controls()
 
     def update_status(self,status):
+        if status.get('session'):self.latest_recorded_session=status['session']
+        if self.start_pending and (status.get('session') or status.get('armed') or status.get('error')):self.start_pending=False;self.pending_options=None
+        if self.stop_pending and not status.get('session') and not status.get('armed'):self.stop_pending=False;self.start_pending=False;self.pending_options=None
         elapsed=int(status['elapsed']);hours,rest=divmod(elapsed,3600);minutes,seconds=divmod(rest,60)
         self.recording_status.setText(f"{status['state']} | Elapsed {hours:02}:{minutes:02}:{seconds:02} | {status['samples']} captured frames")
-        self.stop_button.setEnabled(bool(status['session'] or status['armed']))
-        self.start_button.setEnabled(not status['session'] and not status['armed'])
+        self.update_controls()
         if status['error']:self.notice.setText(status['error'])
         if getattr(self,'last_session',None)!=status['session']:
             self.last_session=status['session'];self.refresh_sessions()
@@ -117,7 +160,7 @@ class TrendWindow(QMainWindow):
 
     def export(self):
         scope=self.export_scope.currentIndex();selection=self.session_choice.currentData()
-        session=self.owner.recording_status.get('session') if scope==0 else selection['id'] if scope==1 and selection else None
+        session=(self.owner.recording_status.get('session') or self.latest_recorded_session) if scope==0 else selection['id'] if scope==1 and selection else None
         if scope in (0,1) and not session:
             self.notice.setText('No session selected. Choose a previous session or a date/time range.');return
         start=end=None

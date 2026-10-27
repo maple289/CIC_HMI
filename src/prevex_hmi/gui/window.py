@@ -233,6 +233,7 @@ class MainWindow(QMainWindow):
         self.indicators.build(family,config if config.family==family else None)
         self.monitor_name.setText(profile_name(config))
         self.range_help.setText('LEL gray: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nW / D: live alarm thresholds [5 / 6]' if family=='LEL' else 'Blue: negative section\nBold marker: zero\n'+('Low / High: BTU setpoints [5 / 6]' if family=='BTU' else 'Warning / Danger: FID setpoints [5 / 6]'))
+        self.trend_window.set_analyzer(config)
 
     def make_plot(self):
         plot=pg.PlotWidget(axisItems={'bottom':pg.DateAxisItem()},background='#111c2b');plot.showGrid(x=True,y=True,alpha=.15);plot.setLabel('bottom','Time (local)')
@@ -468,6 +469,7 @@ class MainWindow(QMainWindow):
         self.snapshot_received_at=time.monotonic()
         config=DeviceConfig(**snapshot['config']);family=config.family
         if (family,profile_for(config).revision)!=self.snapshot_family:self.build_readouts(family,config)
+        self.trend_window.set_analyzer(config)
         self.gauge.set_snapshot(snapshot);self.indicators.update_snapshot(snapshot)
         retained=bool(self.gauge.held and self.gauge.lcd_hold)
         self.readout_retained=retained

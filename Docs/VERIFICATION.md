@@ -1,3 +1,11 @@
+# Pre-start recording selection scope — 2026-10-26
+
+Checkbox choices are restricted to each existing manufacturer-based GAUGES list; arbitrary/internal/command registers cannot be selected. Profile names, units and conversions remain unchanged. Exact selected channels are stored in each new session and exported without adding unselected measurement columns; STATUS/communication quality remain metadata. Old sessions are not rewritten. GUI and worker both reject parameter/interval changes during an active or communication-paused session. This changes no Modbus read plan, physical control, register permission or compatibility assumption.
+
+Full regression: **965 tests passed in259.89s**; the final **31 focused selection/window checks passed in40.33s** after the unit-label and Stop→Export refinements. Final packaged simulation smoke passed (exit0,42 updates/42 Diagnostics updates,6 captured frames,3 exported frames,selected registers1/9,controls locked,max GUI heartbeat gap281ms,physical_access=false). Source smoke also passed, and isolated workflow QA recorded temperature/flow/flame registers9/15/11 at2s, verified locked/unlocked controls and exported the latest session after Stop using the default scope. Compilation, dependency, generated inventory and whitespace checks passed. Tests used isolated data and simulated/fake analyzer I/O only.
+
+Tests cover empty/invalid selections, all four profile checklists, independent saved choices and relaunch, immediate no-dialog Start, frozen controls including programmatic changes, pause/Stop/re-enable, backend immutability, per-profile automatic recording, subset CSV columns and changed-profile Start rejection. FID unit-label refresh is checked without losing checkbox selection. All analyzer I/O uses simulation/fake transports. Existing outstanding native second-monitor/Excel acceptance checks remain as recorded below.
+
 # Independent Trend and recording verification — 2026-10-26
 
 New recording reuses existing manufacturer profile definitions and conversion functions. GAUGES selection is separate from the main screen's Calibration/Alarm card additions;700 retains its independent map. No register permissions, physical controls or hardware compatibility assumptions were expanded, and no real port/command was used.

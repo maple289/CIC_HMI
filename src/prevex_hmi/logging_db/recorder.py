@@ -6,7 +6,9 @@ import sqlite3
 import threading
 import time
 from PySide6.QtCore import QThread,Signal
-from .recordings import RecordingStore,INTERVALS,stream_key
+from .recordings import RecordingStore,INTERVALS,stream_key,normalize_selections,recording_parameters
+from prevex_hmi.devices.models import DeviceConfig
+from prevex_hmi.profiles import profile_name
 
 
 class Recorder:
@@ -15,6 +17,7 @@ class Recorder:
         self.data_path=data_path;self.clock=clock;self.store_factory=store_factory
         self.store=None;self.path=None;self.session=None;self.parameters=[];self.key=None
         self.mode='manual';self.interval=1;self.main_only=False;self.armed=False
+        self.selections=None;self.recording_profile=None;self.expected_profile=None
         self.seen={};self.started=None;self.elapsed_final=0;self.next_due=0;self.connected=None;self.error='';self.samples=0
 
     def options(self,mode,interval,main_only):
@@ -24,14 +27,27 @@ class Recorder:
         self.mode=mode;self.interval=interval;self.main_only=bool(main_only)
         self.armed=active or previous_armed and mode==previous_mode or mode=='automatic' and previous_mode!='automatic';self.error=''
 
+    def configure(self,mode,interval,selections):
+        if self.session:raise ValueError('Stop recording before changing parameters or interval')
+        selections=normalize_selections(selections)
+        self.options(mode,interval,False);self.selections=selections
+
+    def start_selected(self,mode,interval,selections,snapshot,expected_profile):
+        if self.session:raise ValueError('Recording is already active')
+        selections=normalize_selections(selections)
+        if snapshot and profile_name(DeviceConfig(**snapshot['config']))!=expected_profile:raise ValueError('Analyzer profile changed; review recording parameters')
+        chosen=selections.get(expected_profile,[1])
+        if not chosen:raise ValueError('Select at least one recording parameter')
+        self.configure(mode,interval,selections);self.start();self.expected_profile=expected_profile
+
     def finish(self,reason):
         if self.started is not None:self.elapsed_final=max(0,self.clock()-self.started);self.started=None
         if self.session:
             session=self.session;self.session=None
             self.store.end(session,reason)
-        self.connected=None;self.seen={};self.key=None
+        self.connected=None;self.seen={};self.key=None;self.expected_profile=None
 
-    def start(self):self.armed=True;self.error=''
+    def start(self):self.armed=True;self.error='';self.expected_profile=None
 
     def stop(self):
         self.armed=False;self.finish('Stopped by operator')
@@ -43,11 +59,18 @@ class Recorder:
             self.finish('Analyzer identity/profile changed')
             if self.mode=='manual':self.armed=False
         if not self.session and self.armed and good:
+            config=DeviceConfig(**snapshot['config']);key=profile_name(config)
+            if self.expected_profile and key!=self.expected_profile:
+                self.armed=False;self.error='Analyzer profile changed; review recording parameters';return
+            selected=self.selections.get(key,[1]) if self.selections is not None else None
+            if selected==[]:self.armed=False;return
             path=self.data_path/('hardware.sqlite3' if snapshot.get('source')=='hardware' else 'simulation.sqlite3')
             if self.path!=path:
                 if self.store:self.store.close()
                 self.store=self.store_factory(path);self.path=path
-            self.session,self.parameters=self.store.start(snapshot,self.interval,self.main_only,self.mode)
+            self.session,self.parameters=self.store.start(snapshot,self.interval,self.main_only,self.mode,selected=selected)
+            self.recording_profile=key
+            self.expected_profile=None
             self.key=stream_key(snapshot);self.started=now;self.elapsed_final=0;self.next_due=now;self.seen={};self.samples=0;self.connected=True
         if not self.session:return
         if not good:
@@ -69,6 +92,7 @@ class Recorder:
     def status(self):
         state='Error' if self.error else 'Paused — communication unavailable' if self.session and not self.connected else 'Recording' if self.session else 'Waiting for communication' if self.armed else 'Stopped'
         return dict(state=state,error=self.error,session=self.session,mode=self.mode,interval=self.interval,main_only=self.main_only,armed=self.armed,
+                    selected_parameters=[p['number'] for p in self.parameters] if self.session else [],recording_profile=self.recording_profile,
                     elapsed=max(0,self.clock()-self.started) if self.started is not None else self.elapsed_final,samples=self.samples)
 
     def close(self):
@@ -99,16 +123,22 @@ class RecordingWorker(QThread):
     def run(self):
         recorder=Recorder(self.data_path);last_emit=0
         try:
-            recorder.options(self.options.get('mode','manual'),self.options.get('interval',1),self.options.get('main_only',False))
+            recorder.configure(self.options.get('mode','manual'),self.options.get('interval',1),self.options.get('parameters_by_profile',{}))
             while not self.stopping.is_set():
                 try:
                     try:message=self.commands.get_nowait()
                     except Empty:message=None
-                    if message:
-                        if message[0]=='options':recorder.options(*message[1:])
-                        elif message[0]=='start':recorder.start()
-                        elif message[0]=='stop':recorder.stop()
                     with self.lock:snapshot=self.latest;received=self.received
+                    if message:
+                        try:
+                            if message[0]=='options':
+                                if recorder.session:raise ValueError('Stop recording before changing options')
+                                recorder.options(*message[1:])
+                            elif message[0]=='selection_options':recorder.configure(*message[1:])
+                            elif message[0]=='start_selection':recorder.start_selected(*message[1:4],snapshot,message[4])
+                            elif message[0]=='start':recorder.start()
+                            elif message[0]=='stop':recorder.stop()
+                        except ValueError as error:self.failed.emit(str(error))
                     recorder.tick(snapshot,received=received)
                 except (sqlite3.Error,OSError,ValueError) as error:
                     recorder.fail(error);self.failed.emit(recorder.error)

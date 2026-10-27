@@ -46,6 +46,8 @@ def validate_settings(settings):
     recording=settings.get('recording',{})
     if not isinstance(recording,dict) or recording.get('mode','manual') not in ('manual','automatic') or type(recording.get('interval',1)) is not int or recording.get('interval',1) not in (1,2,5,10) or type(recording.get('main_only',False)) is not bool:
         raise ValueError('Invalid recording preferences')
+    from prevex_hmi.logging_db.recordings import normalize_selections
+    normalize_selections(recording.get('parameters_by_profile',{}))
     if len(settings["devices"]) != 1:
         raise ValueError("Exactly one active analyzer is supported")
     validate_devices([DeviceConfig(**row) for row in settings["devices"]])

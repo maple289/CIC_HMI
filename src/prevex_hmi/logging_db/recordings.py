@@ -15,7 +15,19 @@ from prevex_hmi.profiles.gauges import GAUGE_REGISTERS
 INTERVALS=(1,2,5,10)
 
 
-def recording_parameters(config,main_only=False):
+def normalize_selections(selections):
+    from prevex_hmi.profiles.lel700 import GAUGES
+    menus={'LEL 670 Series':GAUGE_REGISTERS['LEL'],'LEL 700 Series':GAUGES,'BTU':GAUGE_REGISTERS['BTU'],'FID':GAUGE_REGISTERS['FID']}
+    if not isinstance(selections,dict):raise ValueError('Recording selections must be a profile map')
+    result={}
+    for key,numbers in selections.items():
+        if key not in menus or not isinstance(numbers,list) or any(type(n) is not int or n not in menus[key] for n in numbers) or len(set(numbers))!=len(numbers):
+            raise ValueError('Invalid GAUGES parameter selection')
+        result[key]=list(numbers)
+    return result
+
+
+def recording_parameters(config,main_only=False,*,selected=None):
     profile=profile_for(config)
     if main_only:numbers=(1,2)
     elif profile.revision=='700':
@@ -23,7 +35,11 @@ def recording_parameters(config,main_only=False):
         numbers=GAUGES
     else:numbers=GAUGE_REGISTERS[config.family]
     result=[]
-    for number in dict.fromkeys((1,2,*numbers)):
+    available=tuple(dict.fromkeys((1,2,*numbers)))
+    if selected is not None:
+        if not isinstance(selected,list) or any(type(n) is not int or n not in available for n in selected) or len(set(selected))!=len(selected):raise ValueError('Invalid GAUGES parameter selection')
+        available=tuple(n for n in available if n in selected)
+    for number in available:
         r=profile.register(number)
         try:unit=r.scale(config.family,config.context)[2]
         except ValueError:unit=r.unit or 'unit unverified'
@@ -62,12 +78,13 @@ class RecordingStore:
             CREATE INDEX IF NOT EXISTS recording_value_lookup ON recording_values(session_id,register_number,acquired_at);
         ''')
 
-    def start(self,snapshot,interval,main_only,mode,stamp=None):
+    def start(self,snapshot,interval,main_only,mode,stamp=None,*,selected=None):
         if interval not in INTERVALS or mode not in ('manual','automatic'):raise ValueError('Invalid recording options')
         saved_config=dict(snapshot['config'])
         if type(snapshot['raw'].get(3)) is int and snapshot['raw'][3]>0:saved_config['fullscale']=snapshot['raw'][3]
         config=DeviceConfig(**saved_config);session=uuid.uuid4().hex
-        parameters=recording_parameters(config,main_only)
+        parameters=recording_parameters(config,main_only,selected=selected)
+        if not parameters:raise ValueError('Select at least one recording parameter')
         with self.db:
             self.db.execute('INSERT INTO recording_sessions VALUES (?,?,NULL,NULL,?,?,?,?,?,?,?)',
                 (session,stamp or utc_now(),json.dumps(saved_config),json.dumps(snapshot.get('identity',{})),
