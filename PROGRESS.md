@@ -1,3 +1,8 @@
+# Build cleanup and repository synchronization (2026-10-27)
+
+- Removed18 superseded packaged versions under dist/ and5 obsolete build directories under build/. The only retained package is dist/local-history/PREVEX-HMI/ and the only retained build directory is build/local-history/. Windows prevented moving the retained package folder, so its existing launch path is unchanged. Its executable SHA256 remains806CE476439490D1E9796A90B89C0926E0E0E6F74C7502D14DC917276F96FE29, matching the tested1070-test milestone below.
+- Preserved source, manufacturer documents, settings, recordings, local virtual environment and tmp/ test evidence. Build outputs remain ignored by Git; repository synchronization transfers source/documentation/tests rather than generated binaries. Fetched origin and confirmed the local branch has no missing remote commits before pushing the completed milestones and this cleanup record.
+
 # Local session times, multiple historical channels and clear adjustment steps (2026-10-27)
 
 - Recording-session labels now use Windows local time by default, with readable English dates, seconds/AM-PM, analyzer/profile/model, source, interval, start-to-end duration and saved numeric sample-frame count. Labels omit raw ISO milliseconds/UTC suffixes, sort newest first and retain full tooltips/details. A saved Display timezone choice offers Windows local, UTC and named zones; session details, live/history time axes and export-range editors follow it with historical DST rules. Export range instants convert to UTC. SQLite schemas/recording timestamps and timezone-qualified CSV timestamps are unchanged; read-only summaries supply counts and actual saved channel IDs.
