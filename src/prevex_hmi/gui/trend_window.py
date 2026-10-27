@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QPush
 import pyqtgraph as pg
 from prevex_hmi.logging_db.recordings import sessions,history_series,export_csv,normalize_selections
 from prevex_hmi.gui.recording_parameters import RecordingParameters
+from prevex_hmi.gui.history_view import HistoricalParameters,HistoricalPlots,LocalTimeAxis,display_zone,friendly_time,session_label
 
 
 class TrendWindow(QMainWindow):
@@ -25,7 +26,14 @@ class TrendWindow(QMainWindow):
         row.addWidget(self.interval)
         options=owner.settings.get('recording',{})
         self.mode.setCurrentIndex(max(0,self.mode.findData(options.get('mode','manual'))));self.interval.setCurrentIndex(max(0,self.interval.findData(options.get('interval',1))))
-        row.addStretch();box.addLayout(row)
+        row.addStretch();row.addWidget(QLabel('Display timezone'))
+        self.timezone_choice=QComboBox();self.timezone_choice.setMaximumWidth(240)
+        self.timezone_choice.addItem('Windows local time','system');self.timezone_choice.addItem('UTC','UTC')
+        for zone_id in QTimeZone.availableTimeZoneIds():
+            key=bytes(zone_id).decode()
+            if key!='UTC':self.timezone_choice.addItem(key,key)
+        self.timezone_choice.setCurrentIndex(max(0,self.timezone_choice.findData(owner.settings.get('trend_timezone','system'))))
+        row.addWidget(self.timezone_choice);box.addLayout(row)
         self.recording_parameters=RecordingParameters();box.addWidget(self.recording_parameters)
         self.recording_parameters.set_analyzer(owner.config,options.get('parameters_by_profile',{}))
         row=QHBoxLayout();self.start_button=QPushButton('Start Recording');self.stop_button=QPushButton('Stop Recording');self.export_button=QPushButton('Export CSV')
@@ -41,6 +49,8 @@ class TrendWindow(QMainWindow):
         self.held_curve=self.live_plot.plot(pen=pg.mkPen('#e7b55e',width=2,style=Qt.DashLine),connect='finite');layout.addWidget(self.live_plot)
         self.hold_note=QLabel('Solid: measured | Dashed amber: held display only; never recorded as new data');self.hold_note.setWordWrap(True);layout.addWidget(self.hold_note);self.tabs.addTab(live,'Live trend')
         self.build_sessions()
+        self.timezone_choice.currentIndexChanged.connect(self.timezone_changed)
+        self.apply_timezone()
         self.mode.currentIndexChanged.connect(self.options_changed);self.interval.currentIndexChanged.connect(self.options_changed);self.recording_parameters.changed.connect(self.options_changed)
         owner.recording_worker.failed.connect(self.recording_request_failed)
         self.update_controls()
@@ -52,18 +62,18 @@ class TrendWindow(QMainWindow):
         page=QWidget();box=QVBoxLayout(page);row=QHBoxLayout()
         self.session_choice=QComboBox();self.session_choice.setMinimumContentsLength(26);self.session_choice.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon);row.addWidget(self.session_choice,1)
         refresh=QPushButton('Refresh sessions');refresh.clicked.connect(self.refresh_sessions);row.addWidget(refresh)
-        self.parameter_choice=QComboBox();self.parameter_choice.setMinimumContentsLength(10);self.parameter_choice.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon);row.addWidget(self.parameter_choice)
         load=QPushButton('View recording');load.clicked.connect(self.load_session);row.addWidget(load);box.addLayout(row)
+        self.history_parameters=HistoricalParameters();box.addWidget(self.history_parameters)
         self.session_note=QLabel('Select a recording session. Incomplete sessions remain available after an unexpected shutdown.');self.session_note.setWordWrap(True);box.addWidget(self.session_note)
-        self.recorded_plot=self.owner.make_plot();self.recorded_curve=self.recorded_plot.plot(pen=pg.mkPen('#69a7ed',width=2),connect='finite');box.addWidget(self.recorded_plot,1)
+        self.history_plots=HistoricalPlots();box.addWidget(self.history_plots,1);self.draw_history([])
         self.session_choice.currentIndexChanged.connect(self.session_selected)
-        self.parameter_choice.currentIndexChanged.connect(self.invalidate_history)
+        self.history_parameters.changed.connect(self.invalidate_history)
         row=QHBoxLayout();row.addWidget(QLabel('Export scope'))
         self.export_scope=QComboBox();self.export_scope.addItems(['Current / latest recording session','Selected previous session','Date/time range (all sessions)']);row.addWidget(self.export_scope)
         row.addStretch();box.addLayout(row);row=QHBoxLayout()
         self.range_start=QDateTimeEdit(QDateTime.currentDateTimeUtc().addDays(-1));self.range_end=QDateTimeEdit(QDateTime.currentDateTimeUtc())
-        for w in (self.range_start,self.range_end):w.setTimeZone(QTimeZone.utc());w.setDisplayFormat('yyyy-MM-dd HH:mm:ss');w.setCalendarPopup(True)
-        row.addWidget(QLabel('Capture time UTC from'));row.addWidget(self.range_start);row.addWidget(QLabel('to'));row.addWidget(self.range_end);row.addStretch();box.addLayout(row)
+        for w in (self.range_start,self.range_end):w.setDisplayFormat('yyyy-MM-dd HH:mm:ss ttt');w.setCalendarPopup(True)
+        row.addWidget(QLabel('Capture time from'));row.addWidget(self.range_start);row.addWidget(QLabel('to'));row.addWidget(self.range_end);row.addStretch();box.addLayout(row)
         self.tabs.addTab(page,'Recorded sessions')
 
     def options_changed(self):
@@ -123,40 +133,66 @@ class TrendWindow(QMainWindow):
 
     def refresh_sessions(self):
         self.session_generation=getattr(self,'session_generation',0)+1;generation=self.session_generation
-        self.owner.record_job(lambda:sessions(self.paths),lambda rows:self.show_sessions(rows) if generation==self.session_generation else None)
+        self.owner.record_job(lambda:sessions(self.paths,summaries=True),lambda rows:self.show_sessions(rows) if generation==self.session_generation else None)
 
     def show_sessions(self,rows):
-        previous=self.session_choice.currentData();previous=previous.get('id') if previous else None
+        rows=sorted(rows,key=lambda r:datetime.fromisoformat(r['started_at']).timestamp(),reverse=True)
+        previous_row=self.session_choice.currentData();previous=previous_row.get('id') if previous_row else None
         self.session_choice.blockSignals(True);self.session_choice.clear()
         for row in rows:
-            config=json.loads(row['config']);label=f"{row['started_at']} | {row['profile']} / {config['assembly']} | {row['source']} | {row['interval_seconds']}s"
-            if not row['ended_at']:label+=' | active / unfinished'
-            self.session_choice.addItem(label,row)
+            label=session_label(row,self.display_timezone);self.session_choice.addItem(label,row)
+            self.session_choice.setItemData(self.session_choice.count()-1,label,Qt.ToolTipRole)
         index=next((i for i,row in enumerate(rows) if row['id']==previous),0)
         self.session_choice.setCurrentIndex(index if rows else -1);self.session_choice.blockSignals(False)
-        if not rows or rows[index]['id']!=previous:self.session_selected()
+        if not rows or rows[index]['id']!=previous or rows[index].get('saved_parameters')!=previous_row.get('saved_parameters'):self.session_selected()
 
     def invalidate_history(self,*args):
-        self.history_request=None;self.recorded_curve.setData([],[])
+        self.history_request=None;self.draw_history([])
 
     def session_selected(self):
         self.invalidate_history()
-        row=self.session_choice.currentData();self.parameter_choice.clear()
-        self.recorded_curve.setData([],[])
+        row=self.session_choice.currentData()
+        parameters=[p for p in json.loads(row['parameters']) if p['number'] in row.get('saved_parameters',[p['number'] for p in json.loads(row['parameters'])])] if row else []
+        self.history_parameters.set_parameters(parameters)
         if row:
-            for p in json.loads(row['parameters']):self.parameter_choice.addItem(f"{p['name']} [{p['number']}] {p['unit']}",p['number'])
-            self.session_note.setText(f"Started {row['started_at']} | End: {row['ended_at'] or 'Active or interrupted'} | {row['end_reason'] or ''}")
+            self.session_note.setText(f"{session_label(row,self.display_timezone)} | End: {friendly_time(row['ended_at'],self.display_timezone)} | {row['end_reason'] or ''}")
 
     def load_session(self):
-        row=self.session_choice.currentData();number=self.parameter_choice.currentData()
-        if not row or number is None:return
-        requested=(row['id'],number);self.history_request=requested
+        row=self.session_choice.currentData();numbers=self.history_parameters.selected_numbers()
+        if not row or not numbers:
+            self.session_note.setText('Select at least one historical parameter.');return
+        requested=(row['id'],tuple(numbers),object());self.history_request=requested
         def loaded(data):
             if getattr(self,'history_request',None)!=requested:return
-            points=data['points'];self.recorded_curve.setData([datetime.fromisoformat(t).timestamp() for t,v in points],[v if v is not None else float('nan') for t,v in points],connect='finite')
-            self.recorded_plot.setLabel('left',data['name'],units=data['unit']);self.recorded_plot.enableAutoRange()
-            self.session_note.setText(f"{len(points)} observations"+(' — display limited to first 50,000; CSV exports all observations' if data['limited'] else ''))
-        self.owner.record_job(lambda:history_series(self.paths,row['id'],number),loaded)
+            self.draw_history(data)
+            count=sum(sum(v is not None for t,v in series['points']) for series in data)
+            self.session_note.setText(f"{session_label(row,self.display_timezone)} | {count} parameter observations. Markers show saved points; lines require at least three consecutive observations. Gaps remain disconnected."+(' Display limited to first 50,000 per parameter; CSV exports all observations.' if any(s['limited'] for s in data) else ''))
+        self.owner.record_job(lambda:[history_series(self.paths,row['id'],number) for number in numbers],loaded)
+
+    @property
+    def display_timezone(self):return display_zone(self.timezone_choice.currentData())
+
+    def draw_history(self,data):
+        self.history_plots.render(data,self.display_timezone)
+        self.recorded_plot=self.history_plots.plots[0];self.recorded_curve=self.history_plots.curves[0]
+
+    def apply_timezone(self):
+        zone=self.display_timezone
+        self.live_plot.setAxisItems({'bottom':LocalTimeAxis(zone)})
+        self.live_plot.setLabel('bottom',f"Time ({bytes(zone.id()).decode()})")
+        for editor in (self.range_start,self.range_end):
+            instant=editor.dateTime();editor.setTimeZone(zone);editor.setDateTime(instant.toTimeZone(zone))
+        self.draw_history(self.history_plots.data)
+        rows=[self.session_choice.itemData(i) for i in range(self.session_choice.count())]
+        self.show_sessions(rows)
+        row=self.session_choice.currentData()
+        if row:self.session_note.setText(f"{session_label(row,zone)} | End: {friendly_time(row['ended_at'],zone)} | {row['end_reason'] or ''}")
+
+    def timezone_changed(self):
+        self.apply_timezone();self.owner.settings['trend_timezone']=self.timezone_choice.currentData()
+        from prevex_hmi.devices.configuration import save_settings
+        try:save_settings(self.owner.settings_path,self.owner.settings)
+        except (OSError,ValueError) as error:self.notice.setText(f'Timezone applies for this run; saving preference failed: {error}')
 
     def export(self):
         scope=self.export_scope.currentIndex();selection=self.session_choice.currentData()

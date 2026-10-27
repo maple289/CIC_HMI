@@ -140,13 +140,21 @@ def read_connection(path):
     return db
 
 
-def sessions(paths):
+def sessions(paths,*,summaries=False):
     result=[]
     for path in paths:
         if not Path(path).exists():continue
         with closing(read_connection(path)) as db:
             if not db.execute("SELECT 1 FROM sqlite_master WHERE name='recording_sessions'").fetchone():continue
-            result.extend(dict(row,path=str(path)) for row in db.execute('SELECT * FROM recording_sessions ORDER BY started_at DESC'))
+            rows=[dict(row,path=str(path)) for row in db.execute('SELECT * FROM recording_sessions ORDER BY started_at DESC')]
+            if summaries:
+                counts={r['session_id']:r for r in db.execute("SELECT session_id,COUNT(*) AS sample_count,MAX(timestamp) AS last_sample_at FROM recording_frames f WHERE EXISTS (SELECT 1 FROM recording_values v WHERE v.frame_id=f.id AND v.value IS NOT NULL) GROUP BY session_id")}
+                saved={}
+                for r in db.execute('SELECT DISTINCT session_id,register_number FROM recording_values'):
+                    saved.setdefault(r['session_id'],[]).append(r['register_number'])
+                for row in rows:
+                    stats=counts.get(row['id']);row.update(sample_count=stats['sample_count'] if stats else 0,last_sample_at=stats['last_sample_at'] if stats else None,saved_parameters=saved.get(row['id'],[]))
+            result.extend(rows)
     return sorted(result,key=lambda row:row['started_at'],reverse=True)
 
 

@@ -1,5 +1,5 @@
 """One parameter per editor; edits are submitted to the existing worker."""
-from PySide6.QtWidgets import QCheckBox,QDialog,QDialogButtonBox,QDoubleSpinBox,QLabel,QSpinBox,QVBoxLayout
+from PySide6.QtWidgets import QCheckBox,QDialog,QDialogButtonBox,QDoubleSpinBox,QLabel,QSpinBox,QVBoxLayout,QHBoxLayout,QPushButton,QAbstractSpinBox
 from prevex_hmi.profiles import profile_for
 from prevex_hmi.profiles.parameters import PARAMETERS,limits
 
@@ -23,7 +23,17 @@ class ParameterEditor(QDialog):
             self.value.setRange(low,high)
             current,unit=profile_for(config).register(number).decode(raw,config.family,config.context)
             self.value.setValue(float(current) if key!='cal_time' else int(current))
-            self.value.setSuffix(f' {unit}' if unit else '');box.addWidget(self.value)
+            self.value.setSuffix(f' {unit}' if unit else '');self.value.setButtonSymbols(QAbstractSpinBox.NoButtons)
+            row=QHBoxLayout();row.addWidget(self.value,1)
+            self.decrease_button=QPushButton('−');self.increase_button=QPushButton('+')
+            for button,label,step in ((self.decrease_button,'Decrease',-1),(self.increase_button,'Increase',1)):
+                button.setFixedSize(44,40);button.setStyleSheet('font-size: 24px; font-weight: bold;')
+                button.setAccessibleName(label);button.setToolTip(f'{label} value')
+                button.clicked.connect(lambda _,s=step:self.value.stepBy(s));row.addWidget(button)
+            def update_steps():
+                self.decrease_button.setEnabled(self.value.value()>self.value.minimum())
+                self.increase_button.setEnabled(self.value.value()<self.value.maximum())
+            self.value.valueChanged.connect(update_steps);update_steps();box.addLayout(row)
             note=QLabel(f'Allowed range: {low}–{high} {unit}\nCurrent value: {current} {unit}')
         note.setWordWrap(True);box.addWidget(note)
         note='Real controller adjustment. Review and confirm before changing the live setting. SAVE ALL remains separate.' if physical else 'Simulator adjustment. You will review and confirm the change before it is sent.'

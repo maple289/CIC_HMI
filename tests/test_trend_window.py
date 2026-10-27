@@ -3,7 +3,7 @@ from dataclasses import asdict
 from pathlib import Path
 import json,sqlite3,time
 import pytest
-from PySide6.QtCore import Qt,QPoint
+from PySide6.QtCore import Qt,QPoint,QTimeZone
 from PySide6.QtWidgets import QApplication,QFileDialog
 import pyqtgraph as pg
 from prevex_hmi.devices.configuration import load_settings,default_devices
@@ -87,7 +87,7 @@ def test_automatic_pause_and_recovery_reuses_session(app,window):
 
 def test_historical_view_and_export_use_read_jobs(app,window,tmp_path,monkeypatch):
     w=window;w.open_trend();t=w.trend_window;t.recording_parameters.select_numbers([1,2]);t.start_button.click()
-    assert t.range_start.timeZone().id()==b'UTC' and t.range_end.timeZone().id()==b'UTC'
+    assert t.range_start.timeZone().id()==QTimeZone.systemTimeZoneId() and t.range_end.timeZone().id()==QTimeZone.systemTimeZoneId()
     until(app,lambda:w.recording_status['samples']>=1);session=w.recording_status['session']
     t.stop_button.click();until(app,lambda:w.recording_status['session'] is None)
     t.refresh_sessions();until(app,lambda:t.session_choice.count()>0)
