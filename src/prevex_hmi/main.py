@@ -60,6 +60,9 @@ def main() -> int:
         else:
             QMessageBox.critical(None,"Configuration error",f"Could not load {settings_path}\n{error}\nThe existing file was preserved.")
         return 2
+    if args.smoke_test and settings['mode']!='simulation':
+        print('FAIL: automated smoke data directory must contain simulation settings')
+        return 2
     grant=None
     if args.read_only_com4 or args.controller_com4_bench:
         from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant,controller_bench_settings
@@ -69,6 +72,19 @@ def main() -> int:
     window.show()
     errors=[]
     if args.smoke_test:
+        export_results=[];hidden_samples=[]
+        def start_recording():
+            window.open_trend();window.recording_worker.request('start')
+        def hide_trend():
+            hidden_samples.append(window.recording_status.get('samples',0));window.trend_window.close()
+        def export_recording():
+            from prevex_hmi.logging_db.recordings import export_csv
+            session=window.recording_status.get('session')
+            if not session:errors.append('Recording session did not start');return
+            window.record_job(lambda:export_csv(window.trend_window.paths,data_path/'recording.csv',session=session),export_results.append,errors.append)
+        QTimer.singleShot(750,start_recording)
+        QTimer.singleShot(3000,hide_trend)
+        QTimer.singleShot(6500,export_recording)
         heartbeat_times=[]
         heartbeat=QTimer(window);heartbeat.setInterval(100)
         heartbeat.timeout.connect(lambda:heartbeat_times.append(time.monotonic()));heartbeat.start()
@@ -92,12 +108,17 @@ def main() -> int:
                 active_updates=window.update_count-diagnostic_updates[0] if diagnostic_updates else 0
                 if gap > 1.5 or active_updates < 8 or window.traffic.rowCount()!=100:
                     raise RuntimeError(f"Diagnostics responsiveness failed: heartbeat gap={gap:.2f}s, updates={active_updates}, rows={window.traffic.rowCount()}")
+                if not window.trend_window.isWindow() or not hidden_samples or window.recording_status.get('samples',0)<=hidden_samples[0] or not export_results or export_results[0]<1:
+                    raise RuntimeError('Detached Trend / hidden recording / asynchronous CSV export failed')
+                if window.trend_window.live_plot.zero_line.value()!=0:raise RuntimeError('Trend zero reference missing')
                 for index,name in [(0,"overview"),(0,"detail"),(1,"trends"),(4,"diagnostics")]:
                     window.navigation.setCurrentRow(index)
+                    if name=='trends':window.open_trend()
                     app.processEvents()
-                    if not window.grab().save(str(data_path/f"{name}.png")):
+                    target=window.trend_window if name=='trends' else window
+                    if not target.grab().save(str(data_path/f"{name}.png")):
                         raise RuntimeError("Window rendering failed")
-                (data_path/"smoke-report.json").write_text(json.dumps({"result":"PASS","mode":"simulation","updates":window.update_count,"devices":1,"detected_family":window.identity.get("family"),"gauge_parameters":len(window.readouts),"diagnostics_updates":active_updates,"maximum_heartbeat_gap_ms":round(gap*1000,1),"physical_access":False},indent=2),encoding="utf-8")
+                (data_path/"smoke-report.json").write_text(json.dumps({"result":"PASS","mode":"simulation","updates":window.update_count,"devices":1,"detected_family":window.identity.get("family"),"gauge_parameters":len(window.readouts),"diagnostics_updates":active_updates,"maximum_heartbeat_gap_ms":round(gap*1000,1),"physical_access":False,"trend_detached":True,"hidden_recording":True,"recorded_frames":window.recording_status['samples'],"exported_frames":export_results[0]},indent=2),encoding="utf-8")
                 print(f"PASS: single-analyzer GUI, updates={window.update_count}, detected={window.identity.get('family')}")
             except Exception as error:
                 errors.append(str(error))

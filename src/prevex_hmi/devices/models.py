@@ -84,6 +84,7 @@ class DeviceState:
     failures: int = 0
     identification: str = ""
     register_times: dict[int, float] = field(default_factory=dict)
+    register_timestamps: dict[int, str] = field(default_factory=dict)
 
     def snapshot(self, now: float) -> dict:
         age = None if self.last_success is None else max(0, now - self.last_success)
@@ -94,6 +95,7 @@ class DeviceState:
             "age": age, "last_success": self.last_success_utc, "error": self.error,
             "identification": self.identification,
             "register_ages": {n:max(0,now-t) for n,t in self.register_times.items()},
+            "register_timestamps": self.register_timestamps.copy(),
         }
 
 

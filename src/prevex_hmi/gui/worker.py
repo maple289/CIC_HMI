@@ -14,7 +14,7 @@ from prevex_hmi.devices.identification import detect, resolve_profile
 from prevex_hmi.devices.configuration import default_devices
 from prevex_hmi.devices.models import DeviceConfig, utc_now
 from prevex_hmi.gui.presentation import measurement,uses_controller_fault_display
-from prevex_hmi.logging_db.store import Historian
+from prevex_hmi.logging_db.store import Historian,MonitoringHistorian
 from prevex_hmi.security.users import UserStore
 from prevex_hmi.profiles import PROFILES, profile_for,profile_name
 from prevex_hmi.simulator.bus import SimulatedBus
@@ -33,6 +33,7 @@ class MonitoringWorker(QThread):
     command_result=Signal(str)
     parameter_result=Signal(str)
     failed=Signal(str)
+    storage_warning=Signal(str)
 
     def __init__(self,settings:dict,data_path:Path,parent=None,*,test_only=False,hardware_grant=None):
         super().__init__(parent)
@@ -101,7 +102,7 @@ class MonitoringWorker(QThread):
             scheduler=PollingScheduler(bus,[effective])
             state=scheduler.states[effective.id]
             state.identification=identity.text
-            database=Historian(self.data_path/('hardware.sqlite3' if physical else 'simulation.sqlite3'))
+            database=MonitoringHistorian(self.data_path/('hardware.sqlite3' if physical else 'simulation.sqlite3'),self.storage_warning.emit,factory=Historian)
             database.retain()
             users=UserStore(self.data_path/'users.sqlite3')
             command_class=CommandController
@@ -130,6 +131,7 @@ class MonitoringWorker(QThread):
                             number=message[1]
                             raw=bus.read(profile_for(effective),effective.addressing,number,1)[number]
                             state.raw[number]=raw;state.register_times[number]=time.monotonic()
+                            state.register_timestamps[number]=utc_now()
                             self.inspection_ready.emit(f'Register {number}: {raw} / 0x{raw:04X}')
                         elif kind == 'reading':
                             target=simulation.devices[effective.addressing.packet_address]
@@ -140,6 +142,7 @@ class MonitoringWorker(QThread):
                             snapshot=state.snapshot(time.monotonic())
                             updates=adjustments.execute(message[1],message[2],message[3],message[4],confirmed=message[5],current=snapshot['quality']=='GOOD')
                             state.raw.update(updates);state.register_times.update({n:time.monotonic() for n in updates})
+                            state.register_timestamps.update({n:utc_now() for n in updates})
                             self.parameter_result.emit(controller.result)
                         elif kind == 'command':
                             snapshot=state.snapshot(time.monotonic())
@@ -152,6 +155,7 @@ class MonitoringWorker(QThread):
                             if receipt.get('lock_register')==60 and 'lock_readback' in receipt:
                                 # Publish the actual FC03 verification, never an optimistic toggle.
                                 state.raw[60]=receipt['lock_readback'];state.register_times[60]=time.monotonic()
+                                state.register_timestamps[60]=utc_now()
                             self.command_result.emit(controller.result)
                     except (OSError,ValueError,PermissionError,KeyError) as error: self.command_result.emit(str(error))
                 scheduler.run_once()
@@ -169,7 +173,10 @@ class MonitoringWorker(QThread):
                     snapshot['source']='hardware' if physical else 'simulation'
                     snapshot['instrument_quality']='INSTRUMENT_FAULT' if snapshot['raw'].get(2) not in (None,0,1,2,4,5,6,7,11,12) else 'GOOD'
                     snapshot['reading_source']='controller_lcd_fault' if uses_controller_fault_display(snapshot) else 'process_register'
-                    controller.observe(snapshot)
+                    try:controller.observe(snapshot)
+                    except PermissionError as error:
+                        controller.pending=None;controller.ambiguous=True;self.storage_warning.emit(str(error))
+                    if database.error:controller.ambiguous=True
                     status=snapshot['raw'].get(2)
                     event=(snapshot['quality'],status)
                     if event != last_event:
@@ -197,7 +204,8 @@ class MonitoringWorker(QThread):
         finally:
             if controller and controller.pending:
                 pending=controller.pending
-                controller.record(pending.actor,pending.code,'UNKNOWN','Session disconnected during command; never retried')
+                try:controller.record(pending.actor,pending.code,'UNKNOWN','Session disconnected during command; never retried')
+                except PermissionError as error:self.storage_warning.emit(str(error))
             if database: database.close()
             if users: users.close()
             if bus: bus.close()

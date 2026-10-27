@@ -9,7 +9,7 @@ class Historian:
     """Owned by the polling worker; no SQLite connection crosses threads."""
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path)
+        self.db = sqlite3.connect(path,timeout=.25)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS measurements (
@@ -61,3 +61,43 @@ class Historian:
     def close(self) -> None:
         self.db.commit()
         self.db.close()
+
+
+class MonitoringHistorian:
+    """A storage fault must not take the serial monitoring loop down.
+
+    Audit-dependent commands fail closed. Logging stays stopped after an error
+    until reconnect; no command or measurement write is retried implicitly.
+    """
+    def __init__(self,path,on_error,*,factory=Historian):
+        self.store=None;self.error='';self.on_error=on_error
+        try:self.store=factory(path)
+        except (sqlite3.Error,OSError) as error:self.disable(error)
+
+    def disable(self,error):
+        self.error=str(error);self.on_error('History storage unavailable: '+self.error)
+
+    def call(self,name,*args,default=None):
+        if self.error or self.store is None:return default
+        try:return getattr(self.store,name)(*args)
+        except (sqlite3.Error,OSError) as error:
+            try:self.store.db.rollback()
+            except sqlite3.Error:pass
+            self.disable(error);return default
+
+    def measurement(self,*args):self.call('measurement',*args)
+    def event(self,*args):self.call('event',*args)
+    def commit(self):self.call('commit')
+    def retain(self):self.call('retain')
+    def history(self,*args):return self.call('history',*args,default=[])
+    def events(self):return self.call('events',default=[])
+    def audit_rows(self):return self.call('audit_rows',default=[])
+    def command_audit(self,*args):
+        self.call('command_audit',*args)
+        if self.error:raise PermissionError('Command audit unavailable; reconnect after resolving storage: '+self.error)
+    def close(self):
+        if self.store:
+            try:
+                if not self.error:self.store.commit()
+            except (sqlite3.Error,OSError) as error:self.disable(error)
+            finally:self.store.db.close()

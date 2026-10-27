@@ -76,6 +76,13 @@ class MainWindow(QMainWindow):
         self.last_sample=None;self.update_count=0;self.closing=False;self.next_action=None
         self.last_receipt_key=None;self.active_command=None
         self.command_dispatching=False;self.session='';self.users=UserStore(data_path/'users.sqlite3')
+        from prevex_hmi.logging_db.recorder import RecordingWorker
+        self.recording_status=dict(state='Stopped',session=None,error='',elapsed=0,samples=0,armed=False)
+        self.record_jobs=[]
+        self.recording_worker=RecordingWorker(data_path,settings.get('recording'),self)
+        self.recording_worker.status_ready.connect(self.recording_update)
+        self.recording_worker.failed.connect(lambda text:self.statusBar().showMessage(text))
+        self.recording_worker.finished.connect(lambda:self.close() if self.closing else None)
         self.setWindowTitle('PREVEX HMI | Single analyzer');self.resize(1540,1020);self.setMinimumSize(1100,780)
         central=QWidget();root=QVBoxLayout(central);root.setContentsMargins(18,12,18,12)
         header=QHBoxLayout();brand=QLabel('PREVEX / HMI');brand.setObjectName('brand');header.addWidget(brand)
@@ -89,6 +96,7 @@ class MainWindow(QMainWindow):
         self.connect_button=QPushButton('Connect');self.connect_button.clicked.connect(lambda:self.begin('connect'));toolbar.addWidget(self.connect_button)
         self.disconnect_button=QPushButton('Disconnect');self.disconnect_button.clicked.connect(lambda:self.begin('disconnect'));toolbar.addWidget(self.disconnect_button)
         self.test_button=QPushButton('Test Connection');self.test_button.clicked.connect(lambda:self.begin('test'));toolbar.addWidget(self.test_button)
+        self.open_trend_button=QPushButton('Open Trend');self.open_trend_button.clicked.connect(self.open_trend);toolbar.addWidget(self.open_trend_button)
         self.bench_button=QPushButton('Connect SNR671 / COM4');self.bench_button.clicked.connect(self.start_controller_bench);toolbar.addWidget(self.bench_button)
         self.bench_button.setToolTip('Previously authorized controller bench: COM4, 9600, packet address1. Monitoring plus confirmed Operator/Admin Acknowledge/Reset only. No calibration or other physical writes.')
         self.selection_label=QLabel();toolbar.addWidget(self.selection_label,1);root.addLayout(toolbar)
@@ -108,6 +116,7 @@ class MainWindow(QMainWindow):
         self.connection_watch.timeout.connect(self.refresh_connection_status);self.connection_watch.start()
         self.account_watch=QTimer(self);self.account_watch.setInterval(1000);self.account_watch.timeout.connect(self.update_command_buttons);self.account_watch.start()
         self.statusBar().showMessage(f'Data: {data_path} | No safety function depends on the HMI')
+        self.recording_worker.start()
         if start_worker:self.start_worker()
 
     @property
@@ -171,9 +180,7 @@ class MainWindow(QMainWindow):
             label=QLabel(title);label.setObjectName('heading');readings.addWidget(label)
             container=CompactReadouts();readings.addWidget(container);self.readout_groups[title]=container
         self.readout_container=self.readout_groups['Gauges'];self.readout_grid=self.readout_container.grid
-        self.overview_plot=self.make_plot();self.overview_plot.setMinimumHeight(180);self.overview_curve=self.overview_plot.plot(pen=pg.mkPen('#45cbb0',width=2),connect='finite');readings.addWidget(self.overview_plot)
-        self.overview_held_curve=self.overview_plot.plot(pen=pg.mkPen('#e7b55e',width=2,style=Qt.DashLine),connect='finite')
-        self.overview_hold_note=QLabel('Solid: measured | Dashed amber: held while LCD is nonnumeric (display only)');self.overview_hold_note.setWordWrap(True);readings.addWidget(self.overview_hold_note)
+        readings.addStretch()
         scroll.setWidget(content);left_layout.addWidget(scroll,1);body.addWidget(left,1)
         commands=QFrame();commands.setObjectName('panel');commands.setFixedWidth(220);column=QVBoxLayout(commands);column.setSpacing(6);column.setAlignment(Qt.AlignTop)
         label=QLabel('Commands');label.setObjectName('heading');column.addWidget(label)
@@ -228,16 +235,24 @@ class MainWindow(QMainWindow):
         self.range_help.setText('LEL gray: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nW / D: live alarm thresholds [5 / 6]' if family=='LEL' else 'Blue: negative section\nBold marker: zero\n'+('Low / High: BTU setpoints [5 / 6]' if family=='BTU' else 'Warning / Danger: FID setpoints [5 / 6]'))
 
     def make_plot(self):
-        plot=pg.PlotWidget(axisItems={'bottom':pg.DateAxisItem()},background='#111c2b');plot.showGrid(x=True,y=True,alpha=.15);plot.setLabel('bottom','Time (local)');return plot
+        plot=pg.PlotWidget(axisItems={'bottom':pg.DateAxisItem()},background='#111c2b');plot.showGrid(x=True,y=True,alpha=.15);plot.setLabel('bottom','Time (local)')
+        plot.zero_line=pg.InfiniteLine(pos=0,angle=0,pen=pg.mkPen('#efb753',width=2),label='0',labelOpts={'position':.95,'color':'#efb753'})
+        plot.addItem(plot.zero_line);return plot
 
     def build_trends(self):
-        layout=self.page('Live trends','Signed engineering values. Mouse-wheel zoom and drag to pan; communication gaps break the line.')
-        self.trend_plot=self.make_plot();self.trend_curve=self.trend_plot.plot(pen=pg.mkPen('#45cbb0',width=2),connect='finite');layout.addWidget(self.trend_plot)
-        self.trend_held_curve=self.trend_plot.plot(pen=pg.mkPen('#e7b55e',width=2,style=Qt.DashLine),connect='finite')
-        self.trend_hold_note=QLabel('Solid: measured | Dashed amber: held while LCD is nonnumeric (display only)');self.trend_hold_note.setWordWrap(True);layout.addWidget(self.trend_hold_note)
+        from prevex_hmi.gui.trend_window import TrendWindow
+        self.trend_window=TrendWindow(self)
+        self.trend_plot=self.overview_plot=self.trend_window.live_plot
+        self.trend_curve=self.overview_curve=self.trend_window.live_curve
+        self.trend_held_curve=self.overview_held_curve=self.trend_window.held_curve
+        self.trend_hold_note=self.overview_hold_note=self.trend_window.hold_note
+        layout=self.page('Trend','Live and recorded trends open in a separate movable window. Recording continues when it is closed.')
+        button=QPushButton('Open Trend');button.clicked.connect(self.open_trend);layout.addWidget(button);layout.addStretch()
 
     def build_history(self):
-        layout=self.page('History / CSV','Current instrument stream. Up to5000 primary records per query; UTC timestamps retained in CSV.')
+        placeholder=self.page('History / CSV','Historical trends and CSV export are available in the independent Trend window.')
+        button=QPushButton('Open Trend — History');button.clicked.connect(lambda:self.open_trend(history=True));placeholder.addWidget(button);placeholder.addStretch()
+        page=QWidget();layout=QVBoxLayout(page);self.trend_window.tabs.addTab(page,'Legacy monitoring history')
         row=QHBoxLayout();self.history_hours=QComboBox()
         for text,hours in [('Last hour',1),('Last day',24),('Last7 days',168),('Last90 days',2160)]:self.history_hours.addItem(text,hours)
         row.addWidget(self.history_hours);load=QPushButton('Load history');load.clicked.connect(self.load_history);row.addWidget(load)
@@ -332,6 +347,7 @@ class MainWindow(QMainWindow):
         for widget in self.simulation_controls:widget.setEnabled(self.settings['mode']=='simulation')
 
     def invalidate(self,reason='Disconnected'):
+        self.recording_worker.observe(None)
         self.snapshot=None;self.identity={};self.series.clear();self.last_sample=None;self.history_rows=[];self.command_dispatching=False
         self.display_trend.clear();self.trend_scope=None;self.blank_started_wall=None;self.readout_retained=False
         self.gauge.set_snapshot(None);self.indicators.update_snapshot(None)
@@ -393,6 +409,7 @@ class MainWindow(QMainWindow):
         self.worker.parameter_result.connect(lambda text:self.parameter_feedback(text) if current() else None)
         self.worker.inspection_ready.connect(lambda text:self.inspection_result.setText(text) if current() else None);self.worker.command_result.connect(lambda text:self.command_feedback(text) if current() else None)
         self.worker.failed.connect(self.worker_error);self.worker.finished.connect(self.worker_finished)
+        self.worker.storage_warning.connect(lambda text:self.statusBar().showMessage(text))
         self.worker.start();self.set_connection_buttons(False)
 
     def worker_finished(self):
@@ -446,6 +463,7 @@ class MainWindow(QMainWindow):
 
     def update_data(self,snapshot,diagnostics):
         if self.next_action or self.closing:return
+        self.recording_worker.observe({**snapshot,'identity':self.identity.copy()})
         self.update_count+=1;self.snapshot=snapshot;self.diagnostics=diagnostics
         self.snapshot_received_at=time.monotonic()
         config=DeviceConfig(**snapshot['config']);family=config.family
@@ -737,6 +755,26 @@ class MainWindow(QMainWindow):
 
     def load_history(self):self.request('history',self.history_hours.currentData())
 
+    def open_trend(self,checked=False,*,history=False):
+        self.trend_window.open()
+        if history:self.trend_window.tabs.setCurrentIndex(1)
+
+    def recording_update(self,status):
+        if self.closing:return
+        self.recording_status=status;self.trend_window.update_status(status)
+        self.open_trend_button.setToolTip(f"Recording: {status['state']}; closing Trend does not stop it")
+
+    def record_job(self,operation,completed,failed=None):
+        from prevex_hmi.logging_db.recorder import RecordingJob
+        if self.closing:return
+        job=RecordingJob(operation,self);self.record_jobs.append(job)
+        job.completed.connect(lambda result:completed(result) if not self.closing else None)
+        job.failed.connect(lambda error:(failed(error) if failed else self.trend_window.notice.setText(error)) if not self.closing else None)
+        def finished():
+            self.record_jobs.remove(job);job.deleteLater()
+            if self.closing:self.close()
+        job.finished.connect(finished);job.start()
+
     def update_history(self,rows):
         self.history_rows=rows;fill_table(self.history_table,rows)
         self.history_curve.setData([datetime.fromisoformat(r[0]).timestamp() for r in rows],[r[1] if r[1] is not None else float('nan') for r in rows])
@@ -772,6 +810,7 @@ class MainWindow(QMainWindow):
         QListWidget::item {{padding:14px 8px;}} QListWidget::item:selected {{background:#245a69;color:white;}}
         QHeaderView::section {{background:{panel};color:{text};padding:7px;border:0;}} QScrollArea {{border:0;}}
         """)
+        if hasattr(self,'trend_window'):self.trend_window.setStyleSheet(self.styleSheet())
 
     def toggle_theme(self):
         self.settings['theme']='light' if self.settings.get('theme','dark')=='dark' else 'dark'
@@ -782,7 +821,11 @@ class MainWindow(QMainWindow):
     def closeEvent(self,event):
         self.closing=True;self.next_action=None
         self.account_watch.stop();self.connection_watch.stop()
+        self.trend_window.close();self.recording_worker.stop()
+        if self.recording_worker.isRunning():self.recording_worker.wait(1000)
         if self.worker and self.worker.isRunning():
             self.closing=True;self.worker.stop();self.setEnabled(False);event.ignore()
+        elif self.recording_worker.isRunning() or any(job.isRunning() for job in self.record_jobs):
+            self.setEnabled(False);event.ignore()
         else:
             self.users.close();event.accept()

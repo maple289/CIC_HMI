@@ -61,7 +61,9 @@ class PollingScheduler:
         try:
             values = self.bus.read(profile_for(config), config.addressing, job.start, job.count)
             state.raw.update(values)
-            state.register_times.update({n:self.clock() for n in values})
+            response_time=self.clock();response_timestamp=utc_now()
+            state.register_times.update({n:response_time for n in values})
+            state.register_timestamps.update({n:response_timestamp for n in values})
             state.failures = 0
             self.backoff_until.pop(config.id, None)
             if job.start == 1:

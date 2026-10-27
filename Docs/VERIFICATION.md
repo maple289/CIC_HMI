@@ -1,3 +1,13 @@
+# Independent Trend and recording verification — 2026-10-26
+
+New recording reuses existing manufacturer profile definitions and conversion functions. GAUGES selection is separate from the main screen's Calibration/Alarm card additions;700 retains its independent map. No register permissions, physical controls or hardware compatibility assumptions were expanded, and no real port/command was used.
+
+Full release regression: **943 tests passed in257.08s**, followed by **32 focused recording/window checks passed in51.73s** after the final metadata/disarm refinements. Source smoke passed (46 updates,11 recorded frames,6 exported frames,max GUI heartbeat gap125ms). Final rebuilt executable smoke passed (exit0,44 updates,41 Diagnostics updates,10 recorded frames while Trend was hidden,6 exported frames,max GUI heartbeat gap110ms,physical_access=false). Source compilation, local dependency consistency, generated inventory and whitespace checks passed. All automated analyzer I/O was simulated/faked.
+
+Native Windows testing on the one connected DELL S3221QS passed detached non-modal movement/resizing, independent minimize/maximize, same-window reopen/geometry, continued recording while hidden, negative live values and clean main shutdown. A physical second-monitor drag cannot be validated with one connected monitor and remains an acceptance check. Source and packaged automated tests use simulation/fake I/O and do not establish hardware compatibility.
+
+Excel's Text Import Wizard opened the synthetic UTF-8 CSV and recognized65001 encoding. Completing delimiter selection and native cell-level negative/blank verification remains pending because the automation bridge lost foreground/owned-dialog targeting. Parser tests independently verify comma-delimited BOM/CRLF headers, correct units/metadata, negative numbers, blank fields, ranges and exports beyond5000 rows. No existing Excel workbook was modified. See Docs/TREND_RECORDING.md for import instructions, sparse timestamp semantics, historical display bounds, retained legacy history and failure behavior.
+
 # Grouped-card and parameter-editor scope — 2026-10-26
 
 Reviewed/rendered670 SERIES Rev Q printed90/92 and reviewed printed45. CAL TIME28 is1–4 whole minutes. SPAN °C56 is105–140 standard,68–140 P type,50–70 D/K. WARNING5 is5–60%LFL and must remain below DANGER6 (10–60). LATCHES17 exposes only Warning/Danger/Fault/Horn bits, preserving all other bits. The manual's FMR DANGER-latching requirement is shown in the editor. FAILSAFE18 explicitly prohibits Modbus writes and remains read-only. CAL RDNG7 is displayed, without expanding editable scope.

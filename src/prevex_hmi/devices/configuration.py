@@ -43,6 +43,9 @@ def validate_settings(settings):
         raise ValueError("Invalid analyzer type")
     if settings.get("simulated_lel_revision","legacy") not in ("legacy","700"):
         raise ValueError("Invalid simulated LEL revision")
+    recording=settings.get('recording',{})
+    if not isinstance(recording,dict) or recording.get('mode','manual') not in ('manual','automatic') or type(recording.get('interval',1)) is not int or recording.get('interval',1) not in (1,2,5,10) or type(recording.get('main_only',False)) is not bool:
+        raise ValueError('Invalid recording preferences')
     if len(settings["devices"]) != 1:
         raise ValueError("Exactly one active analyzer is supported")
     validate_devices([DeviceConfig(**row) for row in settings["devices"]])
