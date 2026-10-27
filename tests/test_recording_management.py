@@ -173,7 +173,7 @@ def test_management_window_admin_access_confirmation_and_monitoring(app,tmp_path
         until(app,lambda:w.snapshot is not None);w.trend_window.manage_data();dialog=w.trend_window.management_window
         until(app,lambda:not dialog.busy);assert not dialog.delete_button.isEnabled() and not dialog.apply.isEnabled()
         w.users.create_user('admin','password8');token=w.users.authenticate('admin','password8');w.session=token;dialog.update_access()
-        assert dialog.delete_button.isEnabled() and dialog.apply.isEnabled()
+        assert not dialog.delete_button.isEnabled() and dialog.apply.isEnabled()  # no selected recording yet
         store=RecordingStore(tmp_path/'simulation.sqlite3');sid,params=store.start(sample(),1,False,'manual','2020-01-01T00:00:00+00:00',selected=[1]);store.append(sid,sample(),params,{},stamp());store.end(sid,'Stopped','2020-01-01T01:00:00+00:00');store.close()
         dialog.refresh();until(app,lambda:not dialog.busy);assert dialog.table.rowCount()==1
         dialog.table.selectRow(0);monkeypatch.setattr(QMessageBox,'question',lambda *args:QMessageBox.No)

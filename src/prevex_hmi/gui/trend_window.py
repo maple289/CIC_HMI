@@ -63,7 +63,7 @@ class TrendWindow(QMainWindow):
         from .recording_management import RecordingManagementWindow
         if not hasattr(self,'management_window'):self.management_window=RecordingManagementWindow(self)
         else:self.management_window.refresh()
-        self.management_window.setStyleSheet(self.owner.styleSheet());self.management_window.show();self.management_window.raise_();self.management_window.activateWindow()
+        self.management_window.apply_theme();self.management_window.show();self.management_window.raise_();self.management_window.activateWindow()
 
     def build_sessions(self):
         page=QWidget();box=QVBoxLayout(page);row=QHBoxLayout()

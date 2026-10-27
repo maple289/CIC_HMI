@@ -842,6 +842,7 @@ class MainWindow(QMainWindow):
         QHeaderView::section {{background:{panel};color:{text};padding:7px;border:0;}} QScrollArea {{border:0;}}
         """)
         if hasattr(self,'trend_window'):self.trend_window.setStyleSheet(self.styleSheet())
+        if hasattr(self,'trend_window') and hasattr(self.trend_window,'management_window'):self.trend_window.management_window.apply_theme()
 
     def toggle_theme(self):
         self.settings['theme']='light' if self.settings.get('theme','dark')=='dark' else 'dark'
