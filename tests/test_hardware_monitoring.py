@@ -114,7 +114,7 @@ def test_hardware_gui_replays_real_signals_and_blocks_injection_and_commands(tmp
     monkeypatch.setattr('prevex_hmi.communication.serial_transport.ReadOnlySerialTransport',factory)
     monkeypatch.setattr('prevex_hmi.communication.serial_transport.ControllerBenchTransport',factory)
     settings=settings_for(tmp_path/'settings.json')
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,hardware_grant=ReadOnlyControllerGrant(operator_commands=operator_commands));w.show()
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,hardware_grant=ReadOnlyControllerGrant(operator_commands=operator_commands),start_worker=True);w.show()
     def wait(condition):
         deadline=time.monotonic()+8
         while time.monotonic()<deadline:

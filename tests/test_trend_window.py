@@ -20,7 +20,7 @@ def window(app,tmp_path,monkeypatch):
     monkeypatch.setattr(ReadOnlySerialTransport,'__init__',forbidden)
     settings=load_settings(tmp_path/'settings.json')
     settings['devices'][0]['interval']=.25
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path);w.show()
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=True);w.show()
     until(app,lambda:w.snapshot is not None and len(w.snapshot['register_timestamps'])>10)
     yield w
     w.close();until(app,lambda:not w.worker.isRunning() and not w.recording_worker.isRunning() and not w.record_jobs)

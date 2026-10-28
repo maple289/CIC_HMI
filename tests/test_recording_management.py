@@ -168,7 +168,7 @@ def test_failed_start_releases_maintenance_lease(tmp_path):
 
 def test_management_window_admin_access_confirmation_and_monitoring(app,tmp_path,monkeypatch):
     settings=load_settings(tmp_path/'settings.json');settings['devices'][0]['interval']=.25
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path);w.show()
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=True);w.show()
     try:
         until(app,lambda:w.snapshot is not None);w.trend_window.manage_data();dialog=w.trend_window.management_window
         until(app,lambda:not dialog.busy);assert not dialog.delete_button.isEnabled() and not dialog.apply.isEnabled()
@@ -222,7 +222,7 @@ def test_scheduled_retention_runs_after_restart_without_stopping_monitoring(app,
     store=RecordingStore(tmp_path/'simulation.sqlite3');sid,params=store.start(sample(),1,False,'manual','2020-01-01T00:00:00+00:00',selected=[1]);store.append(sid,sample(),params,{},stamp());store.end(sid,'Stopped','2020-01-01T01:00:00+00:00');store.close()
     s.set_policy(token,True,30);u.close()
     settings=load_settings(tmp_path/'settings.json');settings['devices'][0]['interval']=.25
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=True)
     try:
         until(app,lambda:w.snapshot is not None)
         # Retry normally deferred history transactions without changing policy.
@@ -238,7 +238,7 @@ def test_scheduled_retention_runs_after_restart_without_stopping_monitoring(app,
 
 def test_pending_controller_actions_defer_cleanup_and_maintenance_rejects_new_actions(app,tmp_path):
     settings=load_settings(tmp_path/'settings.json');settings['devices'][0]['interval']=.25
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=True)
     try:
         until(app,lambda:w.snapshot is not None and w.snapshot['control']['verified'])
         w.users.create_user('admin','password8');token=w.users.authenticate('admin','password8');gate=w.recording_management.gate

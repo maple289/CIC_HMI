@@ -68,12 +68,15 @@ def main() -> int:
         from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant,controller_bench_settings
         grant=ReadOnlyControllerGrant(operator_commands=args.controller_com4_bench)
         settings=controller_bench_settings(settings)
-    window=MainWindow(settings,settings_path,data_path,hardware_grant=grant)
+    window=MainWindow(settings,settings_path,data_path,start_worker=bool(args.smoke_test or grant),hardware_grant=grant)
     window.show()
     errors=[]
     if args.smoke_test:
         export_results=[];hidden_samples=[]
         def start_recording():
+            if window.closing:return
+            if not window.profile_current or not window.connection_established:
+                QTimer.singleShot(100,start_recording);return
             window.open_trend()
             window.trend_window.recording_parameters.select_numbers([1,9])
             window.trend_window.start_button.click()

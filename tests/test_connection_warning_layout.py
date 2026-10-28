@@ -151,7 +151,7 @@ def test_focused_test_view_returns_without_stale_live_widgets(app,tmp_path,actio
             wait(app,lambda:w.snapshot is not None and w.snapshot['quality']=='GOOD')
             assert w.gauge.isVisibleTo(w) and w.disconnect_button.isVisible()
         else:
-            assert w.snapshot is None and w.pages.currentIndex()==6
+            assert w.snapshot is None and w.pages.currentWidget() is w.connection_screen
             assert not w.worker.isRunning()
     finally:
         w.close()
@@ -196,6 +196,8 @@ def test_compact_cards_reflow_without_clipping_or_overlap(app,tmp_path,kind):
     bus=BusEngine(sim,sleep=lambda _:None)
     snapshot=dict(config=asdict(config),raw=sim.devices[config.addressing.packet_address].raw.copy(),quality='GOOD',register_ages={},age=0,last_success='2026-10-24T12:00:00+00:00',error='',control={})
     try:
+        from test_monitoring import identify
+        identify(w,config)
         w.update_data(snapshot,bus.diagnostics());w.show();app.processEvents()
         container=w.readout_container;counts=[]
         for width in (1540,1100,1900,1100):

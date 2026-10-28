@@ -34,6 +34,7 @@ transport=SimulatedBus([config]);bus=BusEngine(transport)
 device=transport.devices[1];device.update(time.monotonic())
 state=DeviceState(config,raw=device.raw.copy(),online=True,last_success=time.monotonic(),last_success_utc=utc_now())
 data=state.snapshot(time.monotonic());diagnostics=bus.diagnostics()
+w.identification_result(dict(config=data['config'],family=config.family,model=config.assembly,version=config.version,verified=True,communication_ok=True,loaded_profile='LEL 700 Series'))
 updates=[];beats=[]
 def refresh():
     frame=len(updates)

@@ -22,7 +22,9 @@ def test_guest_viewer_operator_admin_and_revoked_sessions(app,tmp_path,monkeypat
     try:
         # This stand-in never opens a transport or handles a request.
         w.worker=SimpleNamespace(isRunning=lambda:True,test_only=False)
-        w.settings['mode']='hardware';w.update_data(snapshot,bus.diagnostics())
+        w.settings['mode']='hardware'
+        from test_monitoring import identify
+        identify(w,config);w.update_data(snapshot,bus.diagnostics())
         assert not any(button.isEnabled() for button in w.parameter_menus.values())
         w.users.create_user('admin','test-password');admin=w.users.authenticate('admin','test-password')
         w.users.create_user('operator','test-password','Operator',session=admin)

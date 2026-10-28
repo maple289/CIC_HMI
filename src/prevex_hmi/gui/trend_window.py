@@ -108,14 +108,17 @@ class TrendWindow(QMainWindow):
 
     def update_controls(self):
         locked=self.controls_locked();self.recording_parameters.set_locked(locked)
+        connected=bool(self.owner.profile_current and getattr(self.owner,'connection_established',False))
+        self.recording_parameters.setVisible(connected)
         self.interval.setEnabled(not locked);self.mode.setEnabled(not locked)
-        self.start_button.setEnabled(not locked and bool(self.recording_parameters.selected_numbers()))
+        self.start_button.setEnabled(connected and not locked and bool(self.recording_parameters.selected_numbers()))
         self.stop_button.setEnabled(bool(self.owner.recording_status.get('session') or self.owner.recording_status.get('armed')) and not self.stop_pending)
 
     def set_analyzer(self,config):
         self.recording_parameters.set_analyzer(config,self.owner.settings.get('recording',{}).get('parameters_by_profile',{}));self.update_controls()
 
     def start_recording(self):
+        if not self.owner.profile_current or not getattr(self.owner,'connection_established',False):return
         if self.controls_locked() or not self.recording_parameters.selected_numbers():return
         options=self.current_options();self.pending_options=options;self.start_pending=True;self.update_controls()
         self.owner.recording_worker.request('start_selection',options['mode'],options['interval'],options['parameters_by_profile'],self.recording_parameters.profile)

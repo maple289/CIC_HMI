@@ -223,6 +223,7 @@ def test_revoked_session_disables_existing_operating_controls(app,tmp_path):
     config=library_config('LEL 670 Series')
     w.snapshot=dict(config=asdict(config),raw={2:0,60:0},quality='GOOD',control=dict(verified=True))
     w.worker=SimpleNamespace(isRunning=lambda:True,test_only=False)
+    w.profile_current=True;w.set_connection_status(True)
     try:
         w.update_command_buttons();assert w.command_buttons[0x300].isEnabled() and w.account_button.isEnabled()
         users.reset_password(admin,'operator',NEW);w.update_command_buttons()

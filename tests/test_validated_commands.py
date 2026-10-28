@@ -141,6 +141,7 @@ def test_command_buttons_follow_documented_profile_role_and_lock_state(tmp_path,
     w.users=SimpleNamespace(resolve=lambda _:('test',role[0]),close=lambda:None)
     w.worker=SimpleNamespace(isRunning=lambda:True,test_only=False)
     w.snapshot=dict(config=asdict(config),quality='GOOD',raw={2:0,60:0},control=dict(verified=True,pending=False,ambiguous=False,physical_commands=list(WORDS)))
+    w.profile_current=True;w.set_connection_status(True)
     try:
         w.update_command_buttons()
         assert {code for code,b in w.command_buttons.items() if b.isEnabled()}==WORDS

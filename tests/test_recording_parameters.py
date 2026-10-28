@@ -19,6 +19,8 @@ def test_parameter_checkboxes_follow_profile_and_default_to_main(app,tmp_path,pr
     settings=load_settings(tmp_path/'settings.json');config=library_config(profile);settings['devices']=[asdict(config)]
     w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False)
     try:
+        from test_monitoring import identify
+        identify(w,config);w.set_connection_status(True)
         group=w.trend_window.recording_parameters
         assert group.title()=='Recording Parameters' and group.profile==profile
         expected=recording_parameters(config)
@@ -38,6 +40,7 @@ def test_per_profile_selections_clear_all_and_relaunch(app,tmp_path):
     choices={'LEL 670 Series':[9,11],'LEL 700 Series':[],'BTU':[10,11,33],'FID':[1,12]}
     try:
         t=w.trend_window
+        w.profile_current=True;w.set_connection_status(True)
         for profile,numbers in choices.items():
             t.set_analyzer(library_config(profile));group=t.recording_parameters
             group.clear_all.click();assert not t.start_button.isEnabled()
@@ -47,6 +50,7 @@ def test_per_profile_selections_clear_all_and_relaunch(app,tmp_path):
     finally:w.close();app.processEvents()
     other=MainWindow(load_settings(path),path,tmp_path,start_worker=False)
     try:
+        other.profile_current=True;other.set_connection_status(True)
         for profile,numbers in choices.items():
             other.trend_window.set_analyzer(library_config(profile))
             assert set(other.trend_window.recording_parameters.selected_numbers())==set(numbers)
@@ -75,7 +79,8 @@ def test_select_before_start_no_dialogs_lock_until_stop_and_export_subset(app,wi
     assert not group.isEnabled() and not t.interval.isEnabled()
     t.stop_button.click();assert not group.isEnabled()
     until(app,lambda:w.recording_status['session'] is None and not t.stop_pending)
-    assert group.isEnabled() and t.interval.isEnabled() and t.start_button.isEnabled()
+    assert group.isEnabled() and t.interval.isEnabled() and not t.start_button.isEnabled()
+    assert not group.isVisible()  # Offline profiles cannot start a new recording.
     assert set(group.selected_numbers())=={9,11}
     destination=tmp_path/'chosen.csv'
     monkeypatch.setattr(QFileDialog,'getSaveFileName',lambda *args:(str(destination),'CSV (*.csv)'))

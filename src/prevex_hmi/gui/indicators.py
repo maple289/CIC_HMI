@@ -53,7 +53,7 @@ class IndicatorPanel(QFrame):
         if snapshot is None:
             self.summary.setText('COMMUNICATION: disconnected | STATUS [2]: unavailable')
             for label,text in self.labels.values():label.hide()
-            self.active_order=[];self.content.hide();return
+            self.active_order=[];self.content.hide();self.hide();return
         config=DeviceConfig(**snapshot['config']);family=config.family;profile=profile_for(config)
         if self.family!=(family,profile.revision):self.build(family,config)
         good=snapshot['quality']=='GOOD';raw=snapshot['raw'];ages=snapshot.get('register_ages',{});limit=max(5,config.interval*3);code=raw.get(2)
@@ -78,4 +78,5 @@ class IndicatorPanel(QFrame):
             if previous_priority is not None and priority!=previous_priority:self.row.addSpacing(8)
             self.row.addWidget(label);previous_priority=priority
         self.row.addStretch();self.content.setVisible(bool(active))
+        self.setVisible(bool(active))
         if any(priority==0 and (group,key) not in previous for priority,group,key,label in active):self.scroll.horizontalScrollBar().setValue(0)

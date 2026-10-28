@@ -35,6 +35,8 @@ def setup_window(tmp_path,name):
     settings.update(analyzer_selection=name,simulated_family=config.family,devices=[asdict(config)])
     w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False)
     sim=SimulatedBus([config]);bus=BusEngine(sim)
+    from test_monitoring import identify
+    identify(w,config)
     snap=dict(config=asdict(config),raw=sim.devices[config.address].raw.copy(),quality='GOOD',
               age=0,register_ages={},last_success='2026-10-25T12:00:00+00:00',error='')
     w.update_data(snap,bus.diagnostics());w.monitor_model.setText(f'{config.assembly} / firmware{config.version}')

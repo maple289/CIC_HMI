@@ -64,11 +64,12 @@ def fill_table(widget,rows):
 class MainWindow(QMainWindow):
     received=Signal()
 
-    def __init__(self,settings,settings_path:Path,data_path:Path,*,start_worker=True,hardware_grant=None):
+    def __init__(self,settings,settings_path:Path,data_path:Path,*,start_worker=False,hardware_grant=None):
         super().__init__()
         self.settings,self.settings_path,self.data_path=settings,settings_path,data_path
         self.hardware_grant=hardware_grant
         self.worker=None;self.snapshot=None;self.identity={};self.diagnostics={}
+        self.profile_current=False;self.link_state="disconnected";self.last_connected="";self.recording_identity={}
         self.test_in_progress=False;self.test_result_info=None;self.test_result_error='';self.connection_test_dialog=None
         self.test_view_active=False;self.return_page=0
         self.snapshot_received_at=0.0
@@ -95,13 +96,12 @@ class MainWindow(QMainWindow):
         theme=QPushButton('Switch theme');theme.clicked.connect(self.toggle_theme);header.addWidget(theme);root.addLayout(header)
         self.banner=QLabel();self.banner.setObjectName('banner');root.addWidget(self.banner)
         toolbar=QHBoxLayout()
-        self.choose_button=QPushButton('Choose Analyzer Type');self.choose_button.clicked.connect(self.choose_type);toolbar.addWidget(self.choose_button)
-        self.connect_button=QPushButton('Connect');self.connect_button.clicked.connect(lambda:self.begin('connect'));toolbar.addWidget(self.connect_button)
+        self.choose_button=QPushButton('Connection Settings');self.choose_button.clicked.connect(self.choose_type);toolbar.addWidget(self.choose_button)
+        self.connect_button=QPushButton('Connect to Analyzer');self.connect_button.clicked.connect(lambda:self.begin('connect'));toolbar.addWidget(self.connect_button)
         self.disconnect_button=QPushButton('Disconnect');self.disconnect_button.clicked.connect(lambda:self.begin('disconnect'));toolbar.addWidget(self.disconnect_button)
         self.test_button=QPushButton('Test Connection');self.test_button.clicked.connect(lambda:self.begin('test'));toolbar.addWidget(self.test_button)
         self.open_trend_button=QPushButton('Open Trend');self.open_trend_button.clicked.connect(self.open_trend);toolbar.addWidget(self.open_trend_button)
-        self.bench_button=QPushButton('Connect SNR671 / COM4');self.bench_button.clicked.connect(self.start_controller_bench);toolbar.addWidget(self.bench_button)
-        self.bench_button.setToolTip('Previously authorized controller bench: COM4, 9600, packet address1. Monitoring plus confirmed Operator/Admin Acknowledge/Reset only. No calibration or other physical writes.')
+        self.bench_button=self.connect_button  # Legacy API alias; no separate COM4 shortcut.
         self.selection_label=QLabel();toolbar.addWidget(self.selection_label,1);root.addLayout(toolbar)
         self.identity_label=QLabel('Instrument identification: not connected');self.identity_label.setWordWrap(True)
         self.warning=QLabel();self.warning.setObjectName('warning');self.warning.setWordWrap(True);self.warning.hide()
@@ -112,11 +112,18 @@ class MainWindow(QMainWindow):
         self.build_gauge();self.build_trends();self.build_history();self.build_events();self.build_diagnostics();self.build_audit();self.build_profile_settings()
         self.organize_work_areas()
         self.build_connection_test_page()
-        self.navigation.currentRowChanged.connect(lambda index:self.pages.setCurrentIndex((0,6,4)[index]) if 0<=index<3 else None);self.navigation.setCurrentRow(0)
+        from .connection_screen import ConnectionScreen
+        self.connection_screen=ConnectionScreen(self.settings);self.pages.addWidget(self.connection_screen)
+        self.preference_timer=QTimer(self);self.preference_timer.setSingleShot(True);self.preference_timer.timeout.connect(self.save_connection_inputs)
+        self.connection_screen.changed.connect(lambda:self.preference_timer.start(0))
+        self.connection_screen.connect_button.clicked.connect(lambda:self.connect_from_screen('connect'))
+        self.connection_screen.test_button.clicked.connect(lambda:self.connect_from_screen('test'))
+        self.connection_screen.settings_button.clicked.connect(self.choose_type)
+        self.navigation.currentRowChanged.connect(self.navigate);self.navigation.setCurrentRow(0)
         self.navigation.currentRowChanged.connect(lambda index:self.refresh_profile_settings() if index==1 else None)
         self.apply_theme();self.refresh_connection_labels();self.build_readouts(self.config.family)
         self.set_connection_status(False)
-        self.refresh_profile_settings()
+        self.refresh_profile_settings();self.refresh_connection_view()
         self.connection_watch=QTimer(self);self.connection_watch.setInterval(250)
         self.connection_watch.timeout.connect(self.refresh_connection_status);self.connection_watch.start()
         self.account_watch=QTimer(self);self.account_watch.setInterval(1000);self.account_watch.timeout.connect(self.update_command_buttons);self.account_watch.start()
@@ -128,6 +135,78 @@ class MainWindow(QMainWindow):
 
     @property
     def config(self):return DeviceConfig(**self.settings['devices'][0])
+
+    def navigate(self,index):
+        if self.test_view_active:return
+        if index==0:self.pages.setCurrentWidget(self.pages.widget(0) if self.profile_current and self.connection_established else self.connection_screen)
+        elif index==1:
+            self.pages.setCurrentWidget(self.pages.widget(6) if self.profile_current and self.connection_established else self.connection_screen)
+        elif index==2:
+            self.pages.setCurrentIndex(4)
+            if not self.worker or not self.worker.isRunning():self.load_saved_diagnostics()
+
+    def load_saved_diagnostics(self):
+        if getattr(self,'offline_history_pending',False) or self.closing:return
+        self.offline_history_pending=True
+        def operation():
+            from contextlib import closing
+            from prevex_hmi.logging_db.recordings import read_connection
+            audits=[];events=[]
+            with self.recording_management.gate.reading():
+                for path in self.recording_management.paths:
+                    if not path.exists():continue
+                    with closing(read_connection(path)) as db:
+                        tables={row[0] for row in db.execute('SELECT name FROM sqlite_master WHERE type="table"')}
+                        if 'command_audit' in tables:audits.extend(db.execute('SELECT timestamp,instrument,actor,code,result,detail FROM command_audit ORDER BY id DESC LIMIT 500').fetchall())
+                        if 'events' in tables:events.extend(db.execute('SELECT timestamp,instrument,description,quality FROM events ORDER BY id DESC LIMIT 500').fetchall())
+            return sorted(audits,reverse=True,key=lambda row:row[0])[:500],sorted(events,reverse=True,key=lambda row:row[0])[:500]
+        def done(rows):self.offline_history_pending=False;self.fill_command_audit(rows[0]);fill_table(self.event_table,rows[1])
+        def failed(error):self.offline_history_pending=False;self.statusBar().showMessage(f'Historical diagnostics unavailable: {error}')
+        self.record_job(operation,done,failed)
+
+    def save_connection_inputs(self):
+        if self.closing:return False
+        try:
+            proposed=self.connection_screen.preferences(self.settings);changed=proposed!=self.settings
+            save_settings(self.settings_path,proposed);self.settings=proposed
+        except (OSError,ValueError) as error:
+            self.connection_screen.note.setText(f'Connection settings could not be saved: {error}');return False
+        self.connection_screen.port.setEnabled(self.settings['mode']=='hardware');self.connection_screen.baud.setEnabled(self.settings['mode']=='hardware')
+        if changed and self.worker and self.worker.isRunning():self.begin('disconnect')
+        self.refresh_connection_labels();self.refresh_connection_view();return True
+
+    def connect_from_screen(self,action):
+        self.preference_timer.stop()
+        if self.save_connection_inputs():self.begin(action)
+
+    def refresh_connection_view(self):
+        if not hasattr(self,'connection_screen'):return
+        live=bool(self.profile_current and self.connection_established)
+        title='Connection Lost' if self.link_state=='lost' else 'Analyzer Type Unknown' if self.link_state=='unknown' else 'Connecting to Analyzer' if self.link_state=='connecting' else 'No Analyzer Connected'
+        self.connection_screen.title.setText(title)
+        self.connection_screen.note.setText('Analyzer Type Unknown. Select a manual profile or review Diagnostics. Commands remain disabled.' if self.link_state=='unknown' else 'Measurements are unavailable. The existing connection may recover only after fresh identification, or select Connect to Analyzer to reconnect.' if self.link_state=='lost' else 'Connect or test to read identification. Opening a port or choosing a profile does not identify an analyzer.')
+        unverified_link=self.link_state=='unknown' and getattr(self,'connection_established',False) and self.worker and self.worker.isRunning()
+        self.connection_screen.status.setText('Connection Status: '+('Valid Modbus responses - identity unverified' if unverified_link else 'Connecting / identifying' if self.link_state=='connecting' else 'No Connection'))
+        selection=self.settings['analyzer_selection']
+        selected='Selected Profile: Auto Detect | Analyzer Type: Unknown' if selection=='Auto Detect' else f'Selected Profile: {selection} — Not Verified'
+        self.connection_screen.selection.setText(selected)
+        self.connection_screen.last.setText(f'Last Connected: {self.last_connected}' if self.last_connected else '')
+        self.navigation.item(1).setFlags(self.navigation.item(1).flags()|Qt.ItemIsEnabled if live else self.navigation.item(1).flags()&~Qt.ItemIsEnabled)
+        if not live and self.navigation.currentRow()==1:self.navigation.setCurrentRow(0)
+        if not self.test_view_active:self.navigate(self.navigation.currentRow())
+        self.connect_button.setVisible(live);self.test_button.setVisible(live);self.disconnect_button.setVisible(bool(self.worker and self.worker.isRunning()))
+        self.summary.setText(f'{self.identity.get("loaded_profile", "Analyzer")} | {self.identity.get("model", "")}' if live else title)
+        mode='SIMULATION' if self.settings['mode']=='simulation' else 'HARDWARE'
+        self.banner.setText(f'{mode} | '+('Connected - identified analyzer | Commands require confirmation' if live else 'Connection lost - measurements unavailable' if self.link_state=='lost' else 'Connecting - identification pending' if self.link_state=='connecting' else 'Valid Modbus responses - analyzer identity unverified' if unverified_link else 'No active analyzer connection'))
+        self.selection_label.setText(f'Selected Profile: {selection} | Detected Analyzer: '+(self.identity.get('loaded_profile','Unknown') if live else 'Unknown'))
+        if hasattr(self,'trend_window'):self.trend_window.update_controls()
+
+    def connection_lost(self):
+        if self.profile_current:
+            self.last_connected=f'{self.identity.get("loaded_profile", "Analyzer")} / {self.identity.get("model", "")}'
+        self.profile_current=False;self.identity={};self.link_state='lost'
+        self.warning.clear();self.warning.hide();self.monitor_model.clear();self.identity_label.setText('No current analyzer identity');self.compatibility_notice.clear();self.controller_display.clear()
+        self.indicators.update_snapshot(None);self.set_connection_status(False);self.sync_technical_details();self.refresh_connection_view();self.update_command_buttons()
 
     def page(self,title,subtitle):
         page=QWidget();layout=QVBoxLayout(page);layout.setContentsMargins(14,4,0,0)
@@ -142,7 +221,9 @@ class MainWindow(QMainWindow):
 
     def sync_technical_details(self):
         if hasattr(self,'diagnostics_technical'):
-            self.diagnostics_technical.setText('\n\n'.join(widget.text() for widget in (self.identity_label,self.warning,self.monitor_model,self.monitor_updated,self.controller_display,self.range_help) if widget.text()))
+            if not self.profile_current and not self.identity.get('test_only'):
+                self.diagnostics_technical.setText('No current analyzer identity.\nSelected Profile: '+self.settings['analyzer_selection']+' (Not Verified)'+(f'\nLast Connected: {self.last_connected}' if self.last_connected else '')+('\n'+self.operational_warning.text() if self.operational_warning.text() else ''))
+            else:self.diagnostics_technical.setText('\n\n'.join(widget.text() for widget in (self.identity_label,self.warning,self.monitor_model,self.monitor_updated,self.controller_display,self.range_help) if widget.text()))
 
     def show_diagnostics(self,tab='Technical details'):
         self.navigation.setCurrentRow(2)
@@ -189,7 +270,7 @@ class MainWindow(QMainWindow):
         self.warning.setVisible(not active and bool(self.warning.text()))
         self.operational_warning.setVisible(not active and bool(self.operational_warning.text()))
         if active:self.pages.setCurrentWidget(self.test_page)
-        elif was_active:self.pages.setCurrentIndex(self.return_page)
+        elif was_active:self.navigate(self.navigation.currentRow())
 
     def build_gauge(self):
         layout=self.page('Monitor','')
@@ -412,13 +493,17 @@ class MainWindow(QMainWindow):
         self.selection_label.setText(f"{self.settings['analyzer_selection']} | Address {d.address} | {c['baud']} baud / 8N1 | {self.settings['mode'].upper()}")
         self.banner.setText('SIMULATION MODE | One synthetic instrument | No physical port open' if self.settings['mode']=='simulation' else ('LIVE CONTROLLER BENCH TEST | ACK/RESET require confirmation | Sensor assembly disconnected' if self.hardware_grant.operator_commands else 'LIVE CONTROLLER BENCH TEST | READ ONLY | Sensor assembly disconnected') if self.hardware_grant else f'LIVE HARDWARE | READ ONLY | {c["port"] or "Select a serial port"}')
         for widget in self.simulation_controls:widget.setEnabled(self.settings['mode']=='simulation')
+        self.refresh_connection_view()
 
     def invalidate(self,reason='Disconnected'):
         self.recording_worker.observe(None)
+        if self.profile_current:self.last_connected=f'{self.identity.get("loaded_profile","Analyzer")} / {self.identity.get("model", "")}'
+        self.profile_current=False
         self.snapshot=None;self.identity={};self.series.clear();self.last_sample=None;self.history_rows=[];self.command_dispatching=False
         self.display_trend.clear();self.trend_scope=None;self.blank_started_wall=None;self.readout_retained=False
         self.gauge.set_snapshot(None);self.indicators.update_snapshot(None)
         self.set_connection_status(False);self.monitor_updated.setText('No current measurement');self.identity_label.setText(reason)
+        self.warning.clear();self.warning.hide();self.monitor_model.clear();self.compatibility_notice.clear();self.technical_toggle.setChecked(False)
         self.controller_display.clear();self.fault_summary.setText('Communication Lost');self.fault_summary.setStyleSheet('color:#f27778;font-weight:bold;');self.last_command.setText('No command sent in this session');self.sync_technical_details()
         self.command_proof.setText('No command sent in this session');self.command_proof.setStyleSheet('')
         self.last_receipt_key=None;self.active_command=None
@@ -428,10 +513,11 @@ class MainWindow(QMainWindow):
         for label in (self.overview_hold_note,self.trend_hold_note):label.setText('Solid: measured | Dashed amber: held while LCD is nonnumeric (display only)')
         if 1 in self.readouts:self.readouts[1][0].setStyleSheet('');self.readouts[1][0].setToolTip('')
         self.history_table.setRowCount(0);self.event_table.setRowCount(0);self.audit_table.setRowCount(0);self.traffic.setRowCount(0)
-        self.summary.setText(reason);self.update_command_buttons()
+        self.summary.setText(reason);self.update_command_buttons();self.refresh_connection_view()
         self.refresh_profile_settings()
 
     def begin(self,action):
+        self.operational_warning.clear();self.operational_warning.hide()
         if self.connection_test_dialog:
             self.connection_test_dialog.close();self.connection_test_dialog.deleteLater();self.connection_test_dialog=None
         self.test_in_progress=action=='test';self.test_result_info=None;self.test_result_error=''
@@ -443,7 +529,8 @@ class MainWindow(QMainWindow):
                     self.hardware_grant=None
             except (PermissionError,ValueError):self.hardware_grant=None
             self.refresh_connection_labels()
-        self.next_action=action;self.invalidate('Connection stopped; readings invalidated')
+        self.link_state='connecting' if action in ('connect','test') else 'disconnected'
+        self.next_action=action;self.invalidate('No current analyzer identity')
         self.set_connection_buttons(False)
         if self.worker and self.worker.isRunning():self.worker.stop()
         else:self.worker_finished()
@@ -456,9 +543,13 @@ class MainWindow(QMainWindow):
         self.begin('connect')
 
     def set_connection_buttons(self,enabled):
-        for button in (self.choose_button,self.connect_button,self.test_button,self.bench_button):button.setEnabled(enabled)
+        for button in (self.choose_button,self.connect_button,self.test_button,self.connection_screen.connect_button,self.connection_screen.test_button,self.connection_screen.settings_button):button.setEnabled(enabled)
+        for control in (self.connection_screen.mode,self.connection_screen.port,self.connection_screen.baud,self.connection_screen.address,self.connection_screen.profile):control.setEnabled(enabled)
+        if enabled:
+            self.connection_screen.port.setEnabled(self.settings['mode']=='hardware');self.connection_screen.baud.setEnabled(self.settings['mode']=='hardware')
 
     def start_worker(self,*,test_only=False):
+        self.link_state='connecting';self.profile_current=False;self.refresh_connection_view()
         if test_only:self.test_in_progress=True;self.set_test_view(True)
         if self.settings['mode']=='hardware':
             try:require_available_port(self.settings['connection']['port'])
@@ -470,12 +561,12 @@ class MainWindow(QMainWindow):
         self.worker=MonitoringWorker(copy.deepcopy(self.settings),self.data_path,self,test_only=test_only,hardware_grant=worker_grant)
         owner=self.worker
         def current():return self.worker is owner and not self.next_action and not self.closing
-        self.worker.updated.connect(self.update_data);self.worker.identified.connect(self.identification_result)
+        self.worker.updated.connect(lambda snapshot,diagnostics:self.update_data(snapshot,diagnostics) if current() else None);self.worker.identified.connect(lambda info:self.identification_result(info) if current() else None)
         self.worker.history_ready.connect(lambda rows:self.update_history(rows) if current() else None);self.worker.events_ready.connect(lambda rows:fill_table(self.event_table,rows) if current() else None)
         self.worker.audit_ready.connect(lambda rows:self.fill_command_audit(rows) if current() else None)
         self.worker.parameter_result.connect(lambda text:self.parameter_feedback(text) if current() else None)
         self.worker.inspection_ready.connect(lambda text:self.inspection_result.setText(text) if current() else None);self.worker.command_result.connect(lambda text:self.command_feedback(text) if current() else None)
-        self.worker.failed.connect(self.worker_error);self.worker.finished.connect(self.worker_finished)
+        self.worker.failed.connect(lambda text:self.worker_error(text) if current() else None);self.worker.finished.connect(lambda:self.worker_finished() if self.worker is owner else None)
         self.worker.storage_warning.connect(lambda text:self.statusBar().showMessage(text))
         self.worker.start();self.set_connection_buttons(False)
 
@@ -486,7 +577,8 @@ class MainWindow(QMainWindow):
         if action=='connect':self.start_worker()
         elif action=='test':self.start_worker(test_only=True)
         else:
-            self.update_command_buttons()
+            if not self.test_in_progress and self.profile_current:self.connection_lost()
+            self.update_command_buttons();self.refresh_connection_view()
             if self.test_in_progress:self.finish_connection_test()
 
     def finish_connection_test(self):
@@ -507,6 +599,11 @@ class MainWindow(QMainWindow):
     def identification_result(self,info):
         if self.next_action or self.closing:return
         self.identity=info
+        self.profile_current=bool(info.get('verified') and info.get('communication_ok') and info.get('config') and not info.get('test_only'))
+        if self.profile_current:self.link_state='connecting'
+        if self.profile_current:self.recording_identity=copy.deepcopy(info)
+        if not self.profile_current and not info.get('test_only'):self.link_state='unknown'
+        if not self.profile_current and not info.get('test_only'):self.connection_screen.note.setText('Analyzer Type Unknown. Select a manual profile or review Diagnostics. Commands remain disabled until identification and compatibility checks pass.')
         if info.get('test_only'):self.test_result_info=info
         if info.get('config'):
             family=info['config']['family']
@@ -529,11 +626,16 @@ class MainWindow(QMainWindow):
         for n,r in sorted(profile.registers.items()):
             if r.safe_read:self.inspect_register.addItem(f'{n} - {r.name}',n)
         self.set_connection_buttons(True);self.update_command_buttons()
-        self.refresh_profile_settings()
+        self.refresh_profile_settings();self.refresh_connection_view()
 
     def update_data(self,snapshot,diagnostics):
         if self.next_action or self.closing:return
-        self.recording_worker.observe({**snapshot,'identity':self.identity.copy()})
+        expected=self.identity.get('config')
+        if self.profile_current and expected and any(expected.get(key)!=snapshot['config'].get(key) for key in ('id','family','assembly','version','address','register_profile')):self.connection_lost()
+        current=bool(snapshot['quality']=='GOOD' and snapshot.get('identity_current',self.profile_current))
+        if not current and self.profile_current:self.connection_lost()
+        if snapshot['quality']!='GOOD' or current and self.profile_current:self.recording_worker.observe({**snapshot,'identity':self.recording_identity.copy()})
+        else:self.recording_worker.observe(None)
         self.update_count+=1;self.snapshot=snapshot;self.diagnostics=diagnostics
         self.snapshot_received_at=time.monotonic()
         config=DeviceConfig(**snapshot['config']);family=config.family
@@ -561,7 +663,8 @@ class MainWindow(QMainWindow):
         color,status=severity(snapshot);self.monitor_name.setText(profile_name(config))
         self.set_connection_status(snapshot['quality']=='GOOD' and snapshot.get('last_success') is not None)
         self.monitor_updated.setText(f"Last update (UTC):\n{snapshot['last_success'] or 'never'}\n{snapshot['error']}")
-        self.summary.setText(f"{profile_name(config)} | {config.assembly}")
+        if current and self.profile_current:self.link_state='live'
+        self.refresh_connection_view()
         for n,(widget,quality) in self.readouts.items():
             if n==1:self.readout_names[n].setText('READING [LCD51–55; raw1]' if uses_controller_fault_display(snapshot) else 'READING [1]')
             if family=='BTU' and n==42:widget.setText('--');quality.setText('UNAVAILABLE: meaning not documented');continue
@@ -616,12 +719,14 @@ class MainWindow(QMainWindow):
         self.connection_established=connected
         self.monitor_status.setText('Connection Status: ● '+('Connection Established' if connected else 'No Connection'))
         self.monitor_status.setStyleSheet('color:'+('#39c66c' if connected else '#f27778')+';font-size:16px;font-weight:bold;')
+        self.refresh_connection_view()
 
     def refresh_connection_status(self):
         snapshot=self.snapshot
         connected=bool(snapshot and snapshot['quality']=='GOOD' and snapshot.get('last_success') and
                        snapshot.get('age',0) is not None and snapshot.get('age',0)+time.monotonic()-self.snapshot_received_at <= max(5,snapshot['config']['interval']*3))
         self.set_connection_status(connected)
+        if snapshot and not connected and self.profile_current and self.link_state=='live':self.connection_lost()
         if snapshot and not connected:self.fault_summary.setText('Communication Lost');self.fault_summary.setStyleSheet('color:#f27778;font-weight:bold;')
         if not connected and self.readout_retained:
             self.readout_retained=False
@@ -688,8 +793,8 @@ class MainWindow(QMainWindow):
         bench=bool(self.hardware_grant and self.hardware_grant.operator_commands and self.settings['mode']=='hardware')
         physical=self.settings['mode']=='hardware'
         documented=set(control.get('physical_commands',[])) if physical else set()
-        if documented:self.banner.setText(f'LIVE HARDWARE | Documented commands require individual confirmation | {self.settings["connection"]["port"]}')
-        current=bool(snapshot and snapshot['quality']=='GOOD' and self.worker and self.worker.isRunning())
+
+        current=bool(self.profile_current and self.connection_established and snapshot and snapshot['quality']=='GOOD' and self.worker and self.worker.isRunning())
         self.command_access_button.setVisible(physical and not bench and not documented)
         self.command_access_button.setEnabled(bool(current and role in ('Operator','Administrator') and self.command_bench_target_matches() and not control.get('pending') and not control.get('ambiguous')))
         if not current:reason='Commands unavailable: no current connection.'
@@ -705,7 +810,7 @@ class MainWindow(QMainWindow):
         if physical and snapshot and snapshot['config'].get('register_profile')=='fta_4x':
             reason+='\nFirmware4.81 uses the 5.12 register/command map by user instruction; hardware compatibility remains unverified.'
         self.command_access_note.setText(reason)
-        enabled=bool(snapshot and snapshot['quality']=='GOOD' and control.get('verified') and not control.get('pending') and not control.get('ambiguous') and role in ('Operator','Administrator') and not self.command_dispatching and self.worker and self.worker.isRunning() and (self.settings['mode']=='simulation' or bench or documented))
+        enabled=bool(self.profile_current and self.connection_established and snapshot and snapshot['quality']=='GOOD' and control.get('verified') and not control.get('pending') and not control.get('ambiguous') and role in ('Operator','Administrator') and not self.command_dispatching and self.worker and self.worker.isRunning() and (self.settings['mode']=='simulation' or bench or documented))
         active_config=DeviceConfig(**snapshot["config"]) if snapshot else self.config
         profile=profile_for(active_config)
         lock= snapshot['raw'].get(60) if snapshot else None
@@ -768,7 +873,7 @@ class MainWindow(QMainWindow):
     def parameter_access_reason(self,key):
         from prevex_hmi.profiles.parameters import PARAMETERS,supported
         snapshot=self.snapshot
-        if not snapshot or not self.worker or not self.worker.isRunning():return 'Connect to an analyzer before adjusting a parameter.'
+        if not self.profile_current or not self.connection_established or not snapshot or not self.worker or not self.worker.isRunning():return 'Connect to an analyzer before adjusting a parameter.'
         config=DeviceConfig(**snapshot['config'])
         if not supported(config):return 'Adjustments are unverified for this profile.'
         if self.users.resolve(self.session)[1] not in ('Operator','Administrator'):return 'Sign in as Operator or Administrator to adjust settings. Guest/Viewer access is read-only.'
@@ -835,8 +940,8 @@ class MainWindow(QMainWindow):
         settings=dialog.settings()
         try:save_settings(self.settings_path,settings)
         except (OSError,ValueError) as error:QMessageBox.warning(self,'Save failed',str(error));return
-        # Stop and invalidate immediately; new profile starts only after old worker closes.
-        self.settings=settings;self.refresh_connection_labels();self.begin('connect')
+        # Saving a selection never opens a port or claims an analyzer identity.
+        self.settings=settings;self.connection_screen.load(settings);self.refresh_connection_labels();self.begin('disconnect')
 
     def login(self):
         if self.session:
@@ -909,7 +1014,8 @@ class MainWindow(QMainWindow):
 
     def worker_error(self,text):
         if self.test_in_progress:self.test_result_error=text
-        self.invalidate('OFFLINE');self.warning.setText(text);self.warning.setVisible(not self.test_view_active);self.statusBar().showMessage(text)
+        self.link_state='lost' if self.last_connected or self.profile_current else 'disconnected'
+        self.invalidate('No current analyzer identity');self.warning.setText(text);self.warning.setVisible(not self.test_view_active);self.statusBar().showMessage(text)
         self.operational_warning.setText(text);self.operational_warning.setVisible(not self.test_view_active);self.sync_technical_details()
 
     def apply_theme(self):

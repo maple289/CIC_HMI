@@ -84,18 +84,18 @@ def test_normal_controls_use_available_ports_without_session_grants(app,tmp_path
     w.begin(action)
     until(app,lambda:bool(calls) and not w.worker.isRunning())
     assert calls==[(port,None,action=='test')]
-    assert w.hardware_grant is None and 'READ ONLY' in w.banner.text()
+    assert w.hardware_grant is None and 'HARDWARE' in w.banner.text() and 'Connected - identified' not in w.banner.text()
     w.close();app.processEvents()
 
 
 
-def test_bench_button_prepares_only_authorized_session_without_saving_grant(app,tmp_path,monkeypatch):
+def test_explicit_legacy_bench_api_prepares_only_authorized_session_without_saving_grant(app,tmp_path,monkeypatch):
     settings=load_settings(tmp_path/'settings.json');original=copy.deepcopy(settings)
     path=tmp_path/'settings.json';saved=path.read_bytes()
     w=MainWindow(settings,path,tmp_path,start_worker=False)
     calls=[]
     monkeypatch.setattr(w,'start_worker',lambda **kwargs:calls.append((copy.deepcopy(w.settings),w.hardware_grant)))
-    w.bench_button.click()
+    w.start_controller_bench()
     assert len(calls)==1
     prepared,grant=calls[0]
     assert grant.operator_commands and prepared['mode']=='hardware'
@@ -336,7 +336,7 @@ def test_gui_switches_between_670_and_700_with_one_worker_and_no_old_values(app,
     settings=load_settings(tmp_path/'settings.json')
     settings.update(analyzer_selection='LEL 670 Series',simulated_lel_revision='legacy')
     settings['devices']=[asdict(default_devices()[0])]
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=True)
     try:
         until(app,lambda:w.snapshot is not None and w.snapshot['quality']=='GOOD')
         assert w.snapshot_family==('LEL','670')
@@ -353,6 +353,9 @@ def test_gui_switches_between_670_and_700_with_one_worker_and_no_old_values(app,
             w.choose_type()
             assert w.snapshot is None and w.gauge.state.reading=='--'
             assert all(label.isHidden() for label,_ in w.indicators.labels.values())
+            until(app,lambda:not previous.isRunning())
+            assert w.worker is previous  # Saving a profile does not connect.
+            w.begin('connect')
             until(app,lambda:w.snapshot is not None and w.snapshot['config']['id']=='switch-'+series and w.snapshot['quality']=='GOOD')
             assert not previous.isRunning() and w.worker is not previous
             assert w.snapshot_family==('LEL',series)

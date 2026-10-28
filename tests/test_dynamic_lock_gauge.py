@@ -101,7 +101,7 @@ def window(app,tmp_path):
     w=MainWindow(load_settings(tmp_path/'settings.json'),tmp_path/'settings.json',tmp_path,start_worker=False)
     w.users.close();w.users=SimpleNamespace(resolve=lambda _:('operator','Operator'),close=lambda:None)
     w.worker=SimpleNamespace(isRunning=lambda:True,test_only=False)
-    w.snapshot=sample();w.update_command_buttons()
+    w.snapshot=sample();w.profile_current=True;w.set_connection_status(True);w.update_command_buttons()
     yield w
     w.worker=None;w.close();app.processEvents()
 

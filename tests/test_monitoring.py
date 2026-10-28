@@ -36,6 +36,12 @@ def snapshot(quality='GOOD',family='LEL'):
     d=next(d for d in default_devices() if d.family==family)
     return dict(config=asdict(d),raw={1:25600,2:0,3:d.fullscale,4:128},quality=quality,age=0,last_success=datetime.now(timezone.utc).isoformat(),error='',identification='test')
 
+
+def identify(window,config):
+    """Deliver an explicit simulated identity for UI-only snapshot fixtures."""
+    from prevex_hmi.profiles import profile_name
+    window.identification_result(dict(config=asdict(config),family=config.family,model=config.assembly,version=config.version,verified=True,communication_ok=True,loaded_profile=profile_name(config),controls_verified=True,text='Simulated fixture identity'))
+
 @pytest.mark.parametrize('quality',['OFFLINE','STALE','DISABLED'])
 def test_old_reading_never_presented_as_current(quality):
     data=snapshot(quality)
@@ -136,7 +142,7 @@ def test_historian_quality_events_retention_and_audit(tmp_path):
 @pytest.mark.parametrize('family',['LEL','BTU','FID'])
 def test_detected_family_has_all_gauges_and_one_worker(app,tmp_path,family):
     settings=load_settings(tmp_path/'settings.json');settings['simulated_family']=family
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path);w.show()
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=True);w.show()
     try:
         until(app,lambda:w.snapshot is not None and w.snapshot['quality']=='GOOD')
         assert w.identity['family']==family and w.identity['controls_verified']
@@ -162,7 +168,7 @@ def test_test_connection_identifies_without_starting_controls(app,tmp_path):
     finally:w.close()
 
 def test_profile_switch_stops_invalidates_and_opens_only_new_device(app,tmp_path):
-    settings=load_settings(tmp_path/'settings.json');w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
+    settings=load_settings(tmp_path/'settings.json');w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=True)
     try:
         until(app,lambda:w.snapshot is not None)
         previous=w.worker
@@ -177,7 +183,7 @@ def test_profile_switch_stops_invalidates_and_opens_only_new_device(app,tmp_path
 
 def test_mismatch_and_hardware_access_gate(app,tmp_path):
     settings=load_settings(tmp_path/'settings.json');settings['analyzer_selection']='FID'
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=True)
     try:
         until(app,lambda:w.snapshot is not None)
         assert 'MISMATCH' in w.warning.text() and not w.identity['controls_verified']
@@ -189,7 +195,7 @@ def test_mismatch_and_hardware_access_gate(app,tmp_path):
         w.close();app.processEvents()
 
 def test_communication_loss_clears_indicator_and_retains_events(app,tmp_path):
-    settings=load_settings(tmp_path/'settings.json');w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
+    settings=load_settings(tmp_path/'settings.json');w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=True)
     try:
         until(app,lambda:w.snapshot is not None and w.snapshot['quality']=='GOOD')
         assert sum(not label.isHidden() for (group,_),(label,_) in w.indicators.labels.items() if group==0)==1

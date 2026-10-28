@@ -127,7 +127,9 @@ class MonitoringWorker(QThread):
             adjustments=ParameterAdjustments(controller)
             last_emit=last_identity=time.monotonic()
             last_logged=last_event=None
+            identity_current=identity.verified;needs_identity_recheck=False
             while not self.stop_requested.is_set():
+                if state.snapshot(time.monotonic())['quality']!='GOOD':controller.identity_verified=False
                 try: message=self.messages.get_nowait()
                 except Empty: message=None
                 if message:
@@ -179,6 +181,18 @@ class MonitoringWorker(QThread):
                         if command_lease and not controller.pending:maintenance_gate.leave_command();command_lease=False
                 scheduler.run_once()
                 now=time.monotonic()
+                quality=state.snapshot(now)['quality']
+                if quality!='GOOD':
+                    needs_identity_recheck=bool(identity.verified);identity_current=False;controller.identity_verified=False
+                elif needs_identity_recheck:
+                    # Use the same serialized bus after recovery; cached GOOD
+                    # measurements cannot restore a previous identity grant.
+                    check=detect(bus,effective.addressing)
+                    if not check.verified or (check.family,check.model,check.version,check.serial,check.text)!=(identity.family,identity.model,identity.version,identity.serial,identity.text):
+                        raise OSError('Analyzer identity changed or could not be revalidated after communication loss. Connect to Analyzer to identify the current instrument.')
+                    identity_current=True;needs_identity_recheck=False;last_identity=now;controller.identity_verified=controls_verified
+                    self.identified.emit({**info,'revalidated':True,'communication_ok':True,'communication':'Fresh identity verified after communication recovery'})
+                elif identity_current:controller.identity_verified=controls_verified
                 if now-last_identity >= 30:
                     check=detect(bus,effective.addressing)
                     if physical and self.hardware_grant:self.hardware_grant.validate_identity(check)
@@ -187,6 +201,7 @@ class MonitoringWorker(QThread):
                         raise OSError('Instrument identity changed or became unverifiable. Polling stopped; reconnect to identify again.')
                 if now-last_emit >= 0.25:
                     snapshot=state.snapshot(now)
+                    snapshot['identity_current']=identity_current
                     # Display-only retention belongs to CircularGauge. Never
                     # attach retained LCD data to logging/command snapshots.
                     snapshot['source']='hardware' if physical else 'simulation'
