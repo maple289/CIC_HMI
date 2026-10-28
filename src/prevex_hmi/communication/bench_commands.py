@@ -43,6 +43,7 @@ class BenchOperatorCommands(CommandController):
             changed=after_values!=self.receipt['before']
             self.receipt.update(state='STATE_CHANGED' if changed else 'NO_STATE_CHANGE',after=after_values,time=utc_now())
             self.record(actor,code,'SENT_UNVERIFIED',f'{name} sent once. STATUS {before[2]} -> {after[2]}; RELAYS {before[4]:04X} -> {after[4]:04X}; SERVICE {service_before:04X} -> {service_after:04X}. Active sensor faults can remain; write acknowledgment alone does not prove execution.')
+            self.watch_effect(actor,code,{2:before[2],4:before[4],**({59:service_before} if code==0x100 else {})})
         except (OSError,ValueError,PermissionError) as error:
             if sent:self.ambiguous=True
             self.receipt.update(state='UNKNOWN' if sent or self.ambiguous else 'REJECTED',detail=str(error),time=utc_now())

@@ -92,7 +92,7 @@ def main() -> int:
         heartbeat.timeout.connect(lambda:heartbeat_times.append(time.monotonic()));heartbeat.start()
         diagnostic_updates=[]
         def open_diagnostics():
-            window.navigation.setCurrentRow(4)
+            window.navigation.setCurrentRow(2)
             diagnostic_updates.append(window.update_count)
         QTimer.singleShot(1500,open_diagnostics)
         def finish():
@@ -115,7 +115,7 @@ def main() -> int:
                 if window.trend_window.live_plot.zero_line.value()!=0:raise RuntimeError('Trend zero reference missing')
                 if window.trend_window.recording_parameters.isEnabled() or window.trend_window.interval.isEnabled():raise RuntimeError('Recording selection/interval were not locked')
                 if set(window.recording_status['selected_parameters'])!=set(window.trend_window.recording_parameters.selected_numbers()):raise RuntimeError('Recording parameters differ from checked selection')
-                for index,name in [(0,"overview"),(0,"detail"),(1,"trends"),(4,"diagnostics")]:
+                for index,name in [(0,"overview"),(0,"detail"),(0,"trends"),(2,"diagnostics")]:
                     window.navigation.setCurrentRow(index)
                     if name=='trends':window.open_trend()
                     app.processEvents()

@@ -40,7 +40,7 @@ def refresh():
     diagnostics['traffic']=[dict(time=str(frame+i),direction='RX',address=1,register=1,hex='01 03 FE '+'12 34 '*127) for i in range(100)]
     w.update_data(data,diagnostics);updates.append(time.monotonic())
 refresh()
-QTest.mouseClick(w.navigation.viewport(),Qt.LeftButton,pos=w.navigation.visualItemRect(w.navigation.item(4)).center())
+QTest.mouseClick(w.navigation.viewport(),Qt.LeftButton,pos=w.navigation.visualItemRect(w.navigation.item(2)).center())
 assert w.pages.currentIndex()==4
 timer=QTimer();timer.timeout.connect(refresh);timer.start(40)
 heartbeat=QTimer();heartbeat.timeout.connect(lambda:beats.append(time.monotonic()));heartbeat.start(20)

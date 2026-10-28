@@ -51,6 +51,8 @@ class ValidatedOperatingCommands(CommandController):
                 raise PermissionError('Calibration lock changed during preflight')
             if code in range(0x300,0x900,0x100) and self.bus.read(profile,self.config.addressing,28,1)[28]!=minutes:
                 raise PermissionError('Calibration interval changed during preflight')
+            effect_before=self.bus.read(profile,self.config.addressing,4,1) if code in (0x100,0x200) else None
+            if code==0x100:effect_before.update(self.bus.read(profile,self.config.addressing,59,1))
             require_current_session(self.users,token,actor,administrator=code==0x900)
             assumption='; firmware4.81 uses the 5.12 map by user instruction, physical compatibility unverified' if self.config.version=='4.81' else ''
             self.record(actor,code,'SENDING',f'{COMMANDS[code]} confirmed; send once{assumption}')
@@ -66,6 +68,7 @@ class ValidatedOperatingCommands(CommandController):
             else:
                 after=self.bus.read(profile,self.config.addressing,2,1)[2]
                 self.record(actor,code,'SENT_UNVERIFIED',f'Modbus acknowledgment received; STATUS {before} -> {after}. Execution/EEPROM persistence not proven')
+                if effect_before is not None:self.watch_effect(actor,code,{2:before,**effect_before})
         except (OSError,ValueError,PermissionError,RuntimeError) as error:
             if sent:self.ambiguous=True
             self.record(actor,code,'UNKNOWN' if sent else 'REJECTED',f'{error}. No automatic retry.')

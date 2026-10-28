@@ -60,10 +60,9 @@ def test_command_buttons_and_leds_stay_anchored_during_results_and_alarm_changes
                 assert geometry()==before
                 assert w.command_scroll.verticalScrollBar().value()==offset
                 assert w.command_result_card.height()==height
-            cards=[w.gauge.geometry(),w.analyzer_info.geometry(),w.command_result_card.geometry()]
-            assert all(not a.intersects(b) for i,a in enumerate(cards) for b in cards[i+1:])
-            if w.hero.wide:assert w.command_result_card.x()>w.analyzer_info.x()
-            else:assert w.command_result_card.y()>=w.analyzer_info.geometry().bottom()
+            assert not w.command_result_card.isVisibleTo(w)
+            assert not w.gauge.geometry().intersects(w.analyzer_info.geometry())
+            assert w.last_command.isVisibleTo(w) and w.last_command.height()==56
             panel_position=w.indicators.mapTo(w,QPoint()).toTuple()
             w.monitor_scroll.verticalScrollBar().setValue(w.monitor_scroll.verticalScrollBar().maximum());flush(app)
             assert w.indicators.isVisibleTo(w) and w.indicators.mapTo(w,QPoint()).toTuple()==panel_position

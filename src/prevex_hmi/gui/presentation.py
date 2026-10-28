@@ -82,3 +82,23 @@ def format_reading(snapshot: dict) -> str:
         return "--"
     precision = (1 if snapshot["raw"].get(3,100) <= 100 else 0) if snapshot["config"]["family"] == "FID" else 2
     return f"{value:.{precision}f}"
+
+
+def monitor_condition(snapshot: dict | None) -> tuple[str,str]:
+    """Operator summary uses fresh STATUS/RELAYS; never changes measurement quality."""
+    if not snapshot:return '#8290a5','Measurement Unavailable'
+    limit=max(5,snapshot['config']['interval']*3)
+    age=snapshot.get('age',0)
+    if snapshot['quality']!='GOOD' or age is None or age>limit:return '#f27778','Communication Lost'
+    raw=snapshot['raw'];ages=snapshot.get('register_ages',{})
+    status=raw.get(2) if ages.get(2,0)<=limit else None
+    relays=raw.get(4) if ages.get(4,0)<=limit else None
+    profile=profile_for(DeviceConfig(**snapshot['config']))
+    fault=status in profile.statuses and status not in (0,1,2,4,5,6,7,11,12)
+    if fault or relays is not None and relays&4:return '#f27778','Analyzer Fault Active'
+    if measurement(snapshot)[0] is None:return '#8290a5','Measurement Unavailable'
+    if status in (4,5,6,7) or profile.revision=='700' and relays is not None and relays&(1<<8):return '#efb753','Calibration in Progress'
+    if status in (11,12):return '#efb753',profile.status(status)
+    if status not in profile.statuses or relays is None:return '#efb753','Analyzer Status Unavailable'
+    if status in (1,2) or relays&3:return '#efb753','Process Alarm Active'
+    return '#39c6a4','Normal Operation'

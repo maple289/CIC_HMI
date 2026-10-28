@@ -34,6 +34,16 @@ class PendingLock:
     kind: str = 'lock'
 
 
+@dataclass
+class PendingEffect:
+    code: int
+    actor: str
+    started: float
+    before: dict
+    timeout: float = 8
+    kind: str = 'effect'
+
+
 class CommandController:
     def __init__(self,bus,config,store,users,*,identity_verified=False,expected_identity=None,clock=time.monotonic):
         self.bus,self.config,self.store,self.users=bus,config,store,users
@@ -46,9 +56,11 @@ class CommandController:
         self.receipt=None
 
     def record(self,actor,code,result,detail):
+        if self.receipt is not None and result in ('UNKNOWN','FAILED','NOT_VERIFIED'):
+            detail=('Acknowledgment received; expected effect not confirmed. ' if self.receipt.get('reply_received') else 'No valid command acknowledgment received. ')+detail
         self.store.command_audit(self.config.id,actor,code,result,detail)
         self.result=detail
-        if self.receipt is not None and self.receipt['code']==code and not self.receipt.get('bench'):
+        if self.receipt is not None and self.receipt['code']==code and (not self.receipt.get('bench') or result in ('EFFECT_OBSERVED','NOT_VERIFIED','UNKNOWN')):
             self.receipt.update(state=result, detail=detail)
 
     def execute(self,code,token,*,confirmed=False):
@@ -75,6 +87,8 @@ class CommandController:
             status=self.bus.read(profile,self.config.addressing,2,1)[2]
             if code in range(0x300,0x900,0x100) and (values[lock_register] & (1 if profile.revision == "700" else 3) or status in (4,5,6,7,11,12)):
                 raise PermissionError("Calibration is locked or instrument is busy/warming up")
+            effect_before=self.bus.read(profile,self.config.addressing,4,1) if code in (0x100,0x200) else None
+            if code==0x100 and profile.revision!='700' and 59 in profile.registers:effect_before.update(self.bus.read(profile,self.config.addressing,59,1))
             role=require_current_session(self.users,token,actor)
             self.record(actor,code,"SENDING",f"{COMMANDS[code]} confirmed; sending once")
             # Same transaction lock, pacing and worker owner as polling. There
@@ -90,13 +104,53 @@ class CommandController:
                 self.verify_lock_readback(actor,code,lock)
             else:
                 after=self.bus.read(profile,self.config.addressing,2,1)[2]
-                self.record(actor,code,"SENT_UNVERIFIED",f"Sent once; STATUS {status} -> {after}. No unique success signature; execution not proven.")
+                self.record(actor,code,"SENT_UNVERIFIED",f"Acknowledgment received; STATUS {status} -> {after}. Execution not proven.")
+                if effect_before is not None:self.watch_effect(actor,code,{2:status,**effect_before})
         except TimeoutError as error:
             self.ambiguous=True
             self.record(actor,code,"UNKNOWN",f"{error}. No automatic retry; reconnect and review instrument state.")
         except (OSError,PermissionError,ValueError) as error:
             if sent:self.ambiguous=True
             self.record(actor,code,"UNKNOWN" if sent else "REJECTED",str(error))
+
+    def watch_effect(self,actor,code,before):
+        # Only manufacturer-defined alarm/horn relay effects are correlated.
+        # A STATUS transition alone, including Normal, is insufficient.
+        self.pending=PendingEffect(code,actor,self.clock(),before,timeout=min(30,max(8,self.config.interval*4)))
+        self.receipt.update(effect_before=before,before_status=before[2])
+
+    def observe_effect(self,snapshot):
+        pending=self.pending;elapsed=max(0,self.clock()-pending.started)
+        config=snapshot.get('config')
+        if config and any(config.get(key)!=getattr(self.config,key) for key in ('id','family','assembly','version','address','register_profile')):
+            self.pending=None;self.ambiguous=True
+            self.record(pending.actor,pending.code,'UNKNOWN','Analyzer/profile changed during effect observation; no retry.')
+            return
+        ages=snapshot.get('register_ages',{});raw=snapshot['raw']
+        fresh=snapshot['quality']=='GOOD' and all(n in raw and n in ages and 0<=ages[n]<=min(elapsed,max(5,self.config.interval*3)) for n in (2,4))
+        if snapshot['quality']!='GOOD':
+            self.pending=None;self.ambiguous=True
+            self.record(pending.actor,pending.code,'UNKNOWN','Communication lost during post-command observation; no retry.')
+            return
+        if elapsed>=pending.timeout:
+            self.pending=None;self.ambiguous=True
+            self.record(pending.actor,pending.code,'NOT_VERIFIED',f'Valid acknowledgment received but no conclusive fresh alarm/horn relay effect within {pending.timeout:g}s. A later Normal STATUS alone is not execution evidence. No automatic retry.')
+            return
+        if fresh:
+            before=pending.before;mask=(0 if profile_for(self.config).revision=='700' else 8) if pending.code==0x100 else 7
+            cleared=(before[4]&mask)&~raw[4]
+            service_fresh=59 in before and 59 in raw and 59 in ages and 0<=ages[59]<=min(elapsed,max(5,self.config.interval*3))
+            # CHK RDNG remains tied to the reading, so its disappearance alone
+            # is not an acknowledgment signature. Ignore undocumented flags.
+            service_cleared=pending.code==0x100 and service_fresh and bool((before[59]&0x1F)&~raw[59])
+            # Reset may clear only some latched alarms; corroborate each with
+            # the corresponding current STATUS/relay rather than Normal alone.
+            expected=(bool(cleared) or service_cleared) and (pending.code==0x100 or raw[2] in (0,1,2) and not (raw[4]&7))
+            if expected:
+                self.pending=None;self.receipt.update(status_after=raw[2],effect_after={2:raw[2],4:raw[4]})
+                service_detail=f', SERVICE {before[59]:04X} -> {raw[59]:04X}' if service_fresh else ''
+                self.record(pending.actor,pending.code,'EFFECT_OBSERVED',f'Documented effect observed within {elapsed:.1f}s after acknowledgment: STATUS {before[2]} -> {raw[2]}, RELAYS {before[4]:04X} -> {raw[4]:04X}{service_detail}. Expected alarm/horn/service clearing observed; causality and sensor health are not independently established.')
+                return
 
     def verify_lock_readback(self,actor,code,word):
         self.receipt.update(lock_register=60,lock_readback=word)
@@ -135,6 +189,7 @@ class CommandController:
     def observe(self,snapshot):
         pending=self.pending
         if pending is None: return
+        if isinstance(pending,PendingEffect):self.observe_effect(snapshot);return
         if isinstance(pending,PendingLock):self.observe_lock(snapshot);return
         status=snapshot["raw"].get(2)
         age=snapshot.get("register_ages",{}).get(2,0)

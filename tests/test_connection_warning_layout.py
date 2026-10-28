@@ -151,7 +151,7 @@ def test_focused_test_view_returns_without_stale_live_widgets(app,tmp_path,actio
             wait(app,lambda:w.snapshot is not None and w.snapshot['quality']=='GOOD')
             assert w.gauge.isVisibleTo(w) and w.disconnect_button.isVisible()
         else:
-            assert w.snapshot is None and w.pages.currentIndex()==1
+            assert w.snapshot is None and w.pages.currentIndex()==6
             assert not w.worker.isRunning()
     finally:
         w.close()
@@ -199,11 +199,13 @@ def test_compact_cards_reflow_without_clipping_or_overlap(app,tmp_path,kind):
         w.update_data(snapshot,bus.diagnostics());w.show();app.processEvents()
         container=w.readout_container;counts=[]
         for width in (1540,1100,1900,1100):
+            w.navigation.setCurrentRow(0)
             w.resize(width,1020);app.processEvents();app.processEvents()
             cards=container.cards;counts.append(container.columns)
             assert container.columns==container.column_count(container.width())
-            assert all(card.width()==200 for container in w.readout_groups.values() for card in container.cards)
-            for group in w.readout_groups.values():
+            for name,group in w.readout_groups.items():
+                w.navigation.setCurrentRow(0 if name=='Gauges' else 1);app.processEvents();app.processEvents()
+                assert all(card.width()==200 for card in group.cards)
                 cards=group.cards
                 for i,card in enumerate(cards):
                     assert card.geometry().right()<group.width()

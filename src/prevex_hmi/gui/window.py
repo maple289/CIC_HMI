@@ -7,7 +7,7 @@ from pathlib import Path
 import time
 from dataclasses import replace
 from PySide6.QtCore import Qt,Signal,QTimer
-from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget,QSizePolicy,QToolButton,QMenu
+from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget,QSizePolicy,QToolButton,QMenu,QTabWidget
 import pyqtgraph as pg
 from prevex_hmi.devices.configuration import save_settings
 from prevex_hmi.devices.models import DeviceConfig
@@ -19,9 +19,10 @@ from prevex_hmi.gui.analyzer_hero import AnalyzerHero
 from prevex_hmi.gui.profile_library import PROFILE_CHOICES,PROFILE_STATUS,library_config
 from prevex_hmi.gui.trend_display import DisplayTrend
 from prevex_hmi.gui.command_button import CommandButton
+from prevex_hmi.gui.command_status import command_status
 from prevex_hmi.gui.serial_ports import require_available_port
 from prevex_hmi.gui.indicators import IndicatorPanel
-from prevex_hmi.gui.presentation import measurement,severity,uses_controller_fault_display
+from prevex_hmi.gui.presentation import measurement,severity,uses_controller_fault_display,monitor_condition
 from prevex_hmi.gui.worker import MonitoringWorker
 from prevex_hmi.profiles import PROFILES,profile_for,commands_for,profile_name
 from prevex_hmi.profiles.common import COMMANDS
@@ -102,15 +103,17 @@ class MainWindow(QMainWindow):
         self.bench_button=QPushButton('Connect SNR671 / COM4');self.bench_button.clicked.connect(self.start_controller_bench);toolbar.addWidget(self.bench_button)
         self.bench_button.setToolTip('Previously authorized controller bench: COM4, 9600, packet address1. Monitoring plus confirmed Operator/Admin Acknowledge/Reset only. No calibration or other physical writes.')
         self.selection_label=QLabel();toolbar.addWidget(self.selection_label,1);root.addLayout(toolbar)
-        self.identity_label=QLabel('Instrument identification: not connected');self.identity_label.setWordWrap(True);root.addWidget(self.identity_label)
-        self.warning=QLabel();self.warning.setObjectName('warning');self.warning.setWordWrap(True);self.warning.hide();root.addWidget(self.warning)
-        body=QHBoxLayout();self.navigation=QListWidget();self.navigation.setFixedWidth(170)
-        self.navigation.addItems(['Gauge','Live trends','History / CSV','Alarm history','Diagnostics','Command audit','Profile settings']);body.addWidget(self.navigation)
+        self.identity_label=QLabel('Instrument identification: not connected');self.identity_label.setWordWrap(True)
+        self.warning=QLabel();self.warning.setObjectName('warning');self.warning.setWordWrap(True);self.warning.hide()
+        self.operational_warning=QLabel();self.operational_warning.setObjectName('warning');self.operational_warning.setWordWrap(True);self.operational_warning.hide();root.addWidget(self.operational_warning)
+        body=QHBoxLayout();self.navigation=QListWidget();self.navigation.setFixedWidth(122)
+        self.navigation.addItems(['Monitor','Service','Diagnostics']);body.addWidget(self.navigation)
         self.pages=QStackedWidget();body.addWidget(self.pages,1);root.addLayout(body,1);self.setCentralWidget(central)
         self.build_gauge();self.build_trends();self.build_history();self.build_events();self.build_diagnostics();self.build_audit();self.build_profile_settings()
+        self.organize_work_areas()
         self.build_connection_test_page()
-        self.navigation.currentRowChanged.connect(self.pages.setCurrentIndex);self.navigation.setCurrentRow(0)
-        self.navigation.currentRowChanged.connect(lambda index:self.refresh_profile_settings() if index==6 else None)
+        self.navigation.currentRowChanged.connect(lambda index:self.pages.setCurrentIndex((0,6,4)[index]) if 0<=index<3 else None);self.navigation.setCurrentRow(0)
+        self.navigation.currentRowChanged.connect(lambda index:self.refresh_profile_settings() if index==1 else None)
         self.apply_theme();self.refresh_connection_labels();self.build_readouts(self.config.family)
         self.set_connection_status(False)
         self.refresh_profile_settings()
@@ -134,6 +137,40 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(page)
         return layout
 
+    def toggle_technical(self,expanded):
+        self.technical_details.setVisible(expanded);self.technical_toggle.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+
+    def sync_technical_details(self):
+        if hasattr(self,'diagnostics_technical'):
+            self.diagnostics_technical.setText('\n\n'.join(widget.text() for widget in (self.identity_label,self.warning,self.monitor_model,self.monitor_updated,self.controller_display,self.range_help) if widget.text()))
+
+    def show_diagnostics(self,tab='Technical details'):
+        self.navigation.setCurrentRow(2)
+        for index in range(self.diagnostics_tabs.count()):
+            if self.diagnostics_tabs.tabText(index)==tab:self.diagnostics_tabs.setCurrentIndex(index);break
+
+    def organize_work_areas(self):
+        def take_contents(page):
+            source=page.layout();content=QWidget();target=QVBoxLayout(content);target.setContentsMargins(0,0,0,0)
+            while source.count():
+                item=source.takeAt(0)
+                if item.widget():target.addWidget(item.widget())
+                elif item.layout():
+                    child=item.layout();child.setParent(None);target.addLayout(child)
+                else:target.addItem(item)
+            return content
+        service_page=self.pages.widget(6);configuration=take_contents(service_page)
+        self.service_tabs=QTabWidget();service_page.layout().addWidget(self.service_tabs)
+        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(self.service_cards)
+        self.service_tabs.addTab(scroll,'Parameters and alarms');self.service_tabs.addTab(configuration,'Analyzer configuration')
+        diagnostics_page=self.pages.widget(4);modbus=take_contents(diagnostics_page)
+        self.diagnostics_tabs=QTabWidget();diagnostics_page.layout().addWidget(self.diagnostics_tabs)
+        technical=QScrollArea();technical.setWidgetResizable(True);self.diagnostics_technical=QLabel('Not connected');self.diagnostics_technical.setWordWrap(True);self.diagnostics_technical.setTextFormat(Qt.PlainText);self.diagnostics_technical.setTextInteractionFlags(Qt.TextSelectableByMouse);technical.setWidget(self.diagnostics_technical)
+        self.diagnostics_tabs.addTab(modbus,'Modbus');self.diagnostics_tabs.addTab(technical,'Technical details')
+        audit=take_contents(self.pages.widget(5));audit.layout().insertWidget(1,self.command_result_card);self.command_result_card.setFixedHeight(250)
+        self.diagnostics_tabs.addTab(audit,'Command audit');self.diagnostics_tabs.addTab(take_contents(self.pages.widget(3)),'Fault history')
+        self.sync_technical_details()
+
     def build_connection_test_page(self):
         self.test_page=QScrollArea();self.test_page.setWidgetResizable(True)
         content=QWidget();self.test_page_layout=QVBoxLayout(content)
@@ -145,16 +182,17 @@ class MainWindow(QMainWindow):
 
     def set_test_view(self,active):
         was_active=self.test_view_active
-        if active and not self.test_view_active:self.return_page=max(0,self.navigation.currentRow())
+        if active and not self.test_view_active:self.return_page=max(0,self.pages.currentIndex())
         self.test_view_active=active
         self.navigation.setVisible(not active)
         for widget in (self.banner,self.identity_label,self.login_button,self.account_button,self.disconnect_button,self.bench_button):widget.setVisible(not active)
         self.warning.setVisible(not active and bool(self.warning.text()))
+        self.operational_warning.setVisible(not active and bool(self.operational_warning.text()))
         if active:self.pages.setCurrentWidget(self.test_page)
         elif was_active:self.pages.setCurrentIndex(self.return_page)
 
     def build_gauge(self):
-        layout=self.page('Gauge','')
+        layout=self.page('Monitor','')
         body=QHBoxLayout();layout.addLayout(body,1)
         left=QWidget();left_layout=QVBoxLayout(left);left_layout.setContentsMargins(0,0,0,0)
         self.indicators=IndicatorPanel();self.indicators.summary.setWordWrap(True);left_layout.addWidget(self.indicators)
@@ -180,11 +218,22 @@ class MainWindow(QMainWindow):
         self.command_message=QLabel('Select an available command after signing in.');self.command_message.setWordWrap(True)
         self.command_message.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred);result_body.addWidget(self.command_message);result_body.addStretch()
         self.command_result_scroll.setWidget(result_content);result_layout.addWidget(self.command_result_scroll,1)
-        self.hero=AnalyzerHero(self.gauge,self.analyzer_info,self.command_result_card);readings.addWidget(self.hero)
+        self.hero=AnalyzerHero(self.gauge,self.analyzer_info);readings.addWidget(self.hero)
+        self.fault_summary=QLabel('Measurement Unavailable');self.fault_summary.setWordWrap(True);info.insertWidget(1,self.fault_summary)
+        self.compatibility_notice=QLabel();self.compatibility_notice.setWordWrap(True);info.insertWidget(2,self.compatibility_notice)
+        command_row=QHBoxLayout();self.last_command=QLabel('No command sent in this session');self.last_command.setWordWrap(True);self.last_command.setFixedHeight(56);command_row.addWidget(self.last_command,1)
+        self.view_audit_button=QPushButton('View Command Audit');self.view_audit_button.clicked.connect(lambda:self.show_diagnostics('Command audit'));command_row.addWidget(self.view_audit_button);readings.addLayout(command_row)
+        self.technical_toggle=QToolButton();self.technical_toggle.setText('Technical Details');self.technical_toggle.setCheckable(True);self.technical_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);self.technical_toggle.setArrowType(Qt.RightArrow);readings.addWidget(self.technical_toggle)
+        self.technical_details=QWidget();technical=QVBoxLayout(self.technical_details);technical.setContentsMargins(6,0,6,4)
+        for widget in (self.identity_label,self.warning,self.monitor_model,self.monitor_updated,self.controller_display,self.range_help):technical.addWidget(widget)
+        self.technical_details.hide();self.technical_toggle.toggled.connect(self.toggle_technical);readings.addWidget(self.technical_details)
+        self.service_cards=QWidget();service_cards_layout=QVBoxLayout(self.service_cards);service_cards_layout.setContentsMargins(0,0,0,0)
         self.readout_groups={}
         for title in ('Gauges','Calibration parameters','Alarm settings'):
-            label=QLabel(title);label.setObjectName('heading');readings.addWidget(label)
-            container=CompactReadouts();readings.addWidget(container);self.readout_groups[title]=container
+            target=readings if title=='Gauges' else service_cards_layout
+            label=QLabel(title);label.setObjectName('heading');target.addWidget(label)
+            container=CompactReadouts();target.addWidget(container);self.readout_groups[title]=container
+        service_cards_layout.addStretch()
         self.readout_container=self.readout_groups['Gauges'];self.readout_grid=self.readout_container.grid
         readings.addStretch()
         scroll.setWidget(content);left_layout.addWidget(scroll,1);body.addWidget(left,1)
@@ -195,7 +244,7 @@ class MainWindow(QMainWindow):
         self.command_access_note=QLabel(commands);self.command_access_note.hide()
         self.command_access_button=QPushButton('Enable Acknowledge / Reset')
         self.command_access_button.setMinimumHeight(44);self.command_access_button.clicked.connect(self.activate_command_bench)
-        result_layout.addWidget(self.command_access_button)
+        column.addWidget(self.command_access_button)
         self.command_buttons={}
         self.lock_command_code=None
         for code,name in COMMANDS.items():
@@ -274,6 +323,17 @@ class MainWindow(QMainWindow):
     def build_audit(self):
         layout=self.page('Command audit','Modbus acknowledgments and STATUS outcomes are distinct. Operating commands require matching identity, permissions, current controller checks and confirmation.')
         self.audit_table=table(['UTC timestamp','Instrument','User','Command word','Result','Detail']);layout.addWidget(self.audit_table)
+        for column,width in enumerate((190,100,100,110,310)):self.audit_table.setColumnWidth(column,width)
+        self.audit_table.horizontalHeader().setStretchLastSection(True)
+
+    def fill_command_audit(self,rows):
+        displayed=[]
+        for timestamp,instrument,actor,code,state,detail in rows:
+            acknowledged=state in ('SENT_UNVERIFIED','PENDING','STARTED','WAITING_STATUS','VERIFYING_LOCK','EFFECT_OBSERVED','NOT_VERIFIED','VERIFIED','COMPLETED_OBSERVED','COMPLETED_SIMULATED','VERIFIED_READBACK','VERIFIED_SIMULATED') or detail.startswith('Acknowledgment received;')
+            icon,title,_=command_status(dict(state=state,reply_received=acknowledged))
+            if state=='UNKNOWN' and not detail.startswith(('Acknowledgment received;','No valid command acknowledgment')):icon,title='?','Outcome unknown — see detail'
+            displayed.append((timestamp,instrument,actor,f'Setting [{code-0x10000}]' if code>=0x10000 else f'0x{code:04X}',f'{icon} {title} [{state}]',detail))
+        fill_table(self.audit_table,displayed)
 
     def build_profile_settings(self):
         layout=self.page('Profile settings','Documented register inventory. Select a row to read its current value. Factory, communication and unvalidated settings remain read-only; no generic write path.')
@@ -359,7 +419,7 @@ class MainWindow(QMainWindow):
         self.display_trend.clear();self.trend_scope=None;self.blank_started_wall=None;self.readout_retained=False
         self.gauge.set_snapshot(None);self.indicators.update_snapshot(None)
         self.set_connection_status(False);self.monitor_updated.setText('No current measurement');self.identity_label.setText(reason)
-        self.controller_display.clear()
+        self.controller_display.clear();self.fault_summary.setText('Communication Lost');self.fault_summary.setStyleSheet('color:#f27778;font-weight:bold;');self.last_command.setText('No command sent in this session');self.sync_technical_details()
         self.command_proof.setText('No command sent in this session');self.command_proof.setStyleSheet('')
         self.last_receipt_key=None;self.active_command=None
         for button in self.command_buttons.values():button.reset()
@@ -412,7 +472,7 @@ class MainWindow(QMainWindow):
         def current():return self.worker is owner and not self.next_action and not self.closing
         self.worker.updated.connect(self.update_data);self.worker.identified.connect(self.identification_result)
         self.worker.history_ready.connect(lambda rows:self.update_history(rows) if current() else None);self.worker.events_ready.connect(lambda rows:fill_table(self.event_table,rows) if current() else None)
-        self.worker.audit_ready.connect(lambda rows:fill_table(self.audit_table,[(a,b,c,f'Setting [{d-0x10000}]' if d>=0x10000 else f'0x{d:04X}',e,f) for a,b,c,d,e,f in rows]) if current() else None)
+        self.worker.audit_ready.connect(lambda rows:self.fill_command_audit(rows) if current() else None)
         self.worker.parameter_result.connect(lambda text:self.parameter_feedback(text) if current() else None)
         self.worker.inspection_ready.connect(lambda text:self.inspection_result.setText(text) if current() else None);self.worker.command_result.connect(lambda text:self.command_feedback(text) if current() else None)
         self.worker.failed.connect(self.worker_error);self.worker.finished.connect(self.worker_finished)
@@ -460,6 +520,9 @@ class MainWindow(QMainWindow):
         if info.get('test_only'):text+=' | TEST ONLY: monitoring and controls remain inactive'
         self.identity_label.setText(text);self.warning.setText(info.get('warning',''));self.warning.setVisible(bool(info.get('warning')) and not self.test_view_active)
         self.monitor_model.setText(info.get('text',''))
+        self.compatibility_notice.setText(('Analyzer profile mismatch - see Technical Details' if 'MISMATCH' in info.get('warning','') else 'Compatibility review required - see Technical Details') if info.get('warning') else '')
+        self.operational_warning.clear();self.operational_warning.hide()
+        self.sync_technical_details()
         self.inspect_register.clear()
         family=info.get('config',{}).get('family',self.config.family)
         profile=profile_for(DeviceConfig(**info["config"])) if info.get("config") else profile_for(self.config)
@@ -477,6 +540,7 @@ class MainWindow(QMainWindow):
         if (family,profile_for(config).revision)!=self.snapshot_family:self.build_readouts(family,config)
         self.trend_window.set_analyzer(config)
         self.gauge.set_snapshot(snapshot);self.indicators.update_snapshot(snapshot)
+        condition_color,condition=monitor_condition(snapshot);self.fault_summary.setText(condition);self.fault_summary.setStyleSheet(f'color:{condition_color};font-size:17px;font-weight:bold;')
         retained=bool(self.gauge.held and self.gauge.lcd_hold)
         self.readout_retained=retained
         if retained and self.blank_started_wall is None:self.blank_started_wall=time.time()
@@ -486,6 +550,14 @@ class MainWindow(QMainWindow):
             lcd=b''.join(snapshot['raw'][n].to_bytes(2,'big') for n in lcd_numbers).decode('latin-1').strip()
             self.controller_display.setText(f'Controller display [51–55]: {lcd}\nRaw process [1]: 0x{snapshot["raw"][1]:04X}\nFault-state values; sensor conversion validation pending')
         else:self.controller_display.clear()
+        raw_details=[]
+        for number in (1,38,39):
+            word=snapshot['raw'].get(number)
+            if word is None:continue
+            signed=word-65536 if word&0x8000 else word
+            decoded,units=measurement(snapshot,number)
+            raw_details.append(f'Register [{number}]: raw 0x{word:04X} / signed {signed} / {decoded if decoded is not None else "unavailable"} {units}')
+        self.controller_display.setText('\n'.join(filter(None,[self.controller_display.text(),*raw_details])))
         color,status=severity(snapshot);self.monitor_name.setText(profile_name(config))
         self.set_connection_status(snapshot['quality']=='GOOD' and snapshot.get('last_success') is not None)
         self.monitor_updated.setText(f"Last update (UTC):\n{snapshot['last_success'] or 'never'}\n{snapshot['error']}")
@@ -494,6 +566,9 @@ class MainWindow(QMainWindow):
             if n==1:self.readout_names[n].setText('READING [LCD51–55; raw1]' if uses_controller_fault_display(snapshot) else 'READING [1]')
             if family=='BTU' and n==42:widget.setText('--');quality.setText('UNAVAILABLE: meaning not documented');continue
             value,unit=measurement(snapshot,n)
+            if n in (38,39) and n in snapshot['raw']:
+                word=snapshot['raw'][n];signed=word-65536 if word&0x8000 else word
+                widget.setToolTip(f'Raw 0x{word:04X}; signed {signed}; documented engineering conversion.'+(' This legacy extreme word has no verified Peak sentinel rule; see Technical Details.' if config.register_profile=='fta_4x' and word==0x8001 else ''))
             if n==1:
                 self.readout_retained=retained
                 style='color:#e7b55e;' if retained else ''
@@ -531,8 +606,9 @@ class MainWindow(QMainWindow):
         stats=diagnostics['bus'];rate=stats['success_rate']
         self.diagnostics_summary.setText(f"Single bus | {diagnostics['baud']} baud / 8N1 | Polls {stats['polls']} | Success {rate if rate is not None else '--'}% | Timeouts {stats['timeouts']} | CRC {stats['crc_errors']} | Protocol {stats['protocol_errors']}\nLast reply {stats['last_response']} | {stats['last_response_ms']:.2f} ms")
         fill_table(self.traffic,[(r['time'],r['direction'],r['address'],r['register'],r['hex']) for r in diagnostics['traffic'][-100:]])
+        self.sync_technical_details()
         self.update_command_buttons();self.received.emit()
-        if self.navigation.currentRow()==6:self.refresh_profile_settings()
+        if self.navigation.currentRow()==1:self.refresh_profile_settings()
         if snapshot.get('control',{}).get('receipt'):self.show_command_receipt(snapshot['control']['receipt'])
 
     def set_connection_status(self,connected):
@@ -546,12 +622,14 @@ class MainWindow(QMainWindow):
         connected=bool(snapshot and snapshot['quality']=='GOOD' and snapshot.get('last_success') and
                        snapshot.get('age',0) is not None and snapshot.get('age',0)+time.monotonic()-self.snapshot_received_at <= max(5,snapshot['config']['interval']*3))
         self.set_connection_status(connected)
+        if snapshot and not connected:self.fault_summary.setText('Communication Lost');self.fault_summary.setStyleSheet('color:#f27778;font-weight:bold;')
         if not connected and self.readout_retained:
             self.readout_retained=False
             for label in (self.overview_hold_note,self.trend_hold_note):label.setText('No current communication; held display ended')
 
     def show_command_receipt(self,receipt):
         key=(receipt.get('id') or receipt.get('time'),receipt['code'],receipt.get('reply_received'),receipt['state'])
+        if key==self.last_receipt_key:return
         if key!=self.last_receipt_key:
             previous=self.last_receipt_key
             self.last_receipt_key=key
@@ -560,10 +638,14 @@ class MainWindow(QMainWindow):
             elif button and receipt['state'] in ('UNKNOWN','REJECTED') and not receipt.get('reply_received'):button.feedback(False)
         state=receipt['state'];color='#efb753'
         title={'CHECKING':'Checking target','SENDING':'Command sent; waiting for reply','PENDING':'Acknowledged — monitoring STATUS','VERIFYING_LOCK':'Acknowledged — verifying CAL LOCK [60]','WAITING_STATUS':'Waiting for execution evidence','STARTED':'Execution sequence observed','COMPLETED_OBSERVED':'STATUS sequence ended','CONTROLLER_REPLIED':'Controller replied','STATE_CHANGED':'Controller replied — state changed','NO_STATE_CHANGE':'Controller replied — state unchanged','UNKNOWN':'Outcome unknown — do not retry','REJECTED':'Command not sent'}.get(state,state)
-        if state in ('STATE_CHANGED','COMPLETED_SIMULATED','COMPLETED_OBSERVED','VERIFIED'):color='#39c6a4'
+        if state in ('COMPLETED_SIMULATED','COMPLETED_OBSERVED','VERIFIED','EFFECT_OBSERVED'):color='#39c6a4'
         elif state in ('CONTROLLER_REPLIED','NO_STATE_CHANGE'):color='#69a7ed'
         elif state in ('UNKNOWN','REJECTED','FAILED'):color='#f27778'
-        lines=[title,COMMANDS.get(receipt['code'],f"0x{receipt['code']:04X}"),f"Reply received: {'YES' if receipt.get('reply_received') else 'NO'}"]
+        icon,outcome,color=command_status(receipt)
+        self.last_command.setText(f"{icon} {outcome}\n{COMMANDS.get(receipt['code'],str(receipt['code']))}")
+        self.last_command.setStyleSheet(f'color:{color};font-weight:bold;')
+        self.last_command.setToolTip(receipt.get('detail',outcome))
+        lines=[f'{icon} {outcome}',title,COMMANDS.get(receipt['code'],f"0x{receipt['code']:04X}"),f"Reply received: {'YES' if receipt.get('reply_received') else 'NO'}"]
         before=receipt.get('before');after=receipt.get('after')
         if before and after:
             lines.extend([f"STATUS: {before['status']} → {after['status']}",f"RELAYS: {before['relays']:04X} → {after['relays']:04X}",f"SERVICE: {before['service']:04X} → {after['service']:04X}",'Reply confirms receipt; execution is not proven by acknowledgment alone.'])
@@ -735,6 +817,10 @@ class MainWindow(QMainWindow):
 
     def parameter_feedback(self,text):
         self.command_proof.setText(text);self.command_feedback(text)
+        verified='readback verified' in text
+        self.last_command.setText(('Setting change verified' if verified else 'Setting change not verified')+' - view Command Audit')
+        self.last_command.setStyleSheet('color:'+('#39c6a4' if verified else '#f27778')+';font-weight:bold;')
+        self.last_command.setToolTip(text)
 
     def command_feedback(self,text):
         if self.active_command is not None and not self.snapshot.get('control',{}).get('receipt') and ('rejected' in text.lower() or 'not sent' in text.lower()):self.command_buttons[self.active_command].feedback(False)
@@ -824,6 +910,7 @@ class MainWindow(QMainWindow):
     def worker_error(self,text):
         if self.test_in_progress:self.test_result_error=text
         self.invalidate('OFFLINE');self.warning.setText(text);self.warning.setVisible(not self.test_view_active);self.statusBar().showMessage(text)
+        self.operational_warning.setText(text);self.operational_warning.setVisible(not self.test_view_active);self.sync_technical_details()
 
     def apply_theme(self):
         dark=self.settings.get('theme','dark')=='dark';self.gauge.dark=dark;self.gauge.update()

@@ -9,7 +9,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from prevex_hmi.gui.presentation import format_reading, measurement, severity,fresh_missing_lcd
+from prevex_hmi.gui.presentation import format_reading, measurement, severity,fresh_missing_lcd,monitor_condition
 from prevex_hmi.devices.models import DeviceConfig
 from prevex_hmi.profiles import profile_for
 
@@ -110,6 +110,12 @@ def gauge_state(snapshot: dict | None) -> GaugeState:
         if value is not None:
             if value < 0:color='#8290a5'
             elif markers:color='#f27778' if value >= markers[1][1] else '#efb753' if value >= markers[0][1] else '#39c6a4'
+    if not lel and value is not None and bands:
+        color=next((shade for start,end,shade in bands if start<=value<end),bands[-1][2] if value>=maximum else '#5a9fcf')
+    condition_color,condition=monitor_condition(snapshot)
+    if condition=='Analyzer Fault Active':
+        status_color=condition_color
+        if status=='Normal':status=condition
     if snapshot["quality"] != "GOOD":
         thresholds = "Alarm thresholds unverified: no current communication"
     return GaugeState(
