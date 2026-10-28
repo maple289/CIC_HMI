@@ -12,6 +12,20 @@ from prevex_hmi.devices.identification import detect
 from prevex_hmi.logging_db.store import Historian
 
 
+def test_acknowledged_reset_without_effect_blocks_only_reset(control):
+    service,state,store=control;now=[0.0];service.clock=lambda:now[0];state['status']=25;state['relays']=12
+    service.execute(0x200,'admin',confirmed=True);assert len(state['writes'])==1 and service.pending
+    now[0]=8
+    service.observe(dict(raw={2:25,4:12},quality='GOOD',register_ages={2:0,4:0}))
+    assert service.pending is None and not service.ambiguous and service.blocked_commands=={0x200}
+    assert store.audit_rows()[0][4]=='NOT_VERIFIED' and 'Fresh STATUS 25 -> 25' in store.audit_rows()[0][5]
+    assert 'RELAYS 000C -> 000C' in store.audit_rows()[0][5]
+    service.execute(0x200,'admin',confirmed=True)
+    assert len(state['writes'])==1 and store.audit_rows()[0][4]=='REJECTED'
+    service.execute(0x100,'admin',confirmed=True)
+    assert state['writes']==[(7,0x200,1),(7,0x100,1)] and service.receipt['reply_received']
+
+
 @pytest.fixture(params=['5.12','4.81'])
 def control(tmp_path,request):
     state=dict(status=0,lock=0,minutes=4,lost=False,mismatch=False,writes=[],clients=[])
@@ -24,7 +38,7 @@ def control(tmp_path,request):
         def read_holding_registers(self,pdu,*,count,device_id):
             assert device_id==1
             identity=(b'TYPE FTAVER 4\xa781 SNR671' if request.param=='4.81' else b'LEL VER5.12 SNR675 S/N UNIT1').ljust(32,b' ')
-            raw={1:256,2:state['status'],3:100,4:128,28:state['minutes'],60:state['lock'],62:11}
+            raw={1:256,2:state['status'],3:100,4:state.get('relays',128),28:state['minutes'],60:state['lock'],62:11}
             raw.update({257+i//2:int.from_bytes(identity[i:i+2],'big') for i in range(0,32,2)})
             return SimpleNamespace(isError=lambda:False,registers=[raw.get(n,0) for n in range(pdu+1,pdu+count+1)])
         def write_register(self,pdu,code,*,device_id):

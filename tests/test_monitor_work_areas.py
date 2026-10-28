@@ -88,7 +88,7 @@ def test_reset_normal_alone_and_cached_precommand_samples_are_not_proof():
 def test_acknowledged_timeout_is_distinct_from_missing_ack_and_later_normal():
     c,now,audit=effect_controller();now[0]=8
     c.observe(dict(raw={2:0,4:4},quality='GOOD',register_ages={2:0,4:0}))
-    assert c.receipt['state']=='NOT_VERIFIED' and c.ambiguous
+    assert c.receipt['state']=='NOT_VERIFIED' and not c.ambiguous and c.blocked_commands=={0x200}
     assert 'Acknowledgment received' in audit[-1][-1]
     c.observe(dict(raw={2:0,4:0},quality='GOOD',register_ages={2:0,4:0}))
     assert c.receipt['state']=='NOT_VERIFIED'
@@ -133,3 +133,15 @@ def test_effect_cannot_cross_analyzer_profiles():
     other=asdict(c.config);other['id']='other'
     c.observe(dict(config=other,raw={2:0,4:0},quality='GOOD',register_ages={2:0,4:0}))
     assert c.receipt['state']=='UNKNOWN' and c.ambiguous and 'profile changed' in audit[-1][-1]
+
+
+@pytest.mark.parametrize('condition',['stale','undocumented_status','missing_relays'])
+def test_effect_deadline_without_fresh_verification_keeps_global_lock(condition):
+    c,now,audit=effect_controller();now[0]=8
+    snapshot=dict(raw={2:25,4:4},quality='GOOD',register_ages={2:0,4:0})
+    if condition=='stale':snapshot['register_ages']={2:9,4:9}
+    elif condition=='undocumented_status':snapshot['raw'][2]=0x2020
+    else:del snapshot['raw'][4]
+    c.observe(snapshot)
+    assert c.ambiguous and c.pending is None and c.receipt['state']=='UNKNOWN'
+    assert not c.blocked_commands and 'No fresh post-command' in audit[-1][-1]

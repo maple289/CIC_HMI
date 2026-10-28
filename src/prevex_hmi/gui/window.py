@@ -828,7 +828,7 @@ class MainWindow(QMainWindow):
             physical=self.settings['mode']=='hardware'
             button.setVisible(True)
             active_config=DeviceConfig(**snapshot["config"]) if snapshot else self.config
-            allow=enabled and code in (documented if documented else (0x100,0x200) if bench else commands_for(active_config))
+            allow=enabled and code not in control.get('blocked_commands',[]) and code in (documented if documented else (0x100,0x200) if bench else commands_for(active_config))
             if code in (0xF00,0x1000):allow=allow and self.lock_command_code is not None
             if physical and code==0x900 and role!='Administrator':allow=False
             if physical and documented and code==0x900 and snapshot and snapshot['raw'].get(60)!=0:allow=False
@@ -840,8 +840,10 @@ class MainWindow(QMainWindow):
             if code not in commands_for(active_config):button.setToolTip('Legacy firmware command behavior is unverified.' if profile_for(active_config).revision=='fta_4x' else '700-series Rev D: Lock/Unlock have no effect over Modbus; Save Settings permits factory changes. Not available in operational controls.' if profile_for(active_config).revision=='700' else 'Not supported by the selected profile.')
             if physical:button.setToolTip(('Real controller:670 Rev Q p90. Operator/Administrator login and explicit confirmation required.' if bench else 'Start the explicitly authorized command bench session to test Acknowledge/Reset.') if code in (0x100,0x200) else 'Unavailable for the current physical firmware/profile; see the command-readiness explanation above.')
             if physical and code in documented:button.setToolTip('Documented670 command. Fresh identity/status/lock checks, target confirmation and audit required. Save All: Administrator only.')
+            if code in control.get('blocked_commands',[]):button.setToolTip('Acknowledged but effect not verified. Review the instrument and reconnect before repeating this command. Other actions retain normal safety checks.')
         if control.get('pending'):self.command_message.setText('Verifying software lock: waiting for CAL LOCK [60] readback. Command sent once; duplicate commands disabled.' if control.get('pending_kind')=='lock' else 'Command pending: waiting for STATUS evidence. Duplicate commands disabled.')
         elif control.get('ambiguous'):self.command_message.setText('Unknown command outcome. No retry; reconnect and review state.')
+        elif control.get('blocked_commands'):self.command_message.setText('Effect not verified: '+', '.join(COMMANDS.get(code,str(code)) for code in control['blocked_commands'])+'. Repetition blocked until review/reconnection; other permitted actions remain available.')
         elif self.settings['mode']=='hardware':self.command_message.setText('Documented commands require individual confirmation; write acknowledgment does not prove execution.' if documented else 'Real controller: sign in as Operator/Administrator to test Acknowledge or Reset. Each action requires confirmation.' if bench else 'Read-only controller test. No commands enabled in this session.')
         from prevex_hmi.profiles.parameters import PARAMETERS
         for key,(number,title) in PARAMETERS.items():

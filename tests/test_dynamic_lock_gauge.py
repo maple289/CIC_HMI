@@ -244,3 +244,12 @@ def test_lock_pending_ui_identifies_register_verification_and_disables_duplicate
     assert 'CAL LOCK [60]' in w.command_message.text() and not w.command_buttons[0xF00].isEnabled()
     w.show_command_receipt(dict(id='pending-lock',code=0xF00,state='VERIFYING_LOCK',reply_received=True))
     assert 'verifying CAL LOCK [60]' in w.command_proof.text()
+
+
+def test_unverified_reset_does_not_disable_other_commands(window):
+    w=window;w.snapshot['raw'][2]=25;w.snapshot['control'].update(pending=False,ambiguous=False,blocked_commands=[0x200]);w.update_command_buttons()
+    assert not w.command_buttons[0x200].isEnabled()
+    assert w.command_buttons[0x100].isEnabled() and w.command_buttons[0x300].isEnabled() and w.command_buttons[0xF00].isEnabled()
+    assert 'reconnect' in w.command_buttons[0x200].toolTip()
+    w.snapshot['control']['ambiguous']=True;w.update_command_buttons()
+    assert not any(button.isEnabled() for button in w.command_buttons.values())

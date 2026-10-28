@@ -23,6 +23,7 @@ class ValidatedOperatingCommands(CommandController):
             if code not in WORDS or not validated_670(self.config):raise PermissionError('Unsupported command/model/firmware')
             if not self.identity_verified:raise PermissionError('Identity/profile unresolved')
             if self.pending or self.ambiguous:raise PermissionError('Previous command pending/unknown; no retry')
+            if code in self.blocked_commands:raise PermissionError('This acknowledged command had no verified effect; review the instrument and reconnect before repeating it')
             if self.clock()-self.last_attempt.get(code,float('-inf'))<2:raise PermissionError('Duplicate command suppressed')
             identity=detect(self.bus,self.config.addressing)
             if not identity.verified or (identity.family,identity.model,identity.version)!=(self.config.family,self.config.assembly,self.config.version) or self.expected_identity and identity.text!=self.expected_identity.text:

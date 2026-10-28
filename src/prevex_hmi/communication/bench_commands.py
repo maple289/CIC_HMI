@@ -20,6 +20,7 @@ class BenchOperatorCommands(CommandController):
                 raise PermissionError('Only explicitly confirmed Operator/Administrator Acknowledge or Reset is allowed')
             if not self.identity_verified:raise PermissionError('Selected profile does not match the authorized controller')
             if self.pending or self.ambiguous:raise PermissionError('Outcome pending/unknown; no duplicate or retry')
+            if code in self.blocked_commands:raise PermissionError('This acknowledged command had no verified effect; review the instrument and reconnect before repeating it')
             if self.clock()-self.last_attempt.get(code,float('-inf'))<2:raise PermissionError('Duplicate command suppressed')
             identity=detect(self.bus,self.config.addressing)
             ReadOnlyControllerGrant().validate_identity(identity)
