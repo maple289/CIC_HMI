@@ -227,7 +227,7 @@ class MonitoringWorker(QThread):
                                 if value is not None: database.measurement(snapshot['last_success'],effective.id,number,float(value),unit,'INSTRUMENT_FAULT_LCD' if number==1 and snapshot['reading_source']=='controller_lcd_fault' else snapshot['instrument_quality'],status)
                         last_logged=snapshot['last_success']
                     database.commit()
-                    snapshot['control']={'verified':controller.identity_verified,'pending':controller.pending is not None,'pending_kind':getattr(controller.pending,'kind','status'),'ambiguous':controller.ambiguous,'blocked_commands':sorted(controller.blocked_commands),'message':controller.result,'receipt':getattr(controller,'receipt',None),'physical_commands':list(COMMANDS) if validated_controls else []}
+                    snapshot['control']={'verified':controller.identity_verified,'pending':controller.pending is not None,'pending_kind':getattr(controller.pending,'kind','status'),'ambiguous':controller.ambiguous,'message':controller.result,'receipt':getattr(controller,'receipt',None),'physical_commands':list(COMMANDS) if validated_controls else []}
                     self.updated.emit(snapshot,bus.diagnostics())
                     self.events_ready.emit(database.events())
                     self.audit_ready.emit(database.audit_rows())

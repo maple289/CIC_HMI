@@ -88,7 +88,7 @@ def test_reset_normal_alone_and_cached_precommand_samples_are_not_proof():
 def test_acknowledged_timeout_is_distinct_from_missing_ack_and_later_normal():
     c,now,audit=effect_controller();now[0]=8
     c.observe(dict(raw={2:0,4:4},quality='GOOD',register_ages={2:0,4:0}))
-    assert c.receipt['state']=='NOT_VERIFIED' and not c.ambiguous and c.blocked_commands=={0x200}
+    assert c.receipt['state']=='NOT_VERIFIED' and not c.ambiguous
     assert 'Acknowledgment received' in audit[-1][-1]
     c.observe(dict(raw={2:0,4:0},quality='GOOD',register_ages={2:0,4:0}))
     assert c.receipt['state']=='NOT_VERIFIED'
@@ -144,4 +144,4 @@ def test_effect_deadline_without_fresh_verification_keeps_global_lock(condition)
     else:del snapshot['raw'][4]
     c.observe(snapshot)
     assert c.ambiguous and c.pending is None and c.receipt['state']=='UNKNOWN'
-    assert not c.blocked_commands and 'No fresh post-command' in audit[-1][-1]
+    assert 'No fresh post-command' in audit[-1][-1]

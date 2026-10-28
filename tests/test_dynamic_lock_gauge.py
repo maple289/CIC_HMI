@@ -246,10 +246,14 @@ def test_lock_pending_ui_identifies_register_verification_and_disables_duplicate
     assert 'verifying CAL LOCK [60]' in w.command_proof.text()
 
 
-def test_unverified_reset_does_not_disable_other_commands(window):
-    w=window;w.snapshot['raw'][2]=25;w.snapshot['control'].update(pending=False,ambiguous=False,blocked_commands=[0x200]);w.update_command_buttons()
-    assert not w.command_buttons[0x200].isEnabled()
+def test_acknowledged_unverified_reset_releases_buttons_for_new_confirmed_actions(window,monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    w=window;w.snapshot['raw'][2]=25;w.snapshot['control'].update(pending=False,ambiguous=False);w.update_command_buttons()
+    assert w.command_buttons[0x200].isEnabled()
     assert w.command_buttons[0x100].isEnabled() and w.command_buttons[0x300].isEnabled() and w.command_buttons[0xF00].isEnabled()
-    assert 'reconnect' in w.command_buttons[0x200].toolTip()
+    confirmations=[]
+    monkeypatch.setattr(QMessageBox,'question',lambda *args:confirmations.append(args[2]) or QMessageBox.No)
+    w.send_command(0x200)
+    assert len(confirmations)==1 and 'STATUS 25' in confirmations[0] and 'new confirmed action' in confirmations[0]
     w.snapshot['control']['ambiguous']=True;w.update_command_buttons()
     assert not any(button.isEnabled() for button in w.command_buttons.values())

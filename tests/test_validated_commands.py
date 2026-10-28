@@ -12,18 +12,33 @@ from prevex_hmi.devices.identification import detect
 from prevex_hmi.logging_db.store import Historian
 
 
-def test_acknowledged_reset_without_effect_blocks_only_reset(control):
-    service,state,store=control;now=[0.0];service.clock=lambda:now[0];state['status']=25;state['relays']=12
-    service.execute(0x200,'admin',confirmed=True);assert len(state['writes'])==1 and service.pending
-    now[0]=8
-    service.observe(dict(raw={2:25,4:12},quality='GOOD',register_ages={2:0,4:0}))
-    assert service.pending is None and not service.ambiguous and service.blocked_commands=={0x200}
-    assert store.audit_rows()[0][4]=='NOT_VERIFIED' and 'Fresh STATUS 25 -> 25' in store.audit_rows()[0][5]
-    assert 'RELAYS 000C -> 000C' in store.audit_rows()[0][5]
-    service.execute(0x200,'admin',confirmed=True)
-    assert len(state['writes'])==1 and store.audit_rows()[0][4]=='REJECTED'
-    service.execute(0x100,'admin',confirmed=True)
-    assert state['writes']==[(7,0x200,1),(7,0x100,1)] and service.receipt['reply_received']
+def test_three_explicit_ack_reset_cycles_survive_reasserted_fault(control):
+    service,state,store=control;now=[0.0];service.clock=lambda:now[0]
+    def observe(status,relays,elapsed):
+        state.update(status=status,relays=relays);now[0]+=elapsed
+        service.observe(dict(raw={2:status,4:relays},quality='GOOD',register_ages={2:0,4:0}))
+    receipts=[]
+    for cycle in range(3):
+        state.update(status=25,relays=12)
+        service.execute(0x100,'admin',confirmed=True);receipts.append(service.receipt['id'])
+        observe(25,4,.2)
+        assert service.receipt['state']=='EFFECT_OBSERVED' and service.pending is None
+        service.execute(0x200,'admin',confirmed=True);receipts.append(service.receipt['id'])
+        if cycle==0:
+            observe(0,0,.2);assert service.receipt['state']=='EFFECT_OBSERVED'
+        else:
+            observe(25,12,8.01);assert service.receipt['state']=='NOT_VERIFIED'
+            assert 'RELAYS 0004 -> 000C' in service.receipt['detail']
+        assert service.pending is None and not service.ambiguous
+        now[0]+=3
+    assert state['writes']==[(7,code,1) for code in (0x100,0x200)*3]
+    assert len(set(receipts))==6
+    # Observation never resends a command; every new action still needs consent.
+    service.observe(dict(raw={2:0,4:0},quality='GOOD',register_ages={2:0,4:0}))
+    assert service.receipt['state']=='NOT_VERIFIED' and len(state['writes'])==6
+    service.execute(0x200,'admin',confirmed=False)
+    service.execute(0x200,'viewer',confirmed=True)
+    assert len(state['writes'])==6 and store.audit_rows()[0][4]=='REJECTED'
 
 
 @pytest.fixture(params=['5.12','4.81'])

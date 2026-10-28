@@ -52,7 +52,6 @@ class CommandController:
         self.clock=clock
         self.pending=None
         self.ambiguous=False
-        self.blocked_commands=set()
         self.result="No command issued"
         self.receipt=None
 
@@ -75,7 +74,6 @@ class CommandController:
             if code not in commands_for(self.config): raise PermissionError("Unsupported/prohibited command")
             if not self.identity_verified: raise PermissionError("Analyzer identity/profile unresolved")
             if self.ambiguous or self.pending: raise PermissionError("A command is pending or has an unknown outcome; reconnect required")
-            if code in self.blocked_commands:raise PermissionError('This acknowledged command had no verified effect; review the instrument and reconnect before repeating it')
             if not isinstance(self.bus.transport,SimulatedBus): raise PermissionError("Physical commands disabled")
             from prevex_hmi.devices.identification import detect
             identity=detect(self.bus,self.config.addressing)
@@ -141,9 +139,8 @@ class CommandController:
                 self.ambiguous=True
                 self.record(pending.actor,pending.code,'UNKNOWN','No fresh post-command STATUS/RELAYS with a documented operating STATUS at the observation deadline; execution remains unknown. Review and reconnect; no retry.')
             else:
-                self.blocked_commands.add(pending.code)
                 self.receipt.update(status_after=raw[2],effect_after={2:raw[2],4:raw[4]})
-                self.record(pending.actor,pending.code,'NOT_VERIFIED',f'Valid acknowledgment received but no conclusive alarm/horn relay effect within {pending.timeout:g}s. Fresh STATUS {pending.before[2]} -> {raw[2]}; RELAYS {pending.before[4]:04X} -> {raw[4]:04X}. Repeating this command is blocked until review/reconnection; other actions retain their normal identity, role, lock and busy checks. A later Normal STATUS alone is not execution evidence. No automatic retry.')
+                self.record(pending.actor,pending.code,'NOT_VERIFIED',f'Valid acknowledgment received but no conclusive alarm/horn relay effect within {pending.timeout:g}s. Fresh STATUS {pending.before[2]} -> {raw[2]}; RELAYS {pending.before[4]:04X} -> {raw[4]:04X}. Observation is complete. A new operator-requested action requires its own confirmation and fresh identity, role, lock and busy checks. A later Normal STATUS alone is not execution evidence. No automatic retry.')
             return
         if fresh:
             before=pending.before;mask=(0 if profile_for(self.config).revision=='700' else 8) if pending.code==0x100 else 7
