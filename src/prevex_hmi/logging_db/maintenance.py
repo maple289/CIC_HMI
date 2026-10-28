@@ -1,7 +1,7 @@
 """Recording retention/maintenance; no analyzer transport dependencies."""
 from contextlib import contextmanager,closing
 from datetime import datetime,timedelta,timezone
-import hashlib,json,shutil,sqlite3,threading,time,uuid,tempfile
+import hashlib,json,shutil,sqlite3,threading,time,uuid,tempfile,copy
 from pathlib import Path
 from .recordings import sessions,read_connection
 
@@ -83,6 +83,53 @@ class RecordingManagement:
         self.directory=Path(directory);self.gate=gate_for(directory)
         self.paths=[self.directory/'simulation.sqlite3',self.directory/'hardware.sqlite3']
         self.policy_path=self.directory/'recording-retention.json'
+        self.history_lock=threading.Lock();self.history_offset=0;self.history_identity=None;self.history_cache={}
+
+    def operation_status(self):
+        """Incrementally project the existing journal; recording rows stay read-only."""
+        path=self.directory/'recording-maintenance.jsonl'
+        with self.history_lock:
+            if path.exists():
+                stat=path.stat();identity=(stat.st_dev,stat.st_ino)
+                if identity!=self.history_identity or stat.st_size<self.history_offset:
+                    self.history_offset=0;self.history_cache={};self.history_identity=identity
+                with path.open('rb') as stream:
+                    stream.seek(self.history_offset)
+                    while True:
+                        start=stream.tell();line=stream.readline()
+                        if not line:break
+                        if not line.endswith(b'\n'):stream.seek(start);break
+                        try:event=json.loads(line)
+                        except (ValueError,UnicodeError):continue
+                        if not isinstance(event,dict) or not event.get('timestamp'):continue
+                        operation=event.get('operation','')
+                        if not isinstance(operation,str):continue
+                        if event.get('actor')=='Automatic retention' and operation in ('DELETE_COMPLETE','DEFERRED'):
+                            self.history_cache['cleanup_attempt']=event
+                            if operation=='DELETE_COMPLETE':self.history_cache['cleanup']=event
+                        elif operation.startswith('BACKUP_') or operation=='BACKUP':
+                            if operation!='BACKUP' or self.history_cache.get('backup',{}).get('operation')!='BACKUP_STARTED':self.history_cache['backup']=event
+                        elif operation.startswith('OPTIMIZE_') or operation=='VACUUM_FAILED':self.history_cache['optimization']=event
+                    self.history_offset=stream.tell()
+            result=copy.deepcopy(self.history_cache)
+        # Older builds recorded successful VACUUM only in the SQLite ledger.
+        if 'optimization' not in result:
+            for database in self.paths:
+                if not database.exists():continue
+                with closing(read_connection(database)) as db:
+                    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='recording_maintenance'").fetchone():continue
+                    row=db.execute("SELECT timestamp,detail FROM recording_maintenance WHERE operation='VACUUM_COMPLETE' ORDER BY id DESC LIMIT 1").fetchone()
+                    if row and (not result.get('optimization') or row['timestamp']>result['optimization']['timestamp']):result['optimization']=dict(timestamp=row['timestamp'],operation='OPTIMIZE_COMPLETE',detail=json.loads(row['detail']))
+        return result
+
+    def summary(self):return dict(policy=self.policy(),operations=self.operation_status())
+
+    def optimization_blocker(self):
+        with self.gate.lock:
+            if self.gate.recorders:return 'Stop recording before optimizing storage.'
+            if self.gate.monitors:return 'Disconnect monitoring before optimizing storage.'
+            if self.gate.exclusive or self.gate.readers or self.gate.history_writers or self.gate.commands:return 'Wait for current database operations or controller verification to finish.'
+        return ''
 
     def admin(self,token):
         path=self.directory/'users.sqlite3'
@@ -140,7 +187,7 @@ class RecordingManagement:
                     usage={r[0]:r[1] for r in db.execute('SELECT session_id,SUM(80+length(acquired_at)+COALESCE(length(value),0)+length(unit)+length(quality)) FROM recording_values GROUP BY session_id')}
                     frames={r[0]:r[1] for r in db.execute('SELECT session_id,COUNT(*) FROM recording_frames GROUP BY session_id')}
                     for row in own:row.update(protected=row['id'] in kept,approximate_bytes=usage.get(row['id'],0)+frames.get(row['id'],0)*100+len(row['config'])+len(row['identity'])+len(row['parameters'])+200)
-            return dict(sessions=rows,databases=sizes,policy=self.policy())
+            return dict(sessions=rows,databases=sizes,policy=self.policy(),operations=self.operation_status())
 
     def keep(self,token,ids,protected):
         actor=self.admin(token)
@@ -210,6 +257,15 @@ class RecordingManagement:
             raise
 
     def backup(self,token,destination):
+        actor=self.admin(token);self.log(actor,'BACKUP_STARTED',str(destination))
+        try:result=self._backup(token,destination)
+        except (OSError,ValueError,sqlite3.Error) as error:
+            try:self.log(actor,'BACKUP_FAILED',str(error))
+            except OSError:pass
+            raise
+        self.log(actor,'BACKUP_COMPLETE',dict(files=result));return result
+
+    def _backup(self,token,destination):
         actor=self.admin(token);destination=Path(destination).resolve();destination.mkdir(parents=True,exist_ok=True);created=[]
         with self.gate.reading():
             for path in self.paths:
@@ -229,6 +285,17 @@ class RecordingManagement:
         return created
 
     def optimize(self,token,*,confirmed=False):
+        actor=self.admin(token)
+        if not confirmed:raise PermissionError('Optimization requires confirmation')
+        self.log(actor,'OPTIMIZE_STARTED','Storage optimization requested')
+        try:result=self._optimize(token,confirmed=confirmed)
+        except (OSError,ValueError,sqlite3.Error) as error:
+            try:self.log(actor,'OPTIMIZE_FAILED',str(error))
+            except OSError:pass
+            raise
+        self.log(actor,'OPTIMIZE_COMPLETE',dict(databases=result));return result
+
+    def _optimize(self,token,*,confirmed=False):
         actor=self.admin(token)
         if not confirmed:raise PermissionError('Optimization requires confirmation')
         results=[]

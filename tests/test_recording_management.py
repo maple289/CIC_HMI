@@ -270,3 +270,34 @@ def test_policy_reports_applied_state_if_only_completion_log_fails(management,mo
         original(actor,operation,detail)
     monkeypatch.setattr(s,'log',log);result=s.set_policy(t,True,90)
     assert s.policy()==dict(enabled=True,days=90) and result['enabled'] and 'Policy applied' in result['warning']
+
+def test_operation_summaries_survive_restart_and_partial_journal(management,tmp_path):
+    s,u,t,add=management;add(100);s.set_policy(t,True,30);s.retention(NOW)
+    s.backup(t,tmp_path/'backups');s.optimize(t,confirmed=True)
+    status=RecordingManagement(s.directory).summary()
+    assert status['policy']==dict(enabled=True,days=30)
+    assert status['operations']['cleanup']['operation']=='DELETE_COMPLETE'
+    assert status['operations']['backup']['operation']=='BACKUP_COMPLETE'
+    assert status['operations']['optimization']['operation']=='OPTIMIZE_COMPLETE'
+    s.log('Automatic retention','DEFERRED','Recording active')
+    assert s.summary()['operations']['cleanup_attempt']['operation']=='DEFERRED'
+    assert s.summary()['operations']['cleanup']['operation']=='DELETE_COMPLETE'
+    journal=s.directory/'recording-maintenance.jsonl'
+    with journal.open('ab') as out:out.write(b'bad json\n{"timestamp":"2026-10-28T00:00:00+00:00","operation":3}\n{"timestamp":')
+    assert s.summary()['operations']['backup']['operation']=='BACKUP_COMPLETE'
+    with journal.open('ab') as out:out.write(b'"2026-10-28T00:00:00+00:00","operation":"BACKUP_FAILED","detail":"disk full"}\n')
+    assert s.summary()['operations']['backup']['detail']=='disk full'
+
+
+def test_failure_results_and_optimization_blocker(management,tmp_path,monkeypatch):
+    s,u,t,add=management;add(1)
+    def fail(*args,**kwargs):raise OSError('disk full')
+    monkeypatch.setattr(s,'_backup',fail);monkeypatch.setattr(s,'_optimize',fail)
+    with pytest.raises(OSError):s.backup(t,tmp_path/'backups')
+    with pytest.raises(OSError):s.optimize(t,confirmed=True)
+    status=RecordingManagement(s.directory).summary()['operations']
+    assert status['backup']['operation']=='BACKUP_FAILED' and status['optimization']['operation']=='OPTIMIZE_FAILED'
+    assert not s.optimization_blocker()
+    s.gate.monitors+=1
+    try:assert 'Disconnect monitoring' in s.optimization_blocker()
+    finally:s.gate.monitors-=1

@@ -799,10 +799,12 @@ class MainWindow(QMainWindow):
         self.retention_pending=True
         def completed(result):
             self.retention_pending=False;self.retention_due=time.monotonic()+3600
+            if hasattr(self.trend_window,'management_window'):self.trend_window.management_window.refresh_summaries()
             if result.get('deleted'):
                 self.trend_window.notice.setText(f"Automatic retention deleted {len(result['deleted'])} expired sessions.");self.trend_window.refresh_sessions()
         def failed(error):
             self.retention_pending=False;self.retention_due=time.monotonic()+60
+            if hasattr(self.trend_window,'management_window'):self.trend_window.management_window.refresh_summaries()
             self.statusBar().showMessage(f'Recording retention deferred: {error}')
         self.record_job(self.recording_management.retention,completed,failed)
 

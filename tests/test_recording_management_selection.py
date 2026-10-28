@@ -60,9 +60,24 @@ def test_multiselection_survives_refresh_reordering_and_live_theme_change(app,ma
 
 def test_actions_follow_selection_protection_and_role(app,manager):
     w,d=manager
-    assert d.tabs.tabText(0)=='Recordings' and d.tabs.tabText(1)=='Retention and maintenance'
+    assert [section.title() for section in (d.automatic_section,d.recordings_section,d.maintenance_section)]==['Automatic Cleanup','Recording Management','Database Maintenance']
     protected=next(i for i,r in enumerate(d.rows) if r['protected']);d.table.selectRow(protected)
     assert d.unkeep_button.isEnabled() and not d.keep_button.isEnabled() and not d.delete_button.isEnabled()
     assert '1 protected' in d.selection_summary.text()
     w.users.logout(w.session);d.update_access()
     assert d.export_button.isEnabled() and not d.unkeep_button.isEnabled() and not d.apply.isEnabled()
+
+def test_policy_summary_drafts_and_safe_optimization(app,manager):
+    w,d=manager
+    assert d.days.currentData()==30 and not d.automatic.isChecked()
+    d.days.setCurrentIndex(d.days.findData(90));d.automatic.setChecked(True)
+    assert 'disabled' in d.policy_status.text() and '30 days' in d.policy_status.text()
+    d.service.set_policy(w.session,False,180);d.refresh();until(app,lambda:not d.busy)
+    assert d.days.currentData()==180 and '180 days' in d.policy_status.text()
+    assert 'Simulation database:' in d.sizes.text() and 'Hardware database:' in d.sizes.text()
+    assert d.optimize_button.isEnabled()
+    d.service.gate.monitors+=1
+    try:
+        d.update_access();assert not d.optimize_button.isEnabled() and 'Disconnect monitoring' in d.optimization_hint.text()
+    finally:d.service.gate.monitors-=1
+    assert all(control.toolTip() for control in (d.keep_button,d.unkeep_button,d.delete_button,d.export_button,d.apply,d.backup_button,d.optimize_button))
