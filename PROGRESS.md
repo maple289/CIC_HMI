@@ -1,3 +1,7 @@
+# CI selection-viewport assertion (2026-10-28)
+
+- Windows run40678657573 reported1123 passed/1 failed. The theme/multi-selection test attempted to sample row2 outside the manager table viewport, yielding an invalid QColor rather than a selection color. The pixel helper now scrolls the requested row into view, processes its paint and asserts image bounds before checking the unchanged expected colors. No production selection behavior is weakened or changed. All5 targeted theme/manager checks passed in9.40s before push (tmp/ci-selection-viewport.log).
+
 # Database Manager sections and operation summaries (2026-10-28)
 
 - Replaced the manager tabs with Automatic Cleanup, Recording Management and Database Maintenance sections. Added active-policy and last-cleanup summaries, explicit Apply Settings, separate simulation/hardware sizes, and persisted last backup/optimization results. Existing retention choices and saved settings remain unchanged; new installations retain the disabled/30-day default. Operation summaries incrementally read the maintenance journal on job threads; legacy successful optimization is available from the SQLite ledger. No recording values or timestamps are rewritten.

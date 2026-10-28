@@ -1,6 +1,7 @@
 """Visible full-row selection and manager workflow; isolated simulated data."""
 from PySide6.QtCore import Qt,QItemSelectionModel
 from PySide6.QtGui import QColor,QPalette
+from PySide6.QtWidgets import QApplication,QAbstractItemView
 import pytest
 from prevex_hmi.gui.window import MainWindow
 from prevex_hmi.devices.configuration import load_settings
@@ -25,9 +26,13 @@ def manager(app,tmp_path):
 
 
 def selected_background(dialog,row):
+    dialog.table.scrollToItem(dialog.table.item(row,3),QAbstractItemView.PositionAtCenter)
+    QApplication.processEvents()
     rect=dialog.table.visualItemRect(dialog.table.item(row,3))
     image=dialog.table.viewport().grab().toImage();ratio=image.devicePixelRatio()
-    return image.pixelColor(round(rect.center().x()*ratio),round((rect.bottom()-4)*ratio))
+    x,y=round(rect.center().x()*ratio),round((rect.bottom()-4)*ratio)
+    assert 0<=x<image.width() and 0<=y<image.height(),(rect,image.size())
+    return image.pixelColor(x,y)
 
 
 @pytest.mark.parametrize('theme,highlight,foreground',[
