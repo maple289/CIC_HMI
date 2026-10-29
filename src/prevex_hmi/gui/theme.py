@@ -99,8 +99,8 @@ def stylesheet(dark):
     QCheckBox::indicator:unchecked:disabled {background:#182538;border-color:#526780;}
     QLabel#banner {background:#e7b55e;color:#251c10;padding:9px;font-weight:bold;}
     QLabel#warning {background:#763d2e;color:#ffe3c2;padding:9px;}
-    QPushButton#industrialCommand {color:#f1f5fa;background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #52647a,stop:1 #283648);border-top:2px solid #8291a4;border-left:2px solid #697c93;border-right:2px solid #121e2b;border-bottom:3px solid #0b1624;border-radius:6px;font-weight:bold;}
-    QPushButton#industrialCommand:pressed {background:#233244;border-top:3px solid #101c29;border-left:2px solid #101c29;border-bottom:1px solid #667991;padding-top:9px;}
+    QPushButton#industrialCommand {color:#f1f5fa;background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #52647a,stop:1 #283648);border-top:2px solid #8291a4;border-left:2px solid #697c93;border-right:2px solid #121e2b;border-bottom:3px solid #0b1624;border-radius:6px;font-weight:bold;padding:4px 7px;}
+    QPushButton#industrialCommand:pressed {background:#233244;border-top:3px solid #101c29;border-left:2px solid #101c29;border-bottom:1px solid #667991;padding-top:5px;padding-bottom:3px;}
     QPushButton#industrialCommand:disabled {color:#788595;background:#26313f;border:1px solid #3c4859;}
     """
     return base+f"""
@@ -113,9 +113,9 @@ def stylesheet(dark):
     QPushButton:hover {{background:#EDF3F5;}}
     QPushButton:pressed {{background:#DAE7EA;border-color:{LIGHT['accent']};}}
     QPushButton:disabled,QToolButton:disabled {{background:#EEF1F4;color:#778697;}}
-    QPushButton#industrialCommand {{color:{text};background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #EDF2F6,stop:1 #D5DFE8);border-top:2px solid #FFFFFF;border-left:1px solid #C1CDD8;border-right:1px solid #ADBDCA;border-bottom:3px solid #A7B8C7;border-radius:6px;font-weight:600;}}
+    QPushButton#industrialCommand {{color:{text};background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #EDF2F6,stop:1 #D5DFE8);border-top:2px solid #FFFFFF;border-left:1px solid #C1CDD8;border-right:1px solid #ADBDCA;border-bottom:3px solid #A7B8C7;border-radius:6px;font-weight:600;padding:4px 7px;}}
     QPushButton#industrialCommand:hover {{background:#E0ECEF;border-color:#83A9AE;}}
-    QPushButton#industrialCommand:pressed {{background:#C7D7E1;border-top:3px solid #A3B5C4;border-left:1px solid #A3B5C4;border-bottom:1px solid #EDF3F7;padding-top:9px;}}
+    QPushButton#industrialCommand:pressed {{background:#C7D7E1;border-top:3px solid #A3B5C4;border-left:1px solid #A3B5C4;border-bottom:1px solid #EDF3F7;padding-top:5px;padding-bottom:3px;}}
     QPushButton#industrialCommand:disabled {{color:#778697;background:#E7EDF2;border:1px solid #D4DDE5;}}
     QToolButton {{background:#F1F5F8;border:1px solid {border};border-radius:5px;padding:5px;color:{text};}}
     QToolButton:hover {{background:#DCE9EC;border-color:#8FAEB4;}}

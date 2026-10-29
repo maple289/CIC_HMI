@@ -10,6 +10,8 @@ On communication loss the screen says **Connection Lost**, with **Last Connected
 
 # Monitor, Service and Diagnostics
 
+The shared Commands panel uses compact40-logical-pixel raised buttons with aligned three-second feedback LEDs. Its heading/identity/lock information stays at the top; the button list scrolls internally when the desktop has insufficient height, including1920×1080 at150% scaling. Scroll that list to reach SAVE ALL or CAL LOCK; the gauge area does not need to move. Keyboard navigation reveals lower enabled commands. Command-driven disabling, receipts and LED changes do not automatically scroll the panel. See COMMAND_PANEL_LAYOUT.md for the reproduced cause and DPI test matrix.
+
 Monitor, Service and Diagnostics use full-width rounded sidebar rows with gauge, wrench and activity icons. The sidebar remains122 logical pixels wide; hover, mouse-down and the selected page have separate visual states. Keyboard/list navigation, page availability and the existing scrollable layout are unchanged.
 
 **Switch theme** retains the saved dark/light preference. Light mode uses soft gray backgrounds, white panels, a muted blue-gray sidebar, slate measurement text and restrained teal selection. Alarm/fault colors remain prominent. Its gauge zones, raised command buttons, independent LEDs, plots, session controls, database selection and application dialogs follow the same palette. Negative scales, zero reference, thresholds and quality/verification meanings are unchanged. Native Windows Save dialogs continue to follow Windows styling. Dark mode retains its established palette apart from the requested sidebar treatment and shared readability fixes.

@@ -8,7 +8,7 @@ import time
 import uuid
 from dataclasses import replace
 from PySide6.QtCore import Qt,Signal,QTimer
-from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget,QSizePolicy,QToolButton,QMenu,QTabWidget
+from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget,QSizePolicy,QToolButton,QMenu,QTabWidget,QLayout,QStyle
 import pyqtgraph as pg
 from prevex_hmi.devices.configuration import save_settings
 from prevex_hmi.devices.models import DeviceConfig
@@ -93,7 +93,10 @@ class MainWindow(QMainWindow):
         self.recording_worker.status_ready.connect(self.recording_update)
         self.recording_worker.failed.connect(lambda text:self.statusBar().showMessage(text))
         self.recording_worker.finished.connect(lambda:self.close() if self.closing else None)
-        self.setWindowTitle('PREVEX HMI | Single analyzer');self.resize(1540,1020);self.setMinimumSize(1100,780)
+        self.setWindowTitle('PREVEX HMI | Single analyzer');self.setMinimumSize(1100,600)
+        # Qt logical pixels: respect the work area and native frame at high DPI.
+        available=self.screen().availableGeometry();frame=2*self.style().pixelMetric(QStyle.PM_DefaultFrameWidth)
+        self.resize(min(1540,available.width()-frame),min(1020,available.height()-self.style().pixelMetric(QStyle.PM_TitleBarHeight)-frame))
         central=QWidget();root=QVBoxLayout(central);root.setContentsMargins(18,12,18,12)
         header=QHBoxLayout();brand=QLabel('PREVEX / HMI');brand.setObjectName('brand');header.addWidget(brand)
         self.summary=QLabel('Disconnected');header.addWidget(self.summary,1)
@@ -324,24 +327,31 @@ class MainWindow(QMainWindow):
         self.readout_container=self.readout_groups['Gauges'];self.readout_grid=self.readout_container.grid
         readings.addStretch()
         scroll.setWidget(content);left_layout.addWidget(scroll,1);body.addWidget(left,1)
-        commands=QFrame();commands.setObjectName('panel');commands.setFixedWidth(220);column=QVBoxLayout(commands);column.setSpacing(6);column.setAlignment(Qt.AlignTop)
+        commands=QFrame();commands.setObjectName('panel');commands.setFixedWidth(236);self.command_panel=commands
+        column=QVBoxLayout(commands);column.setContentsMargins(8,8,8,8);column.setSpacing(4)
         label=QLabel('Commands');label.setObjectName('heading');column.addWidget(label)
-        self.role_label=QLabel('Guest / Viewer');column.addWidget(self.role_label)
-        self.hardware_lock_label=QLabel('Hardware lock: unknown');self.hardware_lock_label.setWordWrap(True);column.addWidget(self.hardware_lock_label)
+        self.role_label=QLabel('Guest / Viewer');self.role_label.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed);column.addWidget(self.role_label)
+        self.hardware_lock_label=QLabel('Hardware lock: unknown');self.hardware_lock_label.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed);column.addWidget(self.hardware_lock_label)
         self.command_access_note=QLabel(commands);self.command_access_note.hide()
         self.command_access_button=QPushButton('Enable Acknowledge / Reset')
         self.command_access_button.setMinimumHeight(44);self.command_access_button.clicked.connect(self.activate_command_bench)
         column.addWidget(self.command_access_button)
+        from .command_panel import CommandScrollArea
+        self.command_scroll=CommandScrollArea();self.command_scroll.setWidgetResizable(True);self.command_scroll.setFrameShape(QFrame.NoFrame)
+        self.command_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff);self.command_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.command_scroll.setAlignment(Qt.AlignTop);self.command_scroll.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
+        rows=QWidget();rows.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Minimum)
+        buttons_layout=QVBoxLayout(rows);buttons_layout.setContentsMargins(0,0,0,0);buttons_layout.setSpacing(4)
+        buttons_layout.setSizeConstraint(QLayout.SetMinAndMaxSize)
         self.command_buttons={}
         self.lock_command_code=None
         for code,name in COMMANDS.items():
             if code==0x1000:continue
             label={0x300:'ZERO CAL',0x400:'SPAN CAL',0x500:'FULL CAL',0x600:'ZERO TEST',0x700:'SPAN TEST',0x800:'FULL TEST',0x900:'SAVE ALL',0xF00:'LOCK CAL'}.get(code,name.upper())
-            button=CommandButton(label,lambda checked=False,code=code:self.send_command(self.lock_command_code if code==0xF00 else code));column.addWidget(button);self.command_buttons[code]=button
+            button=CommandButton(label,lambda checked=False,code=code:self.send_command(self.lock_command_code if code==0xF00 else code));buttons_layout.addWidget(button);self.command_buttons[code]=button
         # Both command receipts address one persistent row/LED, even as its action changes.
         self.command_buttons[0x1000]=self.command_buttons[0xF00]
-        column.addStretch()
-        self.command_scroll=QScrollArea();self.command_scroll.setWidgetResizable(True);self.command_scroll.setFixedWidth(236);self.command_scroll.setWidget(commands);body.addWidget(self.command_scroll)
+        buttons_layout.addStretch();self.command_scroll.setWidget(rows);column.addWidget(self.command_scroll,1);body.addWidget(commands)
 
     def build_readouts(self,family,config=None):
         config=config or self.config

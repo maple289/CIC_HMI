@@ -19,11 +19,11 @@ def lock_icon(locked,dark=True):
 class CommandButton(QWidget):
     def __init__(self, text, callback, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(48);self.dark=True;self.led_color='#303b48'
+        self.setFixedHeight(40);self.dark=True;self.led_color='#303b48'
         row = QHBoxLayout(self); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(9)
         self.button = QPushButton(text); self.button.setObjectName('industrialCommand')
-        self.button.setMinimumHeight(46); self.button.clicked.connect(callback); row.addWidget(self.button, 1)
-        self.led = QLabel(); self.led.setFixedSize(16, 16); row.addWidget(self.led)
+        self.button.setFixedHeight(40); self.button.clicked.connect(callback); row.addWidget(self.button, 1)
+        self.led = QLabel(); self.led.setFixedSize(16, 16); row.addWidget(self.led,0,Qt.AlignVCenter)
         self.timer = QTimer(self); self.timer.setTimerType(Qt.PreciseTimer)
         self.timer.setSingleShot(True); self.timer.timeout.connect(self.reset)
         self.reset()
