@@ -42,6 +42,7 @@ class PendingEffect:
     before: dict
     timeout: float = 8
     kind: str = 'effect'
+    receipt: dict | None = None
 
 
 class CommandController:
@@ -51,6 +52,7 @@ class CommandController:
         self.expected_identity=expected_identity
         self.clock=clock
         self.pending=None
+        self.effect=None;self.cooldown_until=0.;self.transmitting=False;self.request_id=None;self.timing=None
         self.ambiguous=False
         self.result="No command issued"
         self.receipt=None
@@ -59,13 +61,15 @@ class CommandController:
         if self.receipt is not None and result in ('UNKNOWN','FAILED','NOT_VERIFIED'):
             detail=('Acknowledgment received; expected effect not confirmed. ' if self.receipt.get('reply_received') else 'No valid command acknowledgment received. ')+detail
         self.store.command_audit(self.config.id,actor,code,result,detail)
+        if self.timing and self.receipt:
+            self.timing.event('COMMAND_STATE',self.receipt.get('id'),code,state=result)
         self.result=detail
         if self.receipt is not None and self.receipt['code']==code and (not self.receipt.get('bench') or result in ('EFFECT_OBSERVED','NOT_VERIFIED','UNKNOWN')):
             self.receipt.update(state=result, detail=detail)
 
     def execute(self,code,token,*,confirmed=False):
         actor,role=self.users.resolve(token)
-        self.receipt={'id':uuid.uuid4().hex,'code':code,'state':'CHECKING','reply_received':False,'time':utc_now()}
+        self.receipt={'id':self.request_id or uuid.uuid4().hex,'code':code,'state':'CHECKING','reply_received':False,'time':utc_now()}
         sent=False
         try:
             if role not in ("Operator","Administrator"):
@@ -74,6 +78,7 @@ class CommandController:
             if code not in commands_for(self.config): raise PermissionError("Unsupported/prohibited command")
             if not self.identity_verified: raise PermissionError("Analyzer identity/profile unresolved")
             if self.ambiguous or self.pending: raise PermissionError("A command is pending or has an unknown outcome; reconnect required")
+            if self.clock()<self.cooldown_until:raise PermissionError('Short command anti-repeat cooldown active')
             if not isinstance(self.bus.transport,SimulatedBus): raise PermissionError("Physical commands disabled")
             from prevex_hmi.devices.identification import detect
             identity=detect(self.bus,self.config.addressing)
@@ -90,6 +95,7 @@ class CommandController:
             effect_before=self.bus.read(profile,self.config.addressing,4,1) if code in (0x100,0x200) else None
             if code==0x100 and profile.revision!='700' and 59 in profile.registers:effect_before.update(self.bus.read(profile,self.config.addressing,59,1))
             role=require_current_session(self.users,token,actor)
+            self.end_previous_effect()
             self.record(actor,code,"SENDING",f"{COMMANDS[code]} confirmed; sending once")
             # Same transaction lock, pacing and worker owner as polling. There
             # is no path from this simulation-only method to a serial write.
@@ -103,8 +109,8 @@ class CommandController:
                 lock=self.bus.read(profile,self.config.addressing,60,1)[60]
                 self.verify_lock_readback(actor,code,lock)
             else:
-                after=self.bus.read(profile,self.config.addressing,2,1)[2]
-                self.record(actor,code,"SENT_UNVERIFIED",f"Acknowledgment received; STATUS {status} -> {after}. Execution not proven.")
+                after=status if code in (0x100,0x200) else self.bus.read(profile,self.config.addressing,2,1)[2]
+                self.record(actor,code,"SENT_UNVERIFIED",'Acknowledgment received; effect observation uses normal polling. Execution not proven.' if code in (0x100,0x200) else f'Acknowledgment received; STATUS {status} -> {after}. Execution not proven.')
                 if effect_before is not None:self.watch_effect(actor,code,{2:status,**effect_before})
         except TimeoutError as error:
             self.ambiguous=True
@@ -116,24 +122,40 @@ class CommandController:
     def watch_effect(self,actor,code,before):
         # Only manufacturer-defined alarm/horn relay effects are correlated.
         # A STATUS transition alone, including Normal, is insufficient.
-        self.pending=PendingEffect(code,actor,self.clock(),before,timeout=min(30,max(8,self.config.interval*4)))
+        self.effect=PendingEffect(code,actor,self.clock(),before,timeout=min(30,max(8,self.config.interval*4)),receipt=self.receipt)
+        self.cooldown_until=max(self.cooldown_until,self.clock()+.5)
         self.receipt.update(effect_before=before,before_status=before[2])
+        if self.timing:self.timing.event('VERIFICATION_STARTED',self.receipt['id'],code)
+
+    def end_previous_effect(self):
+        if self.effect:
+            current=self.receipt;self.receipt=self.effect.receipt
+            self.record(self.effect.actor,self.effect.code,'NOT_VERIFIED','Observation ended before a new confirmed command; later state changes cannot be attributed to the earlier action. No resend.')
+            if self.timing:self.timing.event('VERIFICATION_COMPLETED',self.receipt['id'],self.effect.code,state='SUPERSEDED')
+            self.receipt=current;self.effect=None
 
     def observe_effect(self,snapshot):
-        pending=self.pending;elapsed=max(0,self.clock()-pending.started)
+        current=self.receipt;effect=self.effect;self.receipt=effect.receipt
+        try:self._observe_effect(snapshot)
+        finally:
+            if self.effect is None and self.timing:self.timing.event('VERIFICATION_COMPLETED',effect.receipt['id'],effect.code,state=effect.receipt['state'])
+            self.receipt=current
+
+    def _observe_effect(self,snapshot):
+        pending=self.effect;elapsed=max(0,self.clock()-pending.started)
         config=snapshot.get('config')
         if config and any(config.get(key)!=getattr(self.config,key) for key in ('id','family','assembly','version','address','register_profile')):
-            self.pending=None;self.ambiguous=True
+            self.effect=None;self.ambiguous=True
             self.record(pending.actor,pending.code,'UNKNOWN','Analyzer/profile changed during effect observation; no retry.')
             return
         ages=snapshot.get('register_ages',{});raw=snapshot['raw']
         fresh=snapshot['quality']=='GOOD' and all(n in raw and n in ages and 0<=ages[n]<=min(elapsed,max(5,self.config.interval*3)) for n in (2,4))
         if snapshot['quality']!='GOOD':
-            self.pending=None;self.ambiguous=True
+            self.effect=None;self.ambiguous=True
             self.record(pending.actor,pending.code,'UNKNOWN','Communication lost during post-command observation; no retry.')
             return
         if elapsed>=pending.timeout:
-            self.pending=None
+            self.effect=None
             valid=fresh and raw[2] in profile_for(self.config).statuses and type(raw[4]) is int and 0<=raw[4]<=65535
             if not valid:
                 self.ambiguous=True
@@ -153,7 +175,7 @@ class CommandController:
             # the corresponding current STATUS/relay rather than Normal alone.
             expected=(bool(cleared) or service_cleared) and (pending.code==0x100 or raw[2] in (0,1,2) and not (raw[4]&7))
             if expected:
-                self.pending=None;self.receipt.update(status_after=raw[2],effect_after={2:raw[2],4:raw[4]})
+                self.effect=None;self.receipt.update(status_after=raw[2],effect_after={2:raw[2],4:raw[4]})
                 service_detail=f', SERVICE {before[59]:04X} -> {raw[59]:04X}' if service_fresh else ''
                 self.record(pending.actor,pending.code,'EFFECT_OBSERVED',f'Documented effect observed within {elapsed:.1f}s after acknowledgment: STATUS {before[2]} -> {raw[2]}, RELAYS {before[4]:04X} -> {raw[4]:04X}{service_detail}. Expected alarm/horn/service clearing observed; causality and sensor health are not independently established.')
                 return
@@ -193,9 +215,9 @@ class CommandController:
                 self.record(pending.actor,pending.code,'UNKNOWN','No fresh post-command CAL LOCK [60] verification within the observation period; execution unknown. No automatic retry; reconnect and check controller lock state.')
 
     def observe(self,snapshot):
+        if self.effect:self.observe_effect(snapshot)
         pending=self.pending
         if pending is None: return
-        if isinstance(pending,PendingEffect):self.observe_effect(snapshot);return
         if isinstance(pending,PendingLock):self.observe_lock(snapshot);return
         status=snapshot["raw"].get(2)
         age=snapshot.get("register_ages",{}).get(2,0)

@@ -77,11 +77,11 @@ def effect_controller(code=0x200,before=None):
 def test_reset_normal_alone_and_cached_precommand_samples_are_not_proof():
     c,now,audit=effect_controller();now[0]=2
     c.observe(dict(raw={2:0,4:4},quality='GOOD',register_ages={2:0,4:0}))
-    assert c.pending and not audit
+    assert c.effect and not audit
     c.observe(dict(raw={2:0,4:0},quality='GOOD',register_ages={2:3,4:3}))
-    assert c.pending and not audit
+    assert c.effect and not audit
     c.observe(dict(raw={2:0,4:0},quality='GOOD',register_ages={2:0,4:0}))
-    assert c.pending is None and c.receipt['state']=='EFFECT_OBSERVED'
+    assert c.effect is None and c.receipt['state']=='EFFECT_OBSERVED'
     assert 'RELAYS 0004 -> 0000' in audit[-1][-1]
 
 
@@ -101,18 +101,18 @@ def test_acknowledge_horn_effect_and_communication_loss():
     c.observe(dict(raw={2:25,4:4},quality='GOOD',register_ages={2:0,4:0}))
     assert c.receipt['state']=='EFFECT_OBSERVED' and 'STATUS 25 -> 25' in audit[-1][-1]
     c,now,audit=effect_controller();c.observe(dict(raw={},quality='OFFLINE'))
-    assert c.receipt['state']=='UNKNOWN' and c.ambiguous and c.pending is None
+    assert c.receipt['state']=='UNKNOWN' and c.ambiguous and c.effect is None
 
 
 def test_service_effect_requires_fresh_documented_flags_and_deadline():
     c,now,audit=effect_controller(0x100,{2:25,4:4,59:0x21});now[0]=1
     c.observe(dict(raw={2:25,4:4,59:0},quality='GOOD',register_ages={2:0,4:0,59:2}))
-    assert c.pending
+    assert c.effect
     c.observe(dict(raw={2:25,4:4,59:0x20},quality='GOOD',register_ages={2:0,4:0,59:0}))
     assert c.receipt['state']=='EFFECT_OBSERVED'
     c,now,audit=effect_controller(0x100,{2:25,4:4,59:0x20});now[0]=1
     c.observe(dict(raw={2:25,4:4,59:0},quality='GOOD',register_ages={2:0,4:0,59:0}))
-    assert c.pending  # CHK RDNG disappearing alone does not prove acknowledgment.
+    assert c.effect  # CHK RDNG disappearing alone does not prove acknowledgment.
     c,now,audit=effect_controller();now[0]=9
     c.observe(dict(raw={2:0,4:0},quality='GOOD',register_ages={2:0,4:0}))
     assert c.receipt['state']=='NOT_VERIFIED'
@@ -135,6 +135,35 @@ def test_effect_cannot_cross_analyzer_profiles():
     assert c.receipt['state']=='UNKNOWN' and c.ambiguous and 'profile changed' in audit[-1][-1]
 
 
+def test_new_command_ends_prior_observer_without_overwriting_its_receipt():
+    c,now,audit=effect_controller();previous=c.receipt
+    current=dict(id='new-command',code=0x100,state='CHECKING',reply_received=False)
+    c.receipt=current;c.end_previous_effect()
+    assert c.receipt is current and current['state']=='CHECKING'
+    assert previous['state']=='NOT_VERIFIED' and c.effect is None
+    assert audit[-1][2:4]==(0x200,'NOT_VERIFIED')
+    now[0]=1;c.observe(dict(raw={2:0,4:0},quality='GOOD',register_ages={2:0,4:0}))
+    assert previous['state']=='NOT_VERIFIED' and not c.ambiguous
+
+
+def test_old_control_receipts_cannot_replay_led_or_unlock_queued_action(app,tmp_path):
+    w,bus,snap=setup_window(tmp_path,'LEL 670 Series')
+    try:
+        old=dict(id='old',code=0x100,state='SENT_UNVERIFIED',reply_received=True)
+        new=dict(id='new',code=0x200,state='SENDING',reply_received=False)
+        button=w.command_buttons[0x100]
+        w.show_command_receipt(old);assert button.timer.isActive();button.timer.stop()
+        w.show_command_receipt(new);w.show_command_receipt(old)
+        assert not button.timer.isActive()
+        w.queued_command_id='new';w.command_dispatching=True
+        w.command_control_update(dict(receipt=old,verified=True,transmitting=False))
+        assert w.command_dispatching and w.queued_command_id=='new'
+        assert not w.command_buttons[0x200].isEnabled() and not button.timer.isActive()
+        w.command_control_update(dict(receipt={**new,'state':'REJECTED'},verified=True,transmitting=False))
+        assert not w.command_dispatching and w.queued_command_id is None
+    finally:w.close();bus.close();flush(app)
+
+
 @pytest.mark.parametrize('condition',['stale','undocumented_status','missing_relays'])
 def test_effect_deadline_without_fresh_verification_keeps_global_lock(condition):
     c,now,audit=effect_controller();now[0]=8
@@ -143,5 +172,5 @@ def test_effect_deadline_without_fresh_verification_keeps_global_lock(condition)
     elif condition=='undocumented_status':snapshot['raw'][2]=0x2020
     else:del snapshot['raw'][4]
     c.observe(snapshot)
-    assert c.ambiguous and c.pending is None and c.receipt['state']=='UNKNOWN'
+    assert c.ambiguous and c.effect is None and c.receipt['state']=='UNKNOWN'
     assert 'No fresh post-command' in audit[-1][-1]

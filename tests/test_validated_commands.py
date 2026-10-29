@@ -21,7 +21,7 @@ def test_three_explicit_ack_reset_cycles_survive_reasserted_fault(control):
     for cycle in range(3):
         state.update(status=25,relays=12)
         service.execute(0x100,'admin',confirmed=True);receipts.append(service.receipt['id'])
-        observe(25,4,.2)
+        observe(25,4,.6)
         assert service.receipt['state']=='EFFECT_OBSERVED' and service.pending is None
         service.execute(0x200,'admin',confirmed=True);receipts.append(service.receipt['id'])
         if cycle==0:

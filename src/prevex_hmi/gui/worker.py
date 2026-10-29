@@ -2,7 +2,9 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 import logging
 from pathlib import Path
-from queue import Empty, Full, Queue
+from queue import Empty, Full, PriorityQueue
+from itertools import count
+import copy
 import threading
 import time
 import uuid
@@ -32,6 +34,7 @@ class MonitoringWorker(QThread):
     inspection_ready=Signal(str)
     command_result=Signal(str)
     parameter_result=Signal(str)
+    control_ready=Signal(object)
     failed=Signal(str)
     storage_warning=Signal(str)
 
@@ -42,11 +45,29 @@ class MonitoringWorker(QThread):
         self.test_only=test_only
         self.hardware_grant=hardware_grant
         self.stop_requested=threading.Event()
-        self.messages=Queue(maxsize=50)
+        self.messages=PriorityQueue(maxsize=50);self.message_sequence=count()
+        from prevex_hmi.communication.command_timing import timing_for
+        self.timing=timing_for(data_path)
 
     def request(self,*message):
-        try: self.messages.put_nowait(message)
-        except Full: self.command_result.emit('Request queue full; action not sent')
+        if message and message[0]=='command':
+            message=tuple(message[:4])+(message[4] if len(message)>4 else uuid.uuid4().hex,)
+        priority=0 if message[0] in ('command','parameter') else 1
+        try:
+            self.messages.put_nowait((priority,next(self.message_sequence),message))
+            if message[0]=='command':self.timing.event('QUEUED',message[4],message[1])
+        except Full:
+            if message[0]=='command':self.timing.event('QUEUE_REJECTED',message[4],message[1])
+            self.command_result.emit('Request queue full; action not sent')
+
+    def operator_requests_waiting(self):
+        with self.messages.mutex:return bool(self.messages.queue and self.messages.queue[0][0]==0)
+
+    def control_state(self,controller,physical_commands):
+        remaining=max(0,controller.cooldown_until-controller.clock())
+        return dict(verified=controller.identity_verified,pending=controller.pending is not None,pending_kind=getattr(controller.pending,'kind','status'),
+                    effect_pending=controller.effect is not None,cooldown_until=controller.cooldown_until,cooldown_remaining=remaining,temporary_busy=controller.transmitting or remaining>0,
+                    transmitting=controller.transmitting,ambiguous=controller.ambiguous,message=controller.result,receipt=copy.deepcopy(controller.receipt),physical_commands=physical_commands)
 
     def stop(self): self.stop_requested.set()
 
@@ -123,6 +144,15 @@ class MonitoringWorker(QThread):
                 from prevex_hmi.communication.bench_commands import BenchOperatorCommands
                 command_class=BenchOperatorCommands
             controller=command_class(bus,effective,database,users,identity_verified=controls_verified,expected_identity=identity,**({'connection':connection} if validated_controls else {}))
+            controller.timing=self.timing
+            def bus_command_event(stage):
+                receipt=controller.receipt or {};self.timing.event(stage,receipt.get('id'),receipt.get('code'))
+                if stage=='RESPONSE_RECEIVED':
+                    receipt['reply_received']=True
+                    if receipt.get('code') in (0x100,0x200):controller.cooldown_until=controller.clock()+.5
+                    self.control_ready.emit(self.control_state(controller,list(COMMANDS) if validated_controls else []))
+            bus.command_event=bus_command_event
+            last_temporary=None
             from prevex_hmi.communication.parameters import ParameterAdjustments
             adjustments=ParameterAdjustments(controller)
             last_emit=last_identity=time.monotonic()
@@ -130,11 +160,15 @@ class MonitoringWorker(QThread):
             identity_current=identity.verified;needs_identity_recheck=False
             while not self.stop_requested.is_set():
                 if state.snapshot(time.monotonic())['quality']!='GOOD':controller.identity_verified=False
-                try: message=self.messages.get_nowait()
+                try: _,_,message=self.messages.get_nowait()
                 except Empty: message=None
                 if message:
                     try:
                         kind=message[0]
+                        if kind=='command':
+                            controller.request_id=message[4];controller.transmitting=True
+                            self.timing.event('DEQUEUED',message[4],message[1])
+                            self.control_ready.emit(self.control_state(controller,list(COMMANDS) if validated_controls else []))
                         if kind in ('parameter','command') and not command_lease:
                             if not maintenance_gate.enter_command():
                                 text='Database maintenance is running; no controller command sent. Review and confirm again after it finishes.'
@@ -167,7 +201,7 @@ class MonitoringWorker(QThread):
                             snapshot=state.snapshot(time.monotonic())
                             if snapshot['quality'] != 'GOOD':
                                 actor,_=users.resolve(message[2])
-                                controller.receipt={'id':uuid.uuid4().hex,'code':message[1],'state':'REJECTED','reply_received':False,'time':utc_now()}
+                                controller.receipt={'id':message[4],'code':message[1],'state':'REJECTED','reply_received':False,'time':utc_now()}
                                 controller.record(actor,message[1],'REJECTED','Communication is not current; command not sent')
                             else: controller.execute(message[1],message[2],confirmed=message[3])
                             receipt=controller.receipt or {}
@@ -178,7 +212,12 @@ class MonitoringWorker(QThread):
                             self.command_result.emit(controller.result)
                     except (OSError,ValueError,PermissionError,KeyError) as error: self.command_result.emit(str(error))
                     finally:
-                        if command_lease and not controller.pending:maintenance_gate.leave_command();command_lease=False
+                        if message[0]=='command':
+                            controller.transmitting=False
+                            self.timing.event('TRANSACTION_FINISHED',message[4],message[1],ambiguous=controller.ambiguous)
+                            self.control_ready.emit(self.control_state(controller,list(COMMANDS) if validated_controls else []))
+                        if command_lease and not controller.pending and not controller.effect:maintenance_gate.leave_command();command_lease=False
+                if self.operator_requests_waiting():continue  # Never interrupt an active transaction; serve operator work before the next poll.
                 scheduler.run_once()
                 now=time.monotonic()
                 quality=state.snapshot(now)['quality']
@@ -209,8 +248,8 @@ class MonitoringWorker(QThread):
                     snapshot['reading_source']='controller_lcd_fault' if uses_controller_fault_display(snapshot) else 'process_register'
                     try:controller.observe(snapshot)
                     except PermissionError as error:
-                        controller.pending=None;controller.ambiguous=True;self.storage_warning.emit(str(error))
-                    if command_lease and not controller.pending:maintenance_gate.leave_command();command_lease=False
+                        controller.pending=None;controller.effect=None;controller.ambiguous=True;self.storage_warning.emit(str(error))
+                    if command_lease and not controller.pending and not controller.effect:maintenance_gate.leave_command();command_lease=False
                     if database.error:controller.ambiguous=True
                     status=snapshot['raw'].get(2)
                     event=(snapshot['quality'],status)
@@ -227,16 +266,26 @@ class MonitoringWorker(QThread):
                                 if value is not None: database.measurement(snapshot['last_success'],effective.id,number,float(value),unit,'INSTRUMENT_FAULT_LCD' if number==1 and snapshot['reading_source']=='controller_lcd_fault' else snapshot['instrument_quality'],status)
                         last_logged=snapshot['last_success']
                     database.commit()
-                    snapshot['control']={'verified':controller.identity_verified,'pending':controller.pending is not None,'pending_kind':getattr(controller.pending,'kind','status'),'ambiguous':controller.ambiguous,'message':controller.result,'receipt':getattr(controller,'receipt',None),'physical_commands':list(COMMANDS) if validated_controls else []}
+                    snapshot['control']=self.control_state(controller,list(COMMANDS) if validated_controls else [])
                     self.updated.emit(snapshot,bus.diagnostics())
                     self.events_ready.emit(database.events())
                     self.audit_ready.emit(database.audit_rows())
                     last_emit=now
+                temporary=controller.transmitting or controller.clock()<controller.cooldown_until
+                if temporary!=last_temporary:
+                    receipt=controller.receipt or {}
+                    self.timing.event('GLOBAL_LOCK_ACQUIRED' if temporary else 'GLOBAL_LOCK_RELEASED',receipt.get('id'),receipt.get('code'),safe=not controller.ambiguous and controller.pending is None)
+                    self.control_ready.emit(self.control_state(controller,list(COMMANDS) if validated_controls else []));last_temporary=temporary
                 self.stop_requested.wait(0.01)
         except Exception as error:
             log.exception('single_analyzer_worker_failed')
             self.failed.emit(str(error))
         finally:
+            if controller and controller.effect:
+                current=controller.receipt;controller.receipt=controller.effect.receipt
+                try:controller.record(controller.effect.actor,controller.effect.code,'UNKNOWN','Session disconnected during effect observation; never retried')
+                except PermissionError as error:self.storage_warning.emit(str(error))
+                controller.receipt=current
             if controller and controller.pending:
                 pending=controller.pending
                 try:controller.record(pending.actor,pending.code,'UNKNOWN','Session disconnected during command; never retried')

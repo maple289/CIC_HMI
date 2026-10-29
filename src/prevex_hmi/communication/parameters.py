@@ -54,6 +54,7 @@ class ParameterAdjustments:
             status,lock,old,raw,peer=before
             detail=f'{PARAMETERS[key][1]} [{number}]: raw {old} -> {raw}; STATUS {status} ({profile.status(status)}); lock {lock}'
             if physical and c.config.version=='4.81':detail+='; firmware4.81 uses the5.12 map by user instruction; compatibility not independently validated'
+            c.end_previous_effect()
             c.store.command_audit(c.config.id,actor,code,'SENDING',detail+f'; confirmed {"REAL CONTROLLER" if physical else "simulated"} adjustment, send once')
             sent=True;self.last_attempt[key]=c.clock()
             if physical:c.bus.validated_parameter(c.config,key,raw,previous=old)

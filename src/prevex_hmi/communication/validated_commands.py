@@ -15,7 +15,7 @@ class ValidatedOperatingCommands(CommandController):
 
     def execute(self,code,token,*,confirmed=False):
         actor,role=self.users.resolve(token);sent=False
-        self.receipt={'id':uuid.uuid4().hex,'code':code,'state':'CHECKING','reply_received':False,'time':utc_now()}
+        self.receipt={'id':self.request_id or uuid.uuid4().hex,'code':code,'state':'CHECKING','reply_received':False,'time':utc_now()}
         try:
             if role not in ('Operator','Administrator'):raise PermissionError('Operator/Administrator sign-in required')
             if not confirmed:raise PermissionError('Explicit target confirmation required')
@@ -23,7 +23,8 @@ class ValidatedOperatingCommands(CommandController):
             if code not in WORDS or not validated_670(self.config):raise PermissionError('Unsupported command/model/firmware')
             if not self.identity_verified:raise PermissionError('Identity/profile unresolved')
             if self.pending or self.ambiguous:raise PermissionError('Previous command pending/unknown; no retry')
-            if self.clock()-self.last_attempt.get(code,float('-inf'))<2:raise PermissionError('Duplicate command suppressed')
+            if self.clock()<self.cooldown_until:raise PermissionError('Short command anti-repeat cooldown active')
+            if code not in (0x100,0x200) and self.clock()-self.last_attempt.get(code,float('-inf'))<2:raise PermissionError('Duplicate command suppressed')
             identity=detect(self.bus,self.config.addressing)
             if not identity.verified or (identity.family,identity.model,identity.version)!=(self.config.family,self.config.assembly,self.config.version) or self.expected_identity and identity.text!=self.expected_identity.text:
                 self.identity_verified=False;raise PermissionError('Fresh identity differs or is unverified')
@@ -55,6 +56,7 @@ class ValidatedOperatingCommands(CommandController):
             if code==0x100:effect_before.update(self.bus.read(profile,self.config.addressing,59,1))
             require_current_session(self.users,token,actor,administrator=code==0x900)
             assumption='; firmware4.81 uses the 5.12 map by user instruction, physical compatibility unverified' if self.config.version=='4.81' else ''
+            self.end_previous_effect()
             self.record(actor,code,'SENDING',f'{COMMANDS[code]} confirmed; send once{assumption}')
             sent=True;self.last_attempt[code]=self.clock()
             self.bus.validated_operating_command(code)
@@ -66,8 +68,8 @@ class ValidatedOperatingCommands(CommandController):
                 after=self.bus.read(profile,self.config.addressing,60,1)[60]
                 self.verify_lock_readback(actor,code,after)
             else:
-                after=self.bus.read(profile,self.config.addressing,2,1)[2]
-                self.record(actor,code,'SENT_UNVERIFIED',f'Modbus acknowledgment received; STATUS {before} -> {after}. Execution/EEPROM persistence not proven')
+                after=before if code in (0x100,0x200) else self.bus.read(profile,self.config.addressing,2,1)[2]
+                self.record(actor,code,'SENT_UNVERIFIED',f'Modbus acknowledgment received; pre-command STATUS {before}. Effect observation uses normal polling; execution not proven.' if code in (0x100,0x200) else f'Modbus acknowledgment received; STATUS {before} -> {after}. Execution/EEPROM persistence not proven')
                 if effect_before is not None:self.watch_effect(actor,code,{2:before,**effect_before})
         except (OSError,ValueError,PermissionError,RuntimeError) as error:
             if sent:self.ambiguous=True

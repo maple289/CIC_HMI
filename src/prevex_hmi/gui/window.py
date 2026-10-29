@@ -5,6 +5,7 @@ import copy
 import csv
 from pathlib import Path
 import time
+import uuid
 from dataclasses import replace
 from PySide6.QtCore import Qt,Signal,QTimer
 from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget,QSizePolicy,QToolButton,QMenu,QTabWidget
@@ -77,6 +78,9 @@ class MainWindow(QMainWindow):
         self.display_trend=DisplayTrend();self.trend_scope=None;self.blank_started_wall=None;self.readout_retained=False
         self.last_sample=None;self.update_count=0;self.closing=False;self.next_action=None
         self.last_receipt_key=None;self.active_command=None
+        self.feedback_receipts=deque(maxlen=128);self.queued_command_id=None
+        from prevex_hmi.communication.command_timing import timing_for
+        self.command_timing=timing_for(data_path);self.ui_command_lock=True
         self.command_dispatching=False;self.session='';self.users=UserStore(data_path/'users.sqlite3')
         from prevex_hmi.logging_db.recorder import RecordingWorker
         self.recording_status=dict(state='Stopped',session=None,error='',elapsed=0,samples=0,armed=False)
@@ -499,7 +503,7 @@ class MainWindow(QMainWindow):
         self.recording_worker.observe(None)
         if self.profile_current:self.last_connected=f'{self.identity.get("loaded_profile","Analyzer")} / {self.identity.get("model", "")}'
         self.profile_current=False
-        self.snapshot=None;self.identity={};self.series.clear();self.last_sample=None;self.history_rows=[];self.command_dispatching=False
+        self.snapshot=None;self.identity={};self.series.clear();self.last_sample=None;self.history_rows=[];self.command_dispatching=False;self.queued_command_id=None
         self.display_trend.clear();self.trend_scope=None;self.blank_started_wall=None;self.readout_retained=False
         self.gauge.set_snapshot(None);self.indicators.update_snapshot(None)
         self.set_connection_status(False);self.monitor_updated.setText('No current measurement');self.identity_label.setText(reason)
@@ -564,6 +568,7 @@ class MainWindow(QMainWindow):
         self.worker.updated.connect(lambda snapshot,diagnostics:self.update_data(snapshot,diagnostics) if current() else None);self.worker.identified.connect(lambda info:self.identification_result(info) if current() else None)
         self.worker.history_ready.connect(lambda rows:self.update_history(rows) if current() else None);self.worker.events_ready.connect(lambda rows:fill_table(self.event_table,rows) if current() else None)
         self.worker.audit_ready.connect(lambda rows:self.fill_command_audit(rows) if current() else None)
+        self.worker.control_ready.connect(lambda control:self.command_control_update(control) if current() else None)
         self.worker.parameter_result.connect(lambda text:self.parameter_feedback(text) if current() else None)
         self.worker.inspection_ready.connect(lambda text:self.inspection_result.setText(text) if current() else None);self.worker.command_result.connect(lambda text:self.command_feedback(text) if current() else None)
         self.worker.failed.connect(lambda text:self.worker_error(text) if current() else None);self.worker.finished.connect(lambda:self.worker_finished() if self.worker is owner else None)
@@ -728,19 +733,33 @@ class MainWindow(QMainWindow):
         self.set_connection_status(connected)
         if snapshot and not connected and self.profile_current and self.link_state=='live':self.connection_lost()
         if snapshot and not connected:self.fault_summary.setText('Communication Lost');self.fault_summary.setStyleSheet('color:#f27778;font-weight:bold;')
+        self.update_command_buttons()
         if not connected and self.readout_retained:
             self.readout_retained=False
             for label in (self.overview_hold_note,self.trend_hold_note):label.setText('No current communication; held display ended')
 
+    def command_control_update(self,control):
+        if self.closing or not self.snapshot:return
+        if self.queued_command_id and (control.get('receipt') or {}).get('id')==self.queued_command_id:self.queued_command_id=None
+        self.snapshot['control']=control
+        self.command_dispatching=bool(control.get('transmitting') or self.queued_command_id)
+        if control.get('receipt'):self.show_command_receipt(control['receipt'])
+        self.update_command_buttons()
+
     def show_command_receipt(self,receipt):
+        if self.queued_command_id and receipt.get('id')!=self.queued_command_id:return
         key=(receipt.get('id') or receipt.get('time'),receipt['code'],receipt.get('reply_received'),receipt['state'])
         if key==self.last_receipt_key:return
         if key!=self.last_receipt_key:
-            previous=self.last_receipt_key
             self.last_receipt_key=key
             button=self.command_buttons.get(receipt['code'])
-            if button and receipt.get('reply_received') and (previous is None or previous[:3]!=key[:3]):button.feedback(True)
-            elif button and receipt['state'] in ('UNKNOWN','REJECTED') and not receipt.get('reply_received'):button.feedback(False)
+            feedback_key=(key[0],receipt['code'],bool(receipt.get('reply_received')))
+            if button and receipt.get('reply_received') and feedback_key not in self.feedback_receipts:
+                self.feedback_receipts.append(feedback_key)
+                button.feedback(True);self.command_timing.event('LED_ACTIVATED',receipt.get('id'),receipt['code'],duration_ms=3000,accepted=True)
+            elif button and receipt['state'] in ('UNKNOWN','REJECTED') and not receipt.get('reply_received') and feedback_key not in self.feedback_receipts:
+                self.feedback_receipts.append(feedback_key)
+                button.feedback(False);self.command_timing.event('LED_ACTIVATED',receipt.get('id'),receipt['code'],duration_ms=3000,accepted=False)
         state=receipt['state'];color='#efb753'
         title={'CHECKING':'Checking target','SENDING':'Command sent; waiting for reply','PENDING':'Acknowledged — monitoring STATUS','VERIFYING_LOCK':'Acknowledged — verifying CAL LOCK [60]','WAITING_STATUS':'Waiting for execution evidence','STARTED':'Execution sequence observed','COMPLETED_OBSERVED':'STATUS sequence ended','CONTROLLER_REPLIED':'Controller replied','STATE_CHANGED':'Controller replied — state changed','NO_STATE_CHANGE':'Controller replied — state unchanged','UNKNOWN':'Outcome unknown — do not retry','REJECTED':'Command not sent'}.get(state,state)
         if state in ('COMPLETED_SIMULATED','COMPLETED_OBSERVED','VERIFIED','EFFECT_OBSERVED'):color='#39c6a4'
@@ -790,6 +809,8 @@ class MainWindow(QMainWindow):
             self.account_button.setText('Password change required' if account and account['must_change'] else 'Account / users' if account and account['role']=='Administrator' else 'My account')
         name,role=self.users.resolve(self.session);self.role_label.setText(f'{name} / {role}')
         snapshot=self.snapshot;control=snapshot.get('control',{}) if snapshot else {}
+        temporary=bool(control.get('transmitting') or time.monotonic()<control.get('cooldown_until',0))
+        control['temporary_busy']=temporary
         bench=bool(self.hardware_grant and self.hardware_grant.operator_commands and self.settings['mode']=='hardware')
         physical=self.settings['mode']=='hardware'
         documented=set(control.get('physical_commands',[])) if physical else set()
@@ -801,6 +822,7 @@ class MainWindow(QMainWindow):
         elif role not in ('Operator','Administrator'):reason='Sign in as Operator or Administrator. Viewer accounts cannot use commands.'
         elif physical and not bench and not documented:
             reason='Read-only connection. Use Enable Acknowledge / Reset for the approved SNR671 bench session.' if self.command_bench_target_matches() else 'Read-only: operating commands are unverified for this firmware/profile.'
+        elif temporary:reason='Command transaction / short anti-repeat cooldown active.'
         elif control.get('pending'):reason='Verifying software lock through CAL LOCK [60].' if control.get('pending_kind')=='lock' else 'Command pending; waiting for STATUS evidence.'
         elif control.get('ambiguous'):reason='Command outcome unknown. Review state and reconnect; do not retry.'
         elif not control.get('verified'):reason='Commands unavailable: identity or selected profile is unresolved.'
@@ -810,7 +832,11 @@ class MainWindow(QMainWindow):
         if physical and snapshot and snapshot['config'].get('register_profile')=='fta_4x':
             reason+='\nFirmware4.81 uses the 5.12 register/command map by user instruction; hardware compatibility remains unverified.'
         self.command_access_note.setText(reason)
-        enabled=bool(self.profile_current and self.connection_established and snapshot and snapshot['quality']=='GOOD' and control.get('verified') and not control.get('pending') and not control.get('ambiguous') and role in ('Operator','Administrator') and not self.command_dispatching and self.worker and self.worker.isRunning() and (self.settings['mode']=='simulation' or bench or documented))
+        enabled=bool(self.profile_current and self.connection_established and snapshot and snapshot['quality']=='GOOD' and control.get('verified') and not temporary and not control.get('pending') and not control.get('ambiguous') and role in ('Operator','Administrator') and not self.command_dispatching and self.worker and self.worker.isRunning() and (self.settings['mode']=='simulation' or bench or documented))
+        locked=not enabled
+        if locked!=self.ui_command_lock and control.get('receipt'):
+            receipt=control['receipt'];self.command_timing.event('UI_LOCK_ACQUIRED' if locked else 'UI_LOCK_RELEASED',receipt.get('id'),receipt['code'])
+        self.ui_command_lock=locked
         active_config=DeviceConfig(**snapshot["config"]) if snapshot else self.config
         profile=profile_for(active_config)
         lock= snapshot['raw'].get(60) if snapshot else None
@@ -836,12 +862,17 @@ class MainWindow(QMainWindow):
             if snapshot and code in range(0x300,0x900,0x100):
                 lock_register=27 if profile_for(active_config).revision=='700' else 60
                 allow=allow and lock_register in snapshot['raw'] and not snapshot['raw'][lock_register]&(1 if lock_register==27 else 3) and snapshot['raw'].get(2) not in (4,5,6,7,11,12)
-            button.setEnabled(bool(allow));button.setToolTip('Verified simulator identity, current communication and Operator/Administrator session required')
+            was_enabled=button.isEnabled();button.setEnabled(bool(allow))
+            if bool(allow)!=was_enabled and control.get('receipt'):
+                receipt=control['receipt'];self.command_timing.event('BUTTON_ENABLED' if allow else 'BUTTON_DISABLED',receipt.get('id'),code,request_code=receipt['code'])
+            button.setToolTip('Verified simulator identity, current communication and Operator/Administrator session required')
             if code not in commands_for(active_config):button.setToolTip('Legacy firmware command behavior is unverified.' if profile_for(active_config).revision=='fta_4x' else '700-series Rev D: Lock/Unlock have no effect over Modbus; Save Settings permits factory changes. Not available in operational controls.' if profile_for(active_config).revision=='700' else 'Not supported by the selected profile.')
             if physical:button.setToolTip(('Real controller:670 Rev Q p90. Operator/Administrator login and explicit confirmation required.' if bench else 'Start the explicitly authorized command bench session to test Acknowledge/Reset.') if code in (0x100,0x200) else 'Unavailable for the current physical firmware/profile; see the command-readiness explanation above.')
             if physical and code in documented:button.setToolTip('Documented670 command. Fresh identity/status/lock checks, target confirmation and audit required. Save All: Administrator only.')
-        if control.get('pending'):self.command_message.setText('Verifying software lock: waiting for CAL LOCK [60] readback. Command sent once; duplicate commands disabled.' if control.get('pending_kind')=='lock' else 'Command pending: waiting for STATUS evidence. Duplicate commands disabled.')
+        if temporary:self.command_message.setText('Command transaction / short anti-repeat cooldown active.')
+        elif control.get('pending'):self.command_message.setText('Verifying software lock: waiting for CAL LOCK [60] readback. Command sent once; duplicate commands disabled.' if control.get('pending_kind')=='lock' else 'Command pending: waiting for STATUS evidence. Duplicate commands disabled.')
         elif control.get('ambiguous'):self.command_message.setText('Unknown command outcome. No retry; reconnect and review state.')
+        elif control.get('effect_pending'):self.command_message.setText('Acknowledged. Checking effects asynchronously; new confirmed actions are available after the short cooldown.')
         elif self.settings['mode']=='hardware':self.command_message.setText('Documented commands require individual confirmation; write acknowledgment does not prove execution.' if documented else 'Real controller: sign in as Operator/Administrator to test Acknowledge or Reset. Each action requires confirmation.' if bench else 'Read-only controller test. No commands enabled in this session.')
         from prevex_hmi.profiles.parameters import PARAMETERS
         for key,(number,title) in PARAMETERS.items():
@@ -853,6 +884,7 @@ class MainWindow(QMainWindow):
     def send_command(self,code):
         if code not in COMMANDS or not self.command_buttons[code].isEnabled():return
         if code in (0xF00,0x1000) and code!=self.lock_command_code:return
+        request_id=uuid.uuid4().hex;self.command_timing.event('BUTTON_CLICKED',request_id,code)
         config=self.snapshot['config']
         physical=self.settings['mode']=='hardware'
         operating_context=''
@@ -866,13 +898,17 @@ class MainWindow(QMainWindow):
             active=DeviceConfig(**config);status=self.snapshot['raw'].get(2)
             effects+=f'\nCurrent STATUS {status}: {profile_for(active).status(status)}. Command may operate gas valves/change calibration while this condition remains.'
         answer=QMessageBox.question(self,'Confirm analyzer command',f"Target: {config['name']} / {config['family']} / address {config['address']}\n{COMMANDS[code]} (0x{code:04X})\n{effects}{operating_context}\nExecute this {'REAL CONTROLLER' if physical else 'simulated'} command once?",QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
-        if answer!=QMessageBox.Yes:return
+        if answer!=QMessageBox.Yes:
+            self.command_timing.event('CONFIRMATION_CANCELLED',request_id,code);return
+        self.command_timing.event('CONFIRMATION_ACCEPTED',request_id,code)
         self.update_command_buttons()
         if not self.command_buttons[code].isEnabled() or code in (0xF00,0x1000) and code!=self.lock_command_code:
             self.statusBar().showMessage('Command state changed during confirmation; review the current lock/connection and confirm again.');return
         self.active_command=code
-        self.command_dispatching=True;self.update_command_buttons();self.request('command',code,self.session,True)
-        self.show_command_receipt({'code':code,'state':'SENDING','reply_received':False})
+        self.queued_command_id=request_id
+        self.snapshot['control']['receipt']={'id':request_id,'code':code,'state':'SENDING','reply_received':False}
+        self.command_dispatching=True;self.update_command_buttons();self.request('command',code,self.session,True,request_id)
+        self.show_command_receipt({'id':request_id,'code':code,'state':'SENDING','reply_received':False})
 
     def parameter_access_reason(self,key):
         from prevex_hmi.profiles.parameters import PARAMETERS,supported
@@ -885,7 +921,7 @@ class MainWindow(QMainWindow):
             from prevex_hmi.communication.validated_controls import validated_670
             if not validated_670(config):return 'Physical adjustments are unverified for this firmware/profile.'
         control=snapshot.get('control',{})
-        if not control.get('verified') or control.get('pending') or control.get('ambiguous') or self.command_dispatching:return 'Identity unresolved or an action is pending/unknown.'
+        if not control.get('verified') or control.get('pending') or control.get('transmitting') or time.monotonic()<control.get('cooldown_until',0) or control.get('ambiguous') or self.command_dispatching:return 'Identity unresolved or an action is pending/unknown.'
         elapsed=max(0,time.monotonic()-self.snapshot_received_at)
         limit=max(5,config.interval*3)
         required=(2,60,PARAMETERS[key][0])+((5,6) if key in ('warning','danger') else ())
@@ -933,7 +969,7 @@ class MainWindow(QMainWindow):
 
     def command_feedback(self,text):
         if self.active_command is not None and not self.snapshot.get('control',{}).get('receipt') and ('rejected' in text.lower() or 'not sent' in text.lower()):self.command_buttons[self.active_command].feedback(False)
-        self.command_dispatching=False;self.command_message.setText(text);self.statusBar().showMessage(text);self.update_command_buttons()
+        self.queued_command_id=None;self.command_dispatching=False;self.command_message.setText(text);self.statusBar().showMessage(text);self.update_command_buttons()
 
     def request(self,*message):
         if self.worker and self.worker.isRunning() and not self.worker.test_only:self.worker.request(*message)

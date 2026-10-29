@@ -48,9 +48,9 @@ def test_only_exact_operator_word_sent_once_then_status_observed(controller,code
     service,token,client,store=controller
     service.execute(code,token,confirmed=True)
     assert client.writes==[(7,code,1)] and store.audit_rows()[0][4]=='SENT_UNVERIFIED'
-    assert 'STATUS 25 -> 25' in service.result
-    assert service.receipt['reply_received'] and service.receipt['state']=='NO_STATE_CHANGE'
-    assert service.receipt['before']['status']==25 and service.receipt['after']['status']==25
+    assert 'STATUS before 25' in service.result
+    assert service.receipt['reply_received'] and service.receipt['state']=='CONTROLLER_REPLIED'
+    assert service.receipt['before']['status']==25 and service.effect is not None and service.pending is None
     service.execute(code,token,confirmed=True)
     assert len(client.writes)==1
 
@@ -87,9 +87,10 @@ def test_lost_ack_never_causes_command_retry(controller):
 def test_visible_receipt_records_observed_effect_separately_from_reply(controller):
     service,token,client,store=controller;client.clear_service=True
     service.execute(0x100,token,confirmed=True)
-    assert service.receipt['state']=='STATE_CHANGED' and service.receipt['reply_received']
-    assert service.receipt['before']['service']==161 and service.receipt['after']['service']==0
-    assert service.receipt['after']['status']==25
+    assert service.receipt['reply_received'] and service.receipt['state']=='CONTROLLER_REPLIED'
+    assert service.receipt['before']['service']==161 and 'after' not in service.receipt
+    service.observe(dict(raw={2:25,4:4,59:0},quality='GOOD',register_ages={2:0,4:0,59:0}))
+    assert service.receipt['state']=='EFFECT_OBSERVED' and service.pending is None
 
 
 def test_default_read_adapter_has_no_commands_and_bench_needs_grant():

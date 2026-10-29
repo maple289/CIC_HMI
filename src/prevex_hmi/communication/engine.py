@@ -55,9 +55,21 @@ class BusEngine:
         self._active: dict = {}
         self.transport.trace = self._trace
         self.closed = False
+        self.command_event=None
 
     def _trace(self, sending: bool, data: bytes) -> None:
         self.traffic.append({"time": utc_now(), "direction": "TX" if sending else "RX", "hex": data.hex(" ").upper(), **self._active})
+        if self.command_event and self._active.get('register')==8 and len(data)>1 and data[1]==6:
+            self.command_event('TRANSMISSION_STARTED' if sending else 'WIRE_RESPONSE_RECEIVED')
+
+    def _command_response(self,operation):
+        if self.command_event:self.command_event('TRANSPORT_STARTED')
+        try:result=operation()
+        except (OSError,ValueError,RuntimeError) as error:
+            if self.command_event:self.command_event('RESPONSE_TIMEOUT' if isinstance(error,TimeoutError) else 'RESPONSE_ERROR')
+            raise
+        if self.command_event:self.command_event('RESPONSE_RECEIVED')
+        return result
 
     @property
     def minimum_interval(self) -> float:
@@ -130,7 +142,7 @@ class BusEngine:
             packet=frame(struct.pack(">BBHH",address,6,pdu,code))
             self._trace(True,packet)
             try:
-                result=self.transport.command(address,code,role=role,confirmed=True)
+                result=self._command_response(lambda:self.transport.command(address,code,role=role,confirmed=True))
                 self._trace(False,packet)
                 return result
             finally:
@@ -166,8 +178,7 @@ class BusEngine:
             self.sleep(max(0,deadline-self.clock()));self._last_start=self.clock()
             self._active={'address':1,'register':8,'count':1,'family':'LEL_BENCH_OPERATOR'}
             try:
-                if code==0x100:self.transport.acknowledge()
-                else:self.transport.reset_alarms()
+                self._command_response(self.transport.acknowledge if code==0x100 else self.transport.reset_alarms)
             finally:self._last_end=self.clock()
 
     def activate_validated_controls(self,grant,config,*,confirmed,role):
@@ -195,7 +206,7 @@ class BusEngine:
             deadline=max(self.clock(),(self._last_start or 0)+self.minimum_interval,(self._last_end or 0)+35/self.baud)
             self.sleep(max(0,deadline-self.clock()));self._last_start=self.clock()
             self._active={'address':self.transport.control_grant.address,'register':8,'count':1,'family':'VALIDATED_OPERATING_COMMAND'}
-            try:self.transport.operating_command(code)
+            try:self._command_response(lambda:self.transport.operating_command(code))
             finally:self._last_end=self.clock()
 
     def validated_parameter(self,config,key,raw,*,previous):

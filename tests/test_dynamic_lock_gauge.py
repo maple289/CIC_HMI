@@ -154,7 +154,7 @@ def test_dynamic_click_dispatches_only_current_confirmed_action(window,monkeypat
     w=window;sent=[];monkeypatch.setattr(w,'request',lambda *args:sent.append(args))
     monkeypatch.setattr(QMessageBox,'question',lambda *args:QMessageBox.Yes)
     w.snapshot['raw'][60]=2;w.update_command_buttons();w.command_buttons[0xF00].button.click()
-    assert sent==[('command',0x1000,w.session,True)]
+    assert len(sent)==1 and sent[0][:4]==('command',0x1000,w.session,True) and len(sent[0][4])==32
     assert not w.command_buttons[0xF00].isEnabled()
 
 
