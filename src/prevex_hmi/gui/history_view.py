@@ -92,7 +92,12 @@ class HistoricalPlots(QScrollArea):
     def __init__(self):
         super().__init__();self.setWidgetResizable(True)
         self.content=QWidget();self.box=QVBoxLayout(self.content);self.setWidget(self.content)
-        self.plots=[];self.curves=[];self.data=[]
+        self.plots=[];self.curves=[];self.data=[];self.dark=True
+
+    def set_theme(self,dark):
+        from .theme import style_plot
+        self.dark=dark
+        for plot in self.plots:style_plot(plot,dark)
 
     def render(self,data,zone):
         self.data=data
@@ -132,3 +137,4 @@ class HistoricalPlots(QScrollArea):
             low,high=min(all_times),max(all_times);margin=max((high-low)*.03,1)
             self.plots[0].setXRange(low-margin,high+margin,padding=0)
         if not self.curves:self.curves.append(self.plots[0].plot())
+        self.set_theme(self.dark)

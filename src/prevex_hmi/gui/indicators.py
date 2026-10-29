@@ -26,7 +26,7 @@ def presentation(group,key,text):
 class IndicatorPanel(QFrame):
     def __init__(self,parent=None):
         super().__init__(parent);self.setObjectName('indicatorPanel')
-        self.family=None;self.labels={};self.active_order=[]
+        self.family=None;self.labels={};self.active_order=[];self.dark=True;self.last_snapshot=None
         root=QHBoxLayout(self);root.setContentsMargins(6,3,6,3)
         # Retain diagnostic text for existing consumers, without a visible row.
         self.summary=QLabel('COMMUNICATION: disconnected | STATUS [2]: unavailable',self);self.summary.hide()
@@ -50,6 +50,7 @@ class IndicatorPanel(QFrame):
         self.row.addStretch();self.content.hide()
 
     def update_snapshot(self,snapshot):
+        self.last_snapshot=snapshot
         if snapshot is None:
             self.summary.setText('COMMUNICATION: disconnected | STATUS [2]: unavailable')
             for label,text in self.labels.values():label.hide()
@@ -66,6 +67,8 @@ class IndicatorPanel(QFrame):
             label.setVisible(bool(valid and on))
             if not valid or not on:continue
             priority,color,meaning=presentation(group,key,text)
+            from .theme import display_color
+            color=display_color(color,self.dark)
             source=('STATUS','RELAYS','SERVICE')[group]
             label.setToolTip(f'{source} [{number}]: {text} — {meaning}');label.setAccessibleName(f'{source}: {text}')
             label.setStyleSheet(f'QLabel {{padding:3px 8px;border-radius:5px;border:1px solid {color};color:{color};font-weight:bold;}}')
@@ -80,3 +83,6 @@ class IndicatorPanel(QFrame):
         self.row.addStretch();self.content.setVisible(bool(active))
         self.setVisible(bool(active))
         if any(priority==0 and (group,key) not in previous for priority,group,key,label in active):self.scroll.horizontalScrollBar().setValue(0)
+
+    def set_theme(self,dark):
+        self.dark=dark;self.update_snapshot(self.last_snapshot)

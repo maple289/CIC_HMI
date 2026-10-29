@@ -18,7 +18,8 @@ class ConnectionTestResult(QDialog):
         layout=QVBoxLayout(self)
         title=('Connection test passed' if identified else 'Communication established; identification unresolved' if responding else 'Connection test failed')
         self.result_label=QLabel(title);self.result_label.setWordWrap(True)
-        self.result_label.setStyleSheet('font-size:20px;font-weight:bold;color:'+('#39c66c' if identified else '#e7b55e' if responding else '#f27778'))
+        from .theme import semantic_style
+        semantic_style(self.result_label,'#39c66c' if identified else '#e7b55e' if responding else '#f27778','font-size:20px;font-weight:bold;')
         layout.addWidget(self.result_label)
         c=settings['connection'];d=settings['devices'][0]
         firmware=info.get('version') or 'Unavailable'

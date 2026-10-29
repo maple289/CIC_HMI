@@ -59,6 +59,12 @@ class TrendWindow(QMainWindow):
     @property
     def paths(self):return [self.owner.data_path/'simulation.sqlite3',self.owner.data_path/'hardware.sqlite3']
 
+    def apply_theme(self,dark):
+        from .theme import apply_palette,style_plot
+        self.setStyleSheet(self.owner.styleSheet());apply_palette(self,dark)
+        self.history_plots.set_theme(dark)
+        for plot in self.findChildren(pg.PlotWidget):style_plot(plot,dark)
+
     def manage_data(self):
         from .recording_management import RecordingManagementWindow
         if not hasattr(self,'management_window'):self.management_window=RecordingManagementWindow(self)

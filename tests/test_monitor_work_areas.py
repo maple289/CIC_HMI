@@ -29,7 +29,7 @@ def test_monitor_service_diagnostics_and_collapsed_details(app,tmp_path):
         w.technical_toggle.click();w.navigation.setCurrentRow(1);flush(app)
         assert w.pages.currentIndex()==6 and w.readout_groups['Calibration parameters'].isVisibleTo(w)
         assert not w.readout_groups['Gauges'].isVisibleTo(w)
-        w.navigation.setCurrentRow(0);w.view_audit_button.click();flush(app)
+        w.navigation.setCurrentRow(0);w.show_diagnostics('Command audit');flush(app)
         assert w.navigation.currentRow()==2 and w.diagnostics_tabs.tabText(w.diagnostics_tabs.currentIndex())=='Command audit'
         assert w.command_proof.isVisibleTo(w) and w.audit_table.isVisibleTo(w)
         rows=[('2026-10-28','unit','operator',0x200,'UNKNOWN','No valid command acknowledgment received. Lost reply'),('2026-10-28','unit','operator',0x200,'NOT_VERIFIED','Acknowledgment received; no effect')]

@@ -72,7 +72,7 @@ class RecordingManagementWindow(QDialog):
 
     def apply_theme(self):
         dark=self.owner.settings.get('theme','dark')=='dark'
-        highlight,foreground=('#226fa5','#ffffff') if dark else ('#b8d9f5','#102a43')
+        highlight,foreground=('#226fa5','#ffffff') if dark else ('#CDE5E4','#164E55')
         palette=self.table.palette()
         for group in (QPalette.Active,QPalette.Inactive,QPalette.Disabled):
             palette.setColor(group,QPalette.Highlight,QColor(highlight));palette.setColor(group,QPalette.HighlightedText,QColor(foreground))
@@ -85,7 +85,7 @@ class RecordingManagementWindow(QDialog):
             QTableWidget#recordingSessions::item:selected:!active {{background:{highlight};color:{foreground};font-weight:600;}}
             QLabel#selectionSummary {{font-weight:600;padding:5px 0;}}
             QPushButton#deleteRecording:enabled {{border-color:{'#e89494' if dark else '#a73c3c'};}}
-            QGroupBox {{border:1px solid #526780;border-radius:5px;margin-top:12px;padding:12px 8px 8px;}}
+            QGroupBox {{border:1px solid {'#526780' if dark else '#D3DBE3'};border-radius:7px;margin-top:12px;padding:12px 8px 8px;}}
             QGroupBox::title {{subcontrol-origin:margin;left:10px;padding:0 4px;}}
         ''')
 

@@ -21,6 +21,8 @@ from prevex_hmi.gui.profile_library import PROFILE_CHOICES,PROFILE_STATUS,librar
 from prevex_hmi.gui.trend_display import DisplayTrend
 from prevex_hmi.gui.command_button import CommandButton
 from prevex_hmi.gui.command_status import command_status
+from prevex_hmi.gui.theme import display_color,semantic_style
+from prevex_hmi.gui.navigation import NavigationList
 from prevex_hmi.gui.serial_ports import require_available_port
 from prevex_hmi.gui.indicators import IndicatorPanel
 from prevex_hmi.gui.presentation import measurement,severity,uses_controller_fault_display,monitor_condition
@@ -110,7 +112,7 @@ class MainWindow(QMainWindow):
         self.identity_label=QLabel('Instrument identification: not connected');self.identity_label.setWordWrap(True)
         self.warning=QLabel();self.warning.setObjectName('warning');self.warning.setWordWrap(True);self.warning.hide()
         self.operational_warning=QLabel();self.operational_warning.setObjectName('warning');self.operational_warning.setWordWrap(True);self.operational_warning.hide();root.addWidget(self.operational_warning)
-        body=QHBoxLayout();self.navigation=QListWidget();self.navigation.setFixedWidth(122)
+        body=QHBoxLayout();self.navigation=NavigationList();self.navigation.setFixedWidth(122);self.navigation.setObjectName('navigation');self.navigation.setMouseTracking(True)
         self.navigation.addItems(['Monitor','Service','Diagnostics']);body.addWidget(self.navigation)
         self.pages=QStackedWidget();body.addWidget(self.pages,1);root.addLayout(body,1);self.setCentralWidget(central)
         self.build_gauge();self.build_trends();self.build_history();self.build_events();self.build_diagnostics();self.build_audit();self.build_profile_settings()
@@ -307,7 +309,7 @@ class MainWindow(QMainWindow):
         self.fault_summary=QLabel('Measurement Unavailable');self.fault_summary.setWordWrap(True);info.insertWidget(1,self.fault_summary)
         self.compatibility_notice=QLabel();self.compatibility_notice.setWordWrap(True);info.insertWidget(2,self.compatibility_notice)
         command_row=QHBoxLayout();self.last_command=QLabel('No command sent in this session');self.last_command.setWordWrap(True);self.last_command.setFixedHeight(56);command_row.addWidget(self.last_command,1)
-        self.view_audit_button=QPushButton('View Command Audit');self.view_audit_button.clicked.connect(lambda:self.show_diagnostics('Command audit'));command_row.addWidget(self.view_audit_button);readings.addLayout(command_row)
+        readings.addLayout(command_row)
         self.technical_toggle=QToolButton();self.technical_toggle.setText('Technical Details');self.technical_toggle.setCheckable(True);self.technical_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);self.technical_toggle.setArrowType(Qt.RightArrow);readings.addWidget(self.technical_toggle)
         self.technical_details=QWidget();technical=QVBoxLayout(self.technical_details);technical.setContentsMargins(6,0,6,4)
         for widget in (self.identity_label,self.warning,self.monitor_model,self.monitor_updated,self.controller_display,self.range_help):technical.addWidget(widget)
@@ -354,7 +356,7 @@ class MainWindow(QMainWindow):
         for i,n in enumerate(numbers):
             r=profile.register(n);frame=QFrame();frame.setObjectName('readout');box=QVBoxLayout(frame)
             title='SPAN °C' if n==56 and family!='FID' else r.name
-            name=QLabel(f'{title}  [{n}]');name.setWordWrap(True)
+            name=QLabel(f'{title}  [{n}]');name.setWordWrap(True);name.setObjectName('parameterLabel')
             header=QHBoxLayout();header.setContentsMargins(0,0,0,0);header.setSpacing(2);header.addWidget(name,1);box.addLayout(header)
             if n in editable:
                 key=editable[n];button=QToolButton();button.setText('...');button.setFixedSize(24,24);button.setAutoRaise(True)
@@ -508,7 +510,7 @@ class MainWindow(QMainWindow):
         self.gauge.set_snapshot(None);self.indicators.update_snapshot(None)
         self.set_connection_status(False);self.monitor_updated.setText('No current measurement');self.identity_label.setText(reason)
         self.warning.clear();self.warning.hide();self.monitor_model.clear();self.compatibility_notice.clear();self.technical_toggle.setChecked(False)
-        self.controller_display.clear();self.fault_summary.setText('Communication Lost');self.fault_summary.setStyleSheet('color:#f27778;font-weight:bold;');self.last_command.setText('No command sent in this session');self.sync_technical_details()
+        self.controller_display.clear();self.fault_summary.setText('Communication Lost');semantic_style(self.fault_summary,'#f27778','font-weight:bold;');self.last_command.setText('No command sent in this session');self.sync_technical_details()
         self.command_proof.setText('No command sent in this session');self.command_proof.setStyleSheet('')
         self.last_receipt_key=None;self.active_command=None
         for button in self.command_buttons.values():button.reset()
@@ -647,7 +649,7 @@ class MainWindow(QMainWindow):
         if (family,profile_for(config).revision)!=self.snapshot_family:self.build_readouts(family,config)
         self.trend_window.set_analyzer(config)
         self.gauge.set_snapshot(snapshot);self.indicators.update_snapshot(snapshot)
-        condition_color,condition=monitor_condition(snapshot);self.fault_summary.setText(condition);self.fault_summary.setStyleSheet(f'color:{condition_color};font-size:17px;font-weight:bold;')
+        condition_color,condition=monitor_condition(snapshot);self.fault_summary.setText(condition);semantic_style(self.fault_summary,condition_color,'font-size:17px;font-weight:bold;')
         retained=bool(self.gauge.held and self.gauge.lcd_hold)
         self.readout_retained=retained
         if retained and self.blank_started_wall is None:self.blank_started_wall=time.time()
@@ -679,7 +681,7 @@ class MainWindow(QMainWindow):
                 widget.setToolTip(f'Raw 0x{word:04X}; signed {signed}; documented engineering conversion.'+(' This legacy extreme word has no verified Peak sentinel rule; see Technical Details.' if config.register_profile=='fta_4x' and word==0x8001 else ''))
             if n==1:
                 self.readout_retained=retained
-                style='color:#e7b55e;' if retained else ''
+                style=f'color:{display_color("#e7b55e",self.settings.get("theme","dark")=="dark")};' if retained else ''
                 if widget.styleSheet()!=style:widget.setStyleSheet(style)
                 widget.setToolTip('Last numeric value held while the controller LCD is nonnumeric; not a new measurement.' if retained else '')
                 if retained:value,unit=self.gauge.state.value,self.gauge.state.unit
@@ -723,7 +725,7 @@ class MainWindow(QMainWindow):
         if getattr(self,'connection_established',None)==connected:return
         self.connection_established=connected
         self.monitor_status.setText('Connection Status: ● '+('Connection Established' if connected else 'No Connection'))
-        self.monitor_status.setStyleSheet('color:'+('#39c66c' if connected else '#f27778')+';font-size:16px;font-weight:bold;')
+        semantic_style(self.monitor_status,'#39c66c' if connected else '#f27778','font-size:16px;font-weight:bold;')
         self.refresh_connection_view()
 
     def refresh_connection_status(self):
@@ -732,7 +734,7 @@ class MainWindow(QMainWindow):
                        snapshot.get('age',0) is not None and snapshot.get('age',0)+time.monotonic()-self.snapshot_received_at <= max(5,snapshot['config']['interval']*3))
         self.set_connection_status(connected)
         if snapshot and not connected and self.profile_current and self.link_state=='live':self.connection_lost()
-        if snapshot and not connected:self.fault_summary.setText('Communication Lost');self.fault_summary.setStyleSheet('color:#f27778;font-weight:bold;')
+        if snapshot and not connected:self.fault_summary.setText('Communication Lost');semantic_style(self.fault_summary,'#f27778','font-weight:bold;')
         self.update_command_buttons()
         if not connected and self.readout_retained:
             self.readout_retained=False
@@ -767,7 +769,7 @@ class MainWindow(QMainWindow):
         elif state in ('UNKNOWN','REJECTED','FAILED'):color='#f27778'
         icon,outcome,color=command_status(receipt)
         self.last_command.setText(f"{icon} {outcome}\n{COMMANDS.get(receipt['code'],str(receipt['code']))}")
-        self.last_command.setStyleSheet(f'color:{color};font-weight:bold;')
+        semantic_style(self.last_command,color,'font-weight:bold;')
         self.last_command.setToolTip(receipt.get('detail',outcome))
         lines=[f'{icon} {outcome}',title,COMMANDS.get(receipt['code'],f"0x{receipt['code']:04X}"),f"Reply received: {'YES' if receipt.get('reply_received') else 'NO'}"]
         before=receipt.get('before');after=receipt.get('after')
@@ -778,7 +780,7 @@ class MainWindow(QMainWindow):
         if 'status_after' in receipt:lines.append(f"Observed STATUS: {receipt['status_after']}")
         if receipt.get('reply_received'):lines.append('Green LED = Modbus acknowledgment only. Execution is tracked separately in the command audit.')
         if receipt.get('time'):lines.append(receipt['time'])
-        self.command_proof.setText('\n'.join(lines));self.command_proof.setStyleSheet(f'QLabel {{padding:8px;border:1px solid {color};border-radius:5px;color:{color};}}')
+        self.command_proof.setText('\n'.join(lines));semantic_style(self.command_proof,color,'padding:8px;border:1px solid {tone};border-radius:5px;')
 
     def command_bench_target_matches(self):
         if self.settings['mode']!='hardware' or not self.snapshot or self.snapshot['quality']!='GOOD':return False
@@ -845,7 +847,7 @@ class MainWindow(QMainWindow):
         legacy_lock=profile.revision!='700' and 60 in profile.registers
         self.lock_command_code=(0x1000 if lock&2 else 0xF00) if lock_current and legacy_lock else None
         self.hardware_lock_label.setText(('Hardware lock: LOCKED' if lock&1 else 'Hardware lock: unlocked') if lock_current and legacy_lock else '700 lock state: see Security [27]' if profile.revision=='700' else 'Hardware lock: unknown')
-        self.hardware_lock_label.setStyleSheet('color:'+('#efb753' if lock_current and legacy_lock and lock&1 else '#adbbcf'))
+        semantic_style(self.hardware_lock_label,'#efb753' if lock_current and legacy_lock and lock&1 else '#adbbcf')
         for code,button in self.command_buttons.items():
             if code==0x1000:continue
             if code==0xF00:
@@ -963,8 +965,8 @@ class MainWindow(QMainWindow):
     def parameter_feedback(self,text):
         self.command_proof.setText(text);self.command_feedback(text)
         verified='readback verified' in text
-        self.last_command.setText(('Setting change verified' if verified else 'Setting change not verified')+' - view Command Audit')
-        self.last_command.setStyleSheet('color:'+('#39c6a4' if verified else '#f27778')+';font-weight:bold;')
+        self.last_command.setText(('Setting change verified' if verified else 'Setting change not verified')+' — Diagnostics / Command audit')
+        semantic_style(self.last_command,'#39c6a4' if verified else '#f27778','font-weight:bold;')
         self.last_command.setToolTip(text)
 
     def command_feedback(self,text):
@@ -1060,23 +1062,16 @@ class MainWindow(QMainWindow):
 
     def apply_theme(self):
         dark=self.settings.get('theme','dark')=='dark';self.gauge.dark=dark;self.gauge.update()
-        bg,panel,text=('#0d1625','#182538','#e7edf7') if dark else ('#eef3f8','#ffffff','#172335')
-        self.setStyleSheet(f"""QWidget {{background:{bg};color:{text};font-family:'Segoe UI';font-size:13px;}}
-        QLabel#brand {{font-size:24px;font-weight:bold;}} QLabel#heading {{font-size:23px;font-weight:600;}}
-        QLabel#digitalValue {{font-size:21px;font-weight:600;}} QLabel#banner {{background:#e7b55e;color:#251c10;padding:9px;font-weight:bold;}}
-        QLabel#warning {{background:#763d2e;color:#ffe3c2;padding:9px;}}
-        QFrame#panel,QFrame#readout,QFrame#indicatorPanel {{background:{panel};border:1px solid #40516a;border-radius:7px;}}
-        QFrame#readout QLabel,QFrame#panel QLabel {{background:transparent;}}
-        QPushButton,QComboBox,QLineEdit,QSpinBox,QDoubleSpinBox {{background:{panel};border:1px solid #526780;border-radius:5px;padding:7px;}}
-        QPushButton:hover {{border-color:#44cab0;}} QPushButton:disabled {{color:#7f8ba0;border-color:#36435a;}}
-        QPushButton#industrialCommand {{color:#f1f5fa;background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #52647a,stop:1 #283648);border-top:2px solid #8291a4;border-left:2px solid #697c93;border-right:2px solid #121e2b;border-bottom:3px solid #0b1624;border-radius:6px;font-weight:bold;}}
-        QPushButton#industrialCommand:pressed {{background:#233244;border-top:3px solid #101c29;border-left:2px solid #101c29;border-bottom:1px solid #667991;padding-top:9px;}}
-        QPushButton#industrialCommand:disabled {{color:#788595;background:#26313f;border:1px solid #3c4859;}}
-        QListWidget,QTableWidget {{background:{panel};alternate-background-color:{bg};border:0;}}
-        QListWidget::item {{padding:14px 8px;}} QListWidget::item:selected {{background:#245a69;color:white;}}
-        QHeaderView::section {{background:{panel};color:{text};padding:7px;border:0;}} QScrollArea {{border:0;}}
-        """)
-        if hasattr(self,'trend_window'):self.trend_window.setStyleSheet(self.styleSheet())
+        from .theme import stylesheet,apply_palette,style_plot,refresh_semantics
+        from .navigation import navigation_icon
+        self.setStyleSheet(stylesheet(dark));apply_palette(self,dark)
+        for index in range(self.navigation.count()):
+            item=self.navigation.item(index);item.setIcon(navigation_icon(item.text(),dark))
+        for button in self.command_buttons.values():button.set_theme(dark)
+        for plot in self.findChildren(pg.PlotWidget):style_plot(plot,dark)
+        self.indicators.set_theme(dark)
+        refresh_semantics(self,dark)
+        if hasattr(self,'trend_window'):self.trend_window.apply_theme(dark)
         if hasattr(self,'trend_window') and hasattr(self.trend_window,'management_window'):self.trend_window.management_window.apply_theme()
 
     def toggle_theme(self):

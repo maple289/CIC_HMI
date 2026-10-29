@@ -36,7 +36,7 @@ def selected_background(dialog,row):
 
 
 @pytest.mark.parametrize('theme,highlight,foreground',[
-    ('dark','#226fa5','#ffffff'),('light','#b8d9f5','#102a43')])
+    ('dark','#226fa5','#ffffff'),('light','#CDE5E4','#164E55')])
 def test_selection_rendered_with_contrast_after_focus_moves(app,manager,theme,highlight,foreground):
     w,d=manager;w.settings['theme']=theme;w.apply_theme();d.table.setFocus();d.table.selectRow(0);app.processEvents()
     assert selected_background(d,0)==QColor(highlight)
@@ -58,7 +58,7 @@ def test_multiselection_survives_refresh_reordering_and_live_theme_change(app,ma
     assert d.keep_button.isEnabled() and d.unkeep_button.isEnabled() and d.delete_button.isEnabled()
     w.settings['theme']='light';w.apply_theme();app.processEvents()
     assert {r['id'] for r in d.selected()}==selected
-    for index in d.table.selectionModel().selectedRows():assert selected_background(d,index.row())==QColor('#b8d9f5')
+    for index in d.table.selectionModel().selectedRows():assert selected_background(d,index.row())==QColor('#CDE5E4')
     d.table.clearSelection();assert not d.export_button.isEnabled() and not d.delete_button.isEnabled() and not d.keep_button.isEnabled()
     assert d.selection_summary.text()=='No recordings selected'
 

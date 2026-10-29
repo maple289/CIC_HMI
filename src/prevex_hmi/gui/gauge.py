@@ -199,12 +199,14 @@ class CircularGauge(QWidget):
         painter.translate((self.width() - 460 * scale) / 2, (self.height() - 430 * scale) / 2)
         painter.scale(scale, scale)
         painter.translate(0,20)
-        text = "#e7edf7" if self.dark else "#172335"
-        muted = "#adbbcf" if self.dark else "#425570"
-        track = "#2c3b50" if self.dark else "#d5deea"
+        from .theme import display_color
+        text = "#e7edf7" if self.dark else "#243447"
+        muted = "#adbbcf" if self.dark else "#607185"
+        track = "#2c3b50" if self.dark else "#E4EAF0"
         arc = QRectF(82, 42, 296, 296)
 
         def draw_arc(start: float, end: float, color: str, width=18):
+            if not self.dark:color={'#39c6a4':'#70A99B','#efb753':'#D3AB62','#f27778':'#CC7E83','#8290a5':'#95A3B3','#5a9fcf':'#95A3B3'}.get(color,display_color(color,False))
             painter.setPen(QPen(QColor(color), width, Qt.SolidLine, Qt.FlatCap))
             painter.drawArc(arc, round((225 - start * 270) * 16), round(-(end - start) * 270 * 16))
 
@@ -217,7 +219,7 @@ class CircularGauge(QWidget):
                 draw_arc((low-self.state.minimum)/span,(high-self.state.minimum)/span,color)
             for name,value,color in self.state.markers:
                 angle=math.radians(225-(value-self.state.minimum)/span*270)
-                painter.setPen(QPen(QColor(color),3))
+                painter.setPen(QPen(QColor(display_color(color,self.dark)),3))
                 painter.drawLine(QPointF(230+134*math.cos(angle),190-134*math.sin(angle)),QPointF(230+165*math.cos(angle),190-165*math.sin(angle)))
                 painter.setFont(QFont(self.font().family(),10,QFont.Bold))
                 radius=205 if name=='D' and self.state.markers[1][1]-self.state.markers[0][1]<span*.08 else 185
@@ -247,15 +249,16 @@ class CircularGauge(QWidget):
             angle = math.radians(225 - fraction * 270)
             dot = QPointF(230 + 148 * math.cos(angle), 190 - 148 * math.sin(angle))
             painter.setPen(QPen(QColor(text), 3))
-            painter.setBrush(QColor(self.state.color))
+            painter.setBrush(QColor(display_color(self.state.color,self.dark)))
             painter.drawEllipse(dot, 9, 9)
 
         def label(rect, content, size, color, bold=False):
             painter.setFont(QFont(self.font().family(), size, QFont.Bold if bold else QFont.Normal))
-            painter.setPen(QColor(color))
+            painter.setPen(QColor(display_color(color,self.dark)))
             painter.drawText(QRectF(*rect), Qt.AlignCenter, content)
 
-        label((105, 125, 250, 67), self.state.reading, 36, self.state.color, True)
+        reading_color=self.state.color if self.dark or self.state.color in ('#efb753','#f27778') else text
+        label((105, 125, 250, 67), self.state.reading, 36, reading_color, True)
         label((100, 193, 260, 30), self.state.unit, 13, muted)
         label((100, 235, 260, 35), self.state.status, 13, self.state.color if self.held else self.state.status_color, True)
         label((20, 331, 420, 28), self.state.range_note, 12, text)
