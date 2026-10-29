@@ -1,3 +1,10 @@
+# Dark-theme unchecked checkbox visibility (2026-10-29)
+
+- Added a contrasting blue-gray fill and light border to unchecked dark-theme checkboxes, a turquoise hover border, and a muted but visible disabled outline. Kept the native checked mark and existing selection/recording-lock behavior. Light-theme styling is unchanged. The shared dark rule fixes the Trend recording-parameter boxes and consistent checkbox controls elsewhere.
+- **30 focused tests passed in13.95s** (tmp/checkbox-tests.xml), covering recording parameter choices/locking, theme roundtrip, sidebar rendering and preserved command LED behavior. Visually checked dark/light checked and unchecked boxes and their disabled states in tmp/checkbox-preview/. No physical serial access, command, recording-data change or permission change was involved.
+- The existing dist/theme-preview executable is locked by the running HMI, so it is preserved. The updated executable is staged at dist/checkbox-preview/PREVEX-HMI/PREVEX-HMI.exe; close the running HMI before starting that package.
+- Packaged dark-theme simulation smoke passed (exit0,45 monitoring updates,41 Diagnostics updates,max heartbeat gap110ms,6 hidden recording frames,3 exported frames,physical_access=false); evidence: tmp/checkbox-smoke/smoke-report.json.
+
 # Monitor audit shortcut, sidebar and professional light theme (2026-10-29)
 
 - Removed Monitor's View Command Audit button; retained the compact last-command verification/result text and all stored audits. Complete history remains under Diagnostics → Command audit. Updated the setting-result hint to name that location. No communication, profile, command authorization/confirmation/execution/verification, recording or retention code changed.

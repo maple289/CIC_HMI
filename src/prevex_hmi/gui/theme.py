@@ -93,6 +93,10 @@ def stylesheet(dark):
     QListWidget#navigation::item:selected:pressed {{background:{'#1A4654' if dark else '#AFCFD2'};}}
     """
     if dark:return base+"""
+    QCheckBox::indicator {width:16px;height:16px;}
+    QCheckBox::indicator:unchecked {background:#243447;border:1px solid #8396AD;border-radius:4px;}
+    QCheckBox::indicator:unchecked:hover {background:#2E4358;border-color:#79DFCF;}
+    QCheckBox::indicator:unchecked:disabled {background:#182538;border-color:#526780;}
     QLabel#banner {background:#e7b55e;color:#251c10;padding:9px;font-weight:bold;}
     QLabel#warning {background:#763d2e;color:#ffe3c2;padding:9px;}
     QPushButton#industrialCommand {color:#f1f5fa;background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #52647a,stop:1 #283648);border-top:2px solid #8291a4;border-left:2px solid #697c93;border-right:2px solid #121e2b;border-bottom:3px solid #0b1624;border-radius:6px;font-weight:bold;}
