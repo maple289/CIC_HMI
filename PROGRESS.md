@@ -444,3 +444,10 @@ Register/profile tests: 382 passed locally on Python 3.12.14. Includes signed bo
 - Milestone 4: richer historian ranges/retention configuration, archival/disk-capacity handling, installer/signing, clean-machine Windows10/11 validation and full release acceptance.
 - Hardware: obtain missing FID protocol/UNITS documentation and resolve all VERIFICATION.md gates through explicitly authorized read-only physical testing. No physical control may be enabled based on simulator tests.
 - No system-wide software installation, Windows security change, COM-port access or actual Modbus write was performed.
+
+## Laptop rebuild verification (2026-10-29)
+
+- Fast-forwarded local main from 7e71942 to MSI-PC commit d68e2cfd8937fa5cace42f2a950d4e0977e64ec8.
+- Rebuilt dist/commands-d68e2cf-py31214/PREVEX-HMI/PREVEX-HMI.exe using Python 3.12.14, PyInstaller 6.16.0 and existing locked project dependencies via a project-local build virtual environment. Preserved previous packages.
+- Display-scaling matrix and diagnostics responsiveness: 5 passed in 80.89s; evidence tmp/commands-d68e2cf-validation.xml. The four screen configurations cover 96 simulated layout cases.
+- Packaged simulation smoke: PASS, exit 0, 47 monitoring updates, 41 diagnostics updates, maximum heartbeat gap 141 ms, 6 recorded frames and 3 exported frames; evidence tmp/commands-d68e2cf-package-smoke/smoke-report.json. No physical access or real analyzer commands occurred. Native laptop button behavior still requires user confirmation on this new build.
