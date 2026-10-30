@@ -1,0 +1,41 @@
+{
+  "repository": "https://github.com/notofonts/noto-fonts",
+  "commit": "ffebf8c1ee449e544955a7e813c54f9b73848eac",
+  "files": {
+    "PrevexUI-Regular.ttf": {
+      "source_path": "hinted/ttf/NotoSans/NotoSans-Regular.ttf",
+      "sha256": "ad2de498870e112f3a03a4b8f28b93bef68c801b8fd65644d7bcc14a4fdfcaa9",
+      "bytes": 569284,
+      "upstream_file": "NotoSans-Regular.ttf",
+      "upstream_sha256": "b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5"
+    },
+    "PrevexUI-SemiBold.ttf": {
+      "source_path": "hinted/ttf/NotoSans/NotoSans-SemiBold.ttf",
+      "sha256": "591c04782a1e00543b1f08daefe53f2ef6d177eb2474c784a9a6d0e6a5555bec",
+      "bytes": 572936,
+      "upstream_file": "NotoSans-SemiBold.ttf",
+      "upstream_sha256": "87a8b90ece1e89746b544e4e086f85a3710e41485a8078f9be874837dfad45d5"
+    },
+    "PrevexUI-Bold.ttf": {
+      "source_path": "hinted/ttf/NotoSans/NotoSans-Bold.ttf",
+      "sha256": "29d6d408f13b4b4164ff0b366e177ce4e22b763926840fa8d134fc184b5799cf",
+      "bytes": 575800,
+      "upstream_file": "NotoSans-Bold.ttf",
+      "upstream_sha256": "c976e4b1b99edc88775377fcc21692ca4bfa46b6d6ca6522bfda505b28ff9d6a"
+    },
+    "PrevexSymbols-Regular.ttf": {
+      "source_path": "hinted/ttf/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf",
+      "sha256": "dda01bc1089e2f1bbbfa8989d6926e81d2c7b900288c4cc58f12560f2e263765",
+      "bytes": 656884,
+      "upstream_file": "NotoSansSymbols2-Regular.ttf",
+      "upstream_sha256": "630846d528dbe4c4981370a4d0a9475a1fd1491a129bb411f8e157cdb5de13c6"
+    },
+    "OFL.txt": {
+      "source_path": "LICENSE",
+      "sha256": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb",
+      "bytes": 4377
+    }
+  },
+  "modifications": "Name table only: separate PREVEX UI Regular/SemiBold/Bold and PREVEX Symbols families to avoid native Windows font-family collisions and face overwrites. Glyphs and metrics are unchanged.",
+  "generator": "scripts/prepare_ui_fonts.py with fonttools 4.60.1"
+}

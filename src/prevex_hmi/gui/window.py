@@ -104,6 +104,7 @@ class MainWindow(QMainWindow):
         self.login_button=QPushButton('Sign in / create account');self.login_button.clicked.connect(self.login);header.addWidget(self.login_button)
         self.account_button=QPushButton('My account');self.account_button.setEnabled(False);self.account_button.clicked.connect(self.manage_account);header.addWidget(self.account_button)
         theme=QPushButton('Switch theme');theme.clicked.connect(self.toggle_theme);header.addWidget(theme);root.addLayout(header)
+        self.display_button=QPushButton('Display Size');self.display_button.clicked.connect(self.display_settings);header.addWidget(self.display_button)
         self.banner=QLabel();self.banner.setObjectName('banner');root.addWidget(self.banner)
         toolbar=QHBoxLayout()
         self.choose_button=QPushButton('Connection Settings');self.choose_button.clicked.connect(self.choose_type);toolbar.addWidget(self.choose_button)
@@ -150,14 +151,24 @@ class MainWindow(QMainWindow):
     def update_display_density(self):
         # Use Qt logical client space, not physical pixels or a second DPI
         # multiplier. Only resize transitions change density, never commands.
-        compact=self.height()<=760
+        compact=self.height()<=860
         if self.property('compactDisplay')==compact:return
         self.setProperty('compactDisplay',compact)
-        width,height=(280,220) if compact else (350,330)
+        width,height=(330,290) if compact else (350,330)
         self.gauge.setMinimumSize(width,height)
-        self.hero.setMinimumHeight(230 if compact else 340)
+        self.hero.setMinimumHeight(300 if compact else 340)
         from .theme import stylesheet
         self.setStyleSheet(stylesheet(self.settings.get('theme','dark')=='dark'))
+
+    def display_settings(self):
+        from .display import size_dialog
+        size=size_dialog(self,self.settings.get('ui_scale','auto'))
+        if size is None:return
+        proposed=copy.deepcopy(self.settings);proposed['ui_scale']=size
+        try:save_settings(self.settings_path,proposed)
+        except (OSError,ValueError) as error:self.statusBar().showMessage(f'Display size could not be saved: {error}');return
+        self.settings=proposed
+        self.statusBar().showMessage('Display size saved. Close and reopen the HMI when ready; monitoring continues until then.')
 
     @property
     def config(self):return DeviceConfig(**self.settings['devices'][0])

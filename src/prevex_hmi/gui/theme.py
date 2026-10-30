@@ -70,12 +70,19 @@ def style_plot(plot,dark):
 
 
 def stylesheet(dark):
+    from PySide6.QtWidgets import QApplication
+    app=QApplication.instance();families=app.font().families() if app else ['sans-serif']
+    family="','".join(value.replace("'",'') for value in families)
+    bundled=app and app.property('fontSource')=='bundled'
+    heading='PREVEX UI SemiBold' if bundled else family
+    bold='PREVEX UI Bold' if bundled else family
     bg,panel,text=('#0d1625','#182538','#e7edf7') if dark else (LIGHT['background'],LIGHT['panel'],LIGHT['text'])
     border='#40516a' if dark else LIGHT['border'];secondary='#adbbcf' if dark else LIGHT['secondary']
     base=f"""
-    QWidget {{background:{bg};color:{text};font-size:13px;}}
-    QLabel#brand {{font-size:24px;font-weight:bold;}} QLabel#heading {{font-size:23px;font-weight:600;}}
-    QLabel#digitalValue {{font-size:21px;font-weight:600;}}
+    QWidget {{background:{bg};color:{text};font-family:'{family}';font-size:13px;}}
+    QLabel#brand {{font-family:'{bold}';font-size:24px;font-weight:bold;}} QLabel#heading {{font-family:'{heading}';font-size:23px;font-weight:600;}}
+    QLabel#digitalValue {{font-family:'{heading}';font-size:21px;font-weight:600;}}
+    QPushButton#industrialCommand {{font-family:'{bold}';}}
     QMainWindow[compactDisplay="true"] QLabel#brand,QMainWindow[compactDisplay="true"] QLabel#heading {{font-size:20px;}}
     QMainWindow[compactDisplay="true"] QLabel#banner {{padding:5px;}}
     QMainWindow[compactDisplay="true"] QPushButton {{padding:5px;}}

@@ -14,7 +14,8 @@ from prevex_hmi.gui.profile_library import PROFILE_CHOICES
 
 def run(folder):
     app=QApplication([]);app.setQuitOnLastWindowClosed(False)
-    for name in ('segoeui.ttf','segoeuib.ttf','seguisb.ttf'):QFontDatabase.addApplicationFont('C:/Windows/Fonts/'+name)
+    from prevex_hmi.gui.fonts import configure_application_font
+    configure_application_font(app)
     screen=app.primaryScreen();results=[]
     def check(condition,detail):
         if not condition:raise AssertionError(detail)

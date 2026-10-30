@@ -13,10 +13,10 @@ def test_resolved_ui_font_survives_both_stylesheets(app,tmp_path):
         assert family.casefold() not in ('times','times new roman','serif')
         for theme in ('light','dark'):
             w.settings['theme']=theme;w.apply_theme();w.show();flush(app)
-            for widget in (w.connect_button,w.command_buttons[0x100].button,w.monitor_name,w.monitor_status):
+            for widget in (w.connect_button,w.monitor_status):
                 assert QFontInfo(widget.font()).family()==family
             diagnostics=display_diagnostics(app,w)
-            assert diagnostics['ui_family']==family and diagnostics['heading_family']==family
+            assert diagnostics['ui_family']==family and diagnostics['heading_family']=='PREVEX UI SemiBold'
             assert diagnostics['ui_pixel_size']==13
             assert diagnostics['device_pixel_ratio']==w.devicePixelRatioF()
     finally:w.close();bus.close();app.setFont(original);flush(app)
@@ -24,19 +24,21 @@ def test_resolved_ui_font_survives_both_stylesheets(app,tmp_path):
 
 def test_missing_preferred_family_uses_available_sans_family(app,tmp_path,monkeypatch):
     original=QFont(app.font())
+    family,source=app.property('uiFontFamily'),app.property('fontSource')
     for name in ('arial.ttf','DejaVuSans.ttf'):
         from pathlib import Path
         path=Path('C:/Windows/Fonts')/name
         if path.exists():QFontDatabase.addApplicationFont(str(path))
     families=QFontDatabase.families()
-    remaining=[family for family in families if family.casefold()!='segoe ui']
+    remaining=[family for family in families if family.casefold() not in ('segoe ui','prevex ui regular')]
+    monkeypatch.setattr('prevex_hmi.gui.fonts.FONT_DIR',tmp_path)
     monkeypatch.setattr(QFontDatabase,'families',lambda:remaining)
     monkeypatch.setenv('WINDIR',str(tmp_path))
     try:
         selected=configure_application_font(app)
         assert app.font().styleHint()==QFont.SansSerif
         assert selected.casefold() not in ('times','times new roman','serif')
-    finally:app.setFont(original)
+    finally:app.setFont(original);app.setProperty('uiFontFamily',family);app.setProperty('fontSource',source)
 
 
 def test_short_window_reclaims_gauge_space_without_changing_command_geometry(app,tmp_path):
@@ -46,8 +48,8 @@ def test_short_window_reclaims_gauge_space_without_changing_command_geometry(app
         assert not w.property('compactDisplay') and w.hero.minimumHeight()==340
         normal=w.gauge.height()
         w.resize(1280,660);flush(app)
-        assert w.property('compactDisplay') and w.hero.minimumHeight()==230
-        assert w.gauge.height()<normal and w.gauge.height()>=220
+        assert w.property('compactDisplay') and w.hero.minimumHeight()==300
+        assert w.gauge.height()<normal and w.gauge.height()>=290
         assert w.command_buttons[0x100].height()==40
         def geometry():
             return [(b.mapTo(w,QPoint()).toTuple(),b.size().toTuple()) for b in dict.fromkeys(w.command_buttons.values())]

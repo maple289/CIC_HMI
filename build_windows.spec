@@ -7,6 +7,7 @@ root = Path(SPECPATH)
 # Preserve that resource rather than altering certificate verification behavior.
 ssl_companion=Path(ssl.__file__).with_name('codex-rejected-cas.pem')
 runtime_data=[(str(ssl_companion),'.')] if ssl_companion.is_file() else []
+runtime_data.append((str(root/'src'/'prevex_hmi'/'assets'/'fonts'),'prevex_hmi/assets/fonts'))
 a = Analysis(
     [str(root / 'scripts' / 'run_hmi.py')],
     pathex=[str(root / 'src')],

@@ -29,20 +29,24 @@ def main() -> int:
     parser=argparse.ArgumentParser(description="PREVEX HMI - one active analyzer. Physical access remains gated pending authorization.")
     parser.add_argument("--data-dir",type=Path,help="Override the user-writable data directory")
     parser.add_argument("--smoke-test",action="store_true",help="Run offscreen monitoring checks and exit")
+    parser.add_argument('--ui-scale',type=int,choices=(75,85,100),help='Override application size for this launch; Windows scaling is unchanged')
     parser.add_argument('--read-only-com4',action='store_true',help='Explicitly authorize the tested COM4/9600/address1 SNR671 read-only bench session')
     parser.add_argument('--controller-com4-bench',action='store_true',help='Authorized SNR671 COM4 bench monitoring with confirmed Operator ACK/RESET only')
     args=parser.parse_args()
     if args.smoke_test and (args.read_only_com4 or args.controller_com4_bench):parser.error('Automated smoke tests cannot open hardware')
     if args.smoke_test:
         os.environ["QT_QPA_PLATFORM"]="offscreen"
+    from prevex_hmi.gui.display import application_data_path,saved_size,apply_launch_size
+    data_path=(args.data_dir or application_data_path()).resolve()
+    launch_size=apply_launch_size(args.ui_scale if args.ui_scale is not None else saved_size(data_path/'settings.json'),explicit=args.ui_scale is not None)
     app=QApplication(sys.argv[:1])
+    app.setProperty('launchSize',launch_size)
     app.setApplicationName("PREVEX HMI")
     app.setOrganizationName("CIC")
     from prevex_hmi.gui.fonts import configure_application_font,display_diagnostics
     configure_application_font(app)
     if args.smoke_test and args.data_dir is None:
         parser.error("--smoke-test requires --data-dir to isolate test data")
-    data_path=(args.data_dir or Path(QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation))).resolve()
     data_path.mkdir(parents=True,exist_ok=True)
     handler=RotatingFileHandler(data_path/"application.log",maxBytes=2_000_000,backupCount=3,encoding="utf-8")
     handler.setFormatter(JsonFormatter())

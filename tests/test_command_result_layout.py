@@ -19,10 +19,8 @@ from prevex_hmi.simulator.bus import SimulatedBus
 @pytest.fixture
 def app():
     result=QApplication.instance() or QApplication([]);result.setQuitOnLastWindowClosed(False)
-    path=Path('C:/Windows/Fonts/segoeui.ttf')
-    if path.exists():
-        fid=QFontDatabase.addApplicationFont(str(path))
-        if fid>=0:result.setFont(QFont(QFontDatabase.applicationFontFamilies(fid)[0],10))
+    from prevex_hmi.gui.fonts import configure_application_font
+    configure_application_font(result)
     return result
 
 
