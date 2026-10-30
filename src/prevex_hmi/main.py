@@ -10,7 +10,6 @@ import sys
 import time
 
 from PySide6.QtCore import QStandardPaths, QTimer
-from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from prevex_hmi.devices.configuration import load_settings
@@ -39,10 +38,8 @@ def main() -> int:
     app=QApplication(sys.argv[:1])
     app.setApplicationName("PREVEX HMI")
     app.setOrganizationName("CIC")
-    font_path=Path(os.environ.get("WINDIR","C:/Windows"))/"Fonts"/"segoeui.ttf"
-    if font_path.is_file():
-        font_id=QFontDatabase.addApplicationFont(str(font_path))
-        if font_id >= 0: app.setFont(QFont(QFontDatabase.applicationFontFamilies(font_id)[0],10))
+    from prevex_hmi.gui.fonts import configure_application_font,display_diagnostics
+    configure_application_font(app)
     if args.smoke_test and args.data_dir is None:
         parser.error("--smoke-test requires --data-dir to isolate test data")
     data_path=(args.data_dir or Path(QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation))).resolve()
@@ -70,6 +67,7 @@ def main() -> int:
         settings=controller_bench_settings(settings)
     window=MainWindow(settings,settings_path,data_path,start_worker=bool(args.smoke_test or grant),hardware_grant=grant)
     window.show()
+    logging.info('display_configuration',extra={'detail':display_diagnostics(app,window)})
     errors=[]
     if args.smoke_test:
         export_results=[];hidden_samples=[]

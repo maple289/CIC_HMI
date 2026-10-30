@@ -73,9 +73,12 @@ def stylesheet(dark):
     bg,panel,text=('#0d1625','#182538','#e7edf7') if dark else (LIGHT['background'],LIGHT['panel'],LIGHT['text'])
     border='#40516a' if dark else LIGHT['border'];secondary='#adbbcf' if dark else LIGHT['secondary']
     base=f"""
-    QWidget {{background:{bg};color:{text};font-family:'Segoe UI';font-size:13px;}}
+    QWidget {{background:{bg};color:{text};font-size:13px;}}
     QLabel#brand {{font-size:24px;font-weight:bold;}} QLabel#heading {{font-size:23px;font-weight:600;}}
     QLabel#digitalValue {{font-size:21px;font-weight:600;}}
+    QMainWindow[compactDisplay="true"] QLabel#brand,QMainWindow[compactDisplay="true"] QLabel#heading {{font-size:20px;}}
+    QMainWindow[compactDisplay="true"] QLabel#banner {{padding:5px;}}
+    QMainWindow[compactDisplay="true"] QPushButton {{padding:5px;}}
     QFrame#panel,QFrame#readout,QFrame#indicatorPanel {{background:{panel};border:1px solid {border};border-radius:7px;}}
     QFrame#readout QLabel,QFrame#panel QLabel {{background:transparent;}}
     QPushButton,QComboBox,QLineEdit,QSpinBox,QDoubleSpinBox,QDateTimeEdit {{background:{panel};border:1px solid {'#526780' if dark else border};border-radius:5px;padding:7px;}}

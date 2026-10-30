@@ -131,7 +131,7 @@ class MainWindow(QMainWindow):
         self.connection_screen.settings_button.clicked.connect(self.choose_type)
         self.navigation.currentRowChanged.connect(self.navigate);self.navigation.setCurrentRow(0)
         self.navigation.currentRowChanged.connect(lambda index:self.refresh_profile_settings() if index==1 else None)
-        self.apply_theme();self.refresh_connection_labels();self.build_readouts(self.config.family)
+        self.apply_theme();self.refresh_connection_labels();self.build_readouts(self.config.family);self.update_display_density()
         self.set_connection_status(False)
         self.refresh_profile_settings();self.refresh_connection_view()
         self.connection_watch=QTimer(self);self.connection_watch.setInterval(250)
@@ -142,6 +142,22 @@ class MainWindow(QMainWindow):
         self.retention_timer=QTimer(self);self.retention_timer.setInterval(60000);self.retention_timer.timeout.connect(self.schedule_retention);self.retention_timer.start()
         QTimer.singleShot(1500,self.schedule_retention)
         if start_worker:self.start_worker()
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if hasattr(self,'hero'):self.update_display_density()
+
+    def update_display_density(self):
+        # Use Qt logical client space, not physical pixels or a second DPI
+        # multiplier. Only resize transitions change density, never commands.
+        compact=self.height()<=760
+        if self.property('compactDisplay')==compact:return
+        self.setProperty('compactDisplay',compact)
+        width,height=(280,220) if compact else (350,330)
+        self.gauge.setMinimumSize(width,height)
+        self.hero.setMinimumHeight(230 if compact else 340)
+        from .theme import stylesheet
+        self.setStyleSheet(stylesheet(self.settings.get('theme','dark')=='dark'))
 
     @property
     def config(self):return DeviceConfig(**self.settings['devices'][0])

@@ -1,5 +1,15 @@
 # Commands panel: fractional DPI and focus-driven scrolling
 
+## Laptop fonts and short client areas (2026-10-30)
+
+The operator's later 1920x1080/150% screenshot showed mixed serif body/button text and sans-serif headings, and the 340-logical-pixel gauge row pushed the parameter cards below the initial view. The preceding Commands source and confirmation source have identical global dimensions at the same simulated DPI; no double scaling was established from that comparison.
+
+Production now resolves and verifies a sans-serif UI family, registers the installed Segoe UI regular/semibold/bold faces consistently, and lets stylesheets inherit that resolved family. Previously production registered only the regular face while visual tests registered all three. Available Tahoma/Arial and other sans families provide fallback; Windows fonts are neither bundled nor installed. Qt documents the matching behavior in [QFont](https://doc.qt.io/qt-6/qfont.html). This addresses font selection without claiming that the exact laptop fallback cause has been reproduced.
+
+Client windows at or below 760 Qt logical pixels high use a 230px minimum gauge/info row, 20px headings and reduced general-button/banner padding. Larger windows retain the 340px gauge row and prior headings. Body text stays 13px, command rows stay 40px, and Windows/Qt DPI remains in control. The setting depends on usable client height, including after resize or a monitor change; commands and their results do not select the layout. No global scale multiplier or fixed panel coordinates were introduced. At the simulated 150% laptop screen, the first measurement-card row is visible on opening, with independent readout/command scrolling still available.
+
+Startup `application.log` includes a `display_configuration` entry with actual Qt platform, screen/work area, DPI, device pixel ratio, resolved body/heading font, UI pixel size, compact state and Qt scale environment overrides. Native Windows checks on MSI-PC (3840x2160 at 150%, resized to a laptop-sized client area) resolved Segoe UI with DPR 1.5 and no override. The specific laptop remains subject to an operator visual check. Screenshots/metrics: `tmp/laptop-corrected/`; native report: `tmp/native-display/display.json`.
+
 ## Reproduced cause
 
 At a configured1920×1080 desktop /150% scale, reserving60 physical pixels for the taskbar, Qt reports1280×680 usable logical pixels. In the old maximized layout, the command viewport was471 logical pixels high and its content637 pixels high. ACK started at y265 and CAL LOCK at y751 in window coordinates. Clicking ACK disabled the focused button as part of the existing safety interlock. Qt transferred focus through the next still-enabled commands while they were being disabled. Scroll offsets changed0 →97 →151 →166; ACK ended at y99 and CAL LOCK at y585. Window, viewport and content sizes did not change. The apparent panel movement was **scrolling caused by focus transfer**, rather than command-result layout growth.
