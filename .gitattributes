@@ -1,0 +1,4 @@
+# Font provenance checksums must be identical after Windows checkout.
+src/prevex_hmi/assets/fonts/*.ttf binary
+src/prevex_hmi/assets/fonts/*.txt text eol=lf
+src/prevex_hmi/assets/fonts/*.json text eol=lf
