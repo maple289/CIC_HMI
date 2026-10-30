@@ -27,6 +27,7 @@ def run(folder,client_size=None):
             w.banner.setText('SIMULATION | Connected - identified analyzer | Commands require confirmation')
             w.identity_label.setText('Selected Profile: Auto Detect | Detected Analyzer: LEL 670 Series')
             w.gauge._set_state(replace(w.gauge.state,value=-99,reading='-99.00',minimum=-100,status='TC2 failed',color='#8290a5',status_color='#f27778'))
+            w.show_command_receipt(dict(id='simulated-layout-result',code=0x100,state='EFFECT_OBSERVED',reply_received=True,detail='Simulated effect evidence for layout verification.'))
             if client_size:w.resize(*client_size);w.show()
             else:w.showMaximized()
             flush(app)
@@ -36,6 +37,8 @@ def run(folder,client_size=None):
             assert 0<=card_position.y() and card_position.y()+first.height()<=viewport.height(),(card_position,first.size(),viewport.size())
             assert w.command_scroll.verticalScrollBar().maximum()==0
             assert not requests and w.fault_summary.text()=='Analyzer Fault Active'
+            assert w.last_command.parentWidget() is w.analyzer_info and w.technical_toggle.isHidden()
+            assert w.last_command.y()>=w.monitor_status.y()+w.monitor_status.height()
             metrics=display_diagnostics(app,w)
             (folder/f'{theme}-metrics.json').write_text(json.dumps(metrics,indent=2))
             w.grab().save(str(folder/f'{theme}-fault.png'))
@@ -43,7 +46,7 @@ def run(folder,client_size=None):
             assert metrics['heading_family']=='PREVEX UI SemiBold' and metrics['command_family']=='PREVEX UI Bold'
             assert metrics['font_source']=='bundled'
             folder.mkdir(parents=True,exist_ok=True);w.grab().save(str(folder/f'{theme}-fault.png'))
-            report.append(dict(theme=theme,**metrics,gauge=w.gauge.size().toTuple(),first_card_y=card_position.y(),first_card_height=first.height(),viewport_height=viewport.height(),command_scroll_max=w.command_scroll.verticalScrollBar().maximum()))
+            report.append(dict(theme=theme,**metrics,gauge=w.gauge.size().toTuple(),first_card_y=card_position.y(),first_card_height=first.height(),viewport_height=viewport.height(),command_scroll_max=w.command_scroll.verticalScrollBar().maximum(),readout_scroll_max=w.monitor_scroll.verticalScrollBar().maximum()))
         finally:w.worker=None;w.close();bus.close();flush(app)
     (folder/'report.json').write_text(json.dumps(report,indent=2));return report
 

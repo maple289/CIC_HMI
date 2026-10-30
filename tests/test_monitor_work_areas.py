@@ -24,9 +24,12 @@ def test_monitor_service_diagnostics_and_collapsed_details(app,tmp_path):
         assert w.gauge.state.value==10 and w.gauge.state.color=='#39c6a4'
         assert w.connection_established and 'Established' in w.monitor_status.text()
         assert '0x8001' in w.diagnostics_technical.text() and not w.controller_display.isVisibleTo(w)
-        w.technical_toggle.click();flush(app)
-        assert w.controller_display.isVisibleTo(w) and w.navigation.currentRow()==0
-        w.technical_toggle.click();w.navigation.setCurrentRow(1);flush(app)
+        assert w.technical_toggle.isHidden()
+        assert w.controller_display.parentWidget() is w.technical_details
+        w.show_diagnostics('Technical details');flush(app)
+        assert w.diagnostics_technical.isVisibleTo(w) and '0x8001' in w.diagnostics_technical.text()
+        assert not w.controller_display.isVisibleTo(w)
+        w.navigation.setCurrentRow(1);flush(app)
         assert w.pages.currentIndex()==6 and w.readout_groups['Calibration parameters'].isVisibleTo(w)
         assert not w.readout_groups['Gauges'].isVisibleTo(w)
         w.navigation.setCurrentRow(0);w.show_diagnostics('Command audit');flush(app)

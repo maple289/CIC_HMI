@@ -45,13 +45,20 @@ def setup_window(tmp_path,name):
 def test_command_buttons_and_leds_stay_anchored_during_results_and_alarm_changes(app,tmp_path,name):
     w,bus,snap=setup_window(tmp_path,name);w.show()
     try:
-        for width in (1540,1100,1900):
-            w.resize(width,1020);flush(app)
+        for width,height in ((1540,1020),(1100,1020),(1900,1020),(1280,660),(1504,764)):
+            w.resize(width,height);flush(app)
             w.command_scroll.ensureWidgetVisible(w.command_buttons[0x700]);flush(app)
             def geometry():
                 return [(b.mapTo(w,QPoint()).toTuple(),b.size().toTuple(),b.led.mapTo(w,QPoint()).toTuple()) for b in w.command_buttons.values()]
             before=geometry();offset=w.command_scroll.verticalScrollBar().value()
             height=w.command_result_card.height()
+            assert w.last_command.parentWidget() is w.analyzer_info
+            info=w.analyzer_info.layout()
+            assert info.indexOf(w.last_command)==info.indexOf(w.monitor_status)+1
+            assert w.technical_toggle.isHidden()
+            stable_widgets=(w.hero,w.gauge,w.analyzer_info,w.monitor_status,w.last_command,w.readout_groups['Gauges'])
+            def monitor_geometry():return [(item.mapTo(w,QPoint()).toTuple(),item.size().toTuple()) for item in stable_widgets]
+            monitor_before=monitor_geometry()
             for sequence,state in enumerate(('SENDING','PENDING','STARTED','COMPLETED_OBSERVED','FAILED','UNKNOWN')):
                 w.show_command_receipt(dict(id=str(sequence),code=0x700,state=state,reply_received=state!='SENDING',detail='Detailed execution status and validation result. '*70,before_status=20,status_after=0))
                 w.command_message.setText('Additional controller result information. '*60)
@@ -60,6 +67,7 @@ def test_command_buttons_and_leds_stay_anchored_during_results_and_alarm_changes
                 assert geometry()==before
                 assert w.command_scroll.verticalScrollBar().value()==offset
                 assert w.command_result_card.height()==height
+                assert monitor_geometry()==monitor_before
             assert not w.command_result_card.isVisibleTo(w)
             assert not w.gauge.geometry().intersects(w.analyzer_info.geometry())
             assert w.last_command.isVisibleTo(w) and w.last_command.height()==56

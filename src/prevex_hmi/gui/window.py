@@ -322,6 +322,8 @@ class MainWindow(QMainWindow):
         info=QVBoxLayout(self.analyzer_info);info.setContentsMargins(0,4,0,4);self.monitor_name=QLabel();self.monitor_name.setObjectName('heading');self.monitor_name.setWordWrap(True);info.addWidget(self.monitor_name)
         self.monitor_model=QLabel();self.monitor_model.setWordWrap(True);info.addWidget(self.monitor_model)
         self.monitor_status=QLabel('Connection Status: ● No Connection');self.monitor_status.setWordWrap(True);info.addWidget(self.monitor_status)
+        self.last_command=QLabel('No command sent in this session');self.last_command.setWordWrap(True)
+        self.last_command.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed);self.last_command.setFixedHeight(56);info.addWidget(self.last_command)
         self.monitor_updated=QLabel();self.monitor_updated.setWordWrap(True);info.addWidget(self.monitor_updated)
         self.range_help=QLabel('LEL gray: negative section\nBold marker: zero\nLEL: -100 during fault; -30 normally\nW / D: live alarm thresholds [5 / 6]');self.range_help.setWordWrap(True);info.addWidget(self.range_help);info.addStretch()
         self.controller_display=QLabel();self.controller_display.setWordWrap(True);info.insertWidget(info.count()-1,self.controller_display)
@@ -339,9 +341,9 @@ class MainWindow(QMainWindow):
         self.hero=AnalyzerHero(self.gauge,self.analyzer_info);readings.addWidget(self.hero)
         self.fault_summary=QLabel('Measurement Unavailable');self.fault_summary.setWordWrap(True);info.insertWidget(1,self.fault_summary)
         self.compatibility_notice=QLabel();self.compatibility_notice.setWordWrap(True);info.insertWidget(2,self.compatibility_notice)
-        command_row=QHBoxLayout();self.last_command=QLabel('No command sent in this session');self.last_command.setWordWrap(True);self.last_command.setFixedHeight(56);command_row.addWidget(self.last_command,1)
-        readings.addLayout(command_row)
-        self.technical_toggle=QToolButton();self.technical_toggle.setText('Technical Details');self.technical_toggle.setCheckable(True);self.technical_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);self.technical_toggle.setArrowType(Qt.RightArrow);readings.addWidget(self.technical_toggle)
+        # Retain the technical widgets/state and Diagnostics synchronization;
+        # the Monitor exposes no expandable technical control or layout row.
+        self.technical_toggle=QToolButton(content);self.technical_toggle.setText('Technical Details');self.technical_toggle.setCheckable(True);self.technical_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);self.technical_toggle.setArrowType(Qt.RightArrow);self.technical_toggle.hide()
         self.technical_details=QWidget();technical=QVBoxLayout(self.technical_details);technical.setContentsMargins(6,0,6,4)
         for widget in (self.identity_label,self.warning,self.monitor_model,self.monitor_updated,self.controller_display,self.range_help):technical.addWidget(widget)
         self.technical_details.hide();self.technical_toggle.toggled.connect(self.toggle_technical);readings.addWidget(self.technical_details)
