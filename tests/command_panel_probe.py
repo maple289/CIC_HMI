@@ -7,7 +7,7 @@ sys.path[:0]=[str(Path(__file__).resolve().parents[1]/'src'),str(Path(__file__).
 from PySide6.QtCore import QPoint,Qt
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication,QMessageBox,QAbstractSlider
+from PySide6.QtWidgets import QApplication,QAbstractSlider
 from test_command_result_layout import setup_window,flush
 from prevex_hmi.gui.profile_library import PROFILE_CHOICES
 
@@ -50,7 +50,7 @@ def run(folder):
                     elif mode=='restored':check(size==windowed_size and baseline==windowed_geometry,'Restored window did not recover button geometry')
                     button=w.command_buttons[0x100].button;check(button.isEnabled(),('ACK disabled',profile))
                     QTest.mousePress(button,Qt.LeftButton);flush(app);check(geometry()==baseline,'Mouse-down changed geometry')
-                    with patch.object(QMessageBox,'question',return_value=QMessageBox.Yes):QTest.mouseRelease(button,Qt.LeftButton)
+                    with patch('prevex_hmi.gui.window.confirm_command',return_value=True):QTest.mouseRelease(button,Qt.LeftButton)
                     flush(app)
                     check(sent and sent[-1][0:2]==('command',0x100),'Confirmed UI request missing')
                     check(bar.value()==offset and geometry()==baseline,('Focus-disable jump',profile,theme,mode,offset,bar.value()))

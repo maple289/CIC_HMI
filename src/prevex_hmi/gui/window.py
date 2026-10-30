@@ -21,6 +21,7 @@ from prevex_hmi.gui.profile_library import PROFILE_CHOICES,PROFILE_STATUS,librar
 from prevex_hmi.gui.trend_display import DisplayTrend
 from prevex_hmi.gui.command_button import CommandButton
 from prevex_hmi.gui.command_status import command_status
+from prevex_hmi.gui.command_confirmation import confirm_command
 from prevex_hmi.gui.theme import display_color,semantic_style
 from prevex_hmi.gui.navigation import NavigationList
 from prevex_hmi.gui.serial_ports import require_available_port
@@ -898,19 +899,11 @@ class MainWindow(QMainWindow):
         if code in (0xF00,0x1000) and code!=self.lock_command_code:return
         request_id=uuid.uuid4().hex;self.command_timing.event('BUTTON_CLICKED',request_id,code)
         config=self.snapshot['config']
-        physical=self.settings['mode']=='hardware'
-        operating_context=''
-        if code in (0x100,0x200):
-            active=DeviceConfig(**config);status=self.snapshot['raw'].get(2);relays=self.snapshot['raw'].get(4,0)
-            operating_context=f'\nCurrent STATUS {status}: {profile_for(active).status(status)}; RELAYS 0x{relays:04X}. Acknowledgment confirms receipt; the alarm/fault may remain or reactivate. Each click is a new confirmed action; no automatic resend.'
-        effects=({0x100:'Can silence horn/service indications.',0x200:'Can clear alarms and initiate ignition after Flameout.',0x300:'Uses zero gas and changes zero calibration.',0x400:'Uses span gas and changes span calibration.',0x500:'Uses zero/span gases and changes calibration.',0x600:'Activates zero-gas test.',0x700:'Activates span-gas test.',0x800:'Activates zero/span gas tests.',0x900:'PERSISTENT CHANGE: saves settings to EEPROM. A reply cannot prove persistence.',0xF00:'Sets software calibration lock.',0x1000:'Clears software calibration lock; does not bypass hardware lock.'}.get(code,'')) if physical else ''
-        if physical and config.get('version')=='4.81':
-            effects+='\nFirmware4.81: using the 5.12 register/command map by your instruction; physical compatibility remains unverified.'
-        if physical and code in range(0x300,0x900,0x100) and self.snapshot['raw'].get(2) not in (0,1,2):
-            active=DeviceConfig(**config);status=self.snapshot['raw'].get(2)
-            effects+=f'\nCurrent STATUS {status}: {profile_for(active).status(status)}. Command may operate gas valves/change calibration while this condition remains.'
-        answer=QMessageBox.question(self,'Confirm analyzer command',f"Target: {config['name']} / {config['family']} / address {config['address']}\n{COMMANDS[code]} (0x{code:04X})\n{effects}{operating_context}\nExecute this {'REAL CONTROLLER' if physical else 'simulated'} command once?",QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
-        if answer!=QMessageBox.Yes:
+        fault=''
+        if monitor_condition(self.snapshot)[1]=='Analyzer Fault Active':
+            status=self.snapshot['raw'].get(2);profile=profile_for(DeviceConfig(**config))
+            fault='Analyzer fault active'+(f': {profile.status(status)}.' if status in profile.statuses and status not in (0,1,2,4,5,6,7,11,12) else '.')
+        if not confirm_command(self,code,config,fault=fault):
             self.command_timing.event('CONFIRMATION_CANCELLED',request_id,code);return
         self.command_timing.event('CONFIRMATION_ACCEPTED',request_id,code)
         self.update_command_buttons()

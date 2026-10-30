@@ -6,7 +6,7 @@ from types import SimpleNamespace
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import pytest
 from PySide6.QtCore import QPoint
-from PySide6.QtWidgets import QApplication,QMessageBox
+from PySide6.QtWidgets import QApplication
 from prevex_hmi.devices.configuration import default_devices,load_settings
 from prevex_hmi.gui.gauge import gauge_state,CircularGauge
 from prevex_hmi.gui.window import MainWindow
@@ -152,7 +152,7 @@ def test_acknowledgment_alone_does_not_toggle_lock_action(window):
 
 def test_dynamic_click_dispatches_only_current_confirmed_action(window,monkeypatch):
     w=window;sent=[];monkeypatch.setattr(w,'request',lambda *args:sent.append(args))
-    monkeypatch.setattr(QMessageBox,'question',lambda *args:QMessageBox.Yes)
+    monkeypatch.setattr('prevex_hmi.gui.window.confirm_command',lambda *args,**kw:True)
     w.snapshot['raw'][60]=2;w.update_command_buttons();w.command_buttons[0xF00].button.click()
     assert len(sent)==1 and sent[0][:4]==('command',0x1000,w.session,True) and len(sent[0][4])==32
     assert not w.command_buttons[0xF00].isEnabled()
@@ -160,8 +160,8 @@ def test_dynamic_click_dispatches_only_current_confirmed_action(window,monkeypat
 
 def test_lock_change_during_confirmation_requires_review(window,monkeypatch):
     w=window;sent=[];monkeypatch.setattr(w,'request',lambda *args:sent.append(args))
-    def confirm(*args):w.snapshot['raw'][60]=2;return QMessageBox.Yes
-    monkeypatch.setattr(QMessageBox,'question',confirm);w.send_command(0xF00)
+    def confirm(*args,**kw):w.snapshot['raw'][60]=2;return True
+    monkeypatch.setattr('prevex_hmi.gui.window.confirm_command',confirm);w.send_command(0xF00)
     assert not sent and w.lock_command_code==0x1000
 
 
@@ -247,13 +247,12 @@ def test_lock_pending_ui_identifies_register_verification_and_disables_duplicate
 
 
 def test_acknowledged_unverified_reset_releases_buttons_for_new_confirmed_actions(window,monkeypatch):
-    from PySide6.QtWidgets import QMessageBox
     w=window;w.snapshot['raw'][2]=25;w.snapshot['control'].update(pending=False,ambiguous=False);w.update_command_buttons()
     assert w.command_buttons[0x200].isEnabled()
     assert w.command_buttons[0x100].isEnabled() and w.command_buttons[0x300].isEnabled() and w.command_buttons[0xF00].isEnabled()
     confirmations=[]
-    monkeypatch.setattr(QMessageBox,'question',lambda *args:confirmations.append(args[2]) or QMessageBox.No)
+    monkeypatch.setattr('prevex_hmi.gui.window.confirm_command',lambda *args,**kw:confirmations.append((args,kw)) or False)
     w.send_command(0x200)
-    assert len(confirmations)==1 and 'STATUS 25' in confirmations[0] and 'new confirmed action' in confirmations[0]
+    assert len(confirmations)==1 and confirmations[0][0][1]==0x200 and confirmations[0][1]['fault']=='Analyzer fault active: TC2 failed.'
     w.snapshot['control']['ambiguous']=True;w.update_command_buttons()
     assert not any(button.isEnabled() for button in w.command_buttons.values())

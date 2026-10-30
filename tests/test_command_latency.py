@@ -2,7 +2,6 @@
 from dataclasses import asdict
 import time
 import pytest
-from PySide6.QtWidgets import QMessageBox
 from prevex_hmi.devices.configuration import load_settings,default_devices
 from prevex_hmi.gui.window import MainWindow
 from prevex_hmi.gui.worker import MonitoringWorker
@@ -32,7 +31,7 @@ def test_short_command_release_is_independent_of_effect_and_led(app,tmp_path,mon
             replies.append(time.monotonic());return value
     def factory(devices):active[0]=ScenarioBus(devices);return active[0]
     monkeypatch.setattr('prevex_hmi.gui.worker.SimulatedBus',factory)
-    monkeypatch.setattr(QMessageBox,'question',lambda *a:QMessageBox.Yes)
+    monkeypatch.setattr('prevex_hmi.gui.window.confirm_command',lambda *a,**kw:True)
     settings=load_settings(tmp_path/'settings.json');settings.update(analyzer_selection='LEL 670 Series',simulated_lel_revision='legacy',devices=[asdict(default_devices()[0])]);settings['devices'][0]['interval']=.25
     w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=True);w.show()
     try:
