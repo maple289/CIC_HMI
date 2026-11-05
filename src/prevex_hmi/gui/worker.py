@@ -34,6 +34,7 @@ class MonitoringWorker(QThread):
     inspection_ready=Signal(str)
     command_result=Signal(str)
     parameter_result=Signal(str)
+    parameter_read=Signal(object)
     control_ready=Signal(object)
     failed=Signal(str)
     storage_warning=Signal(str)
@@ -180,6 +181,17 @@ class MonitoringWorker(QThread):
                             raise PermissionError('Simulation injection is unavailable for a real controller')
                         if kind == 'fault': simulation.set_fault(effective.addressing.packet_address,message[1])
                         elif kind == 'history': self.history_ready.emit(database.history(effective.id,message[1]))
+                        elif kind == 'parameter_read':
+                            from prevex_hmi.profiles.parameters import definition
+                            response={'key':message[1],'config':asdict(effective)}
+                            try:
+                                number=definition(effective,message[1]).number
+                                raw=bus.read(profile_for(effective),effective.addressing,number,1)[number]
+                                state.raw[number]=raw;state.register_times[number]=time.monotonic()
+                                state.register_timestamps[number]=utc_now();response['raw']=raw
+                            except (OSError,ValueError,PermissionError,KeyError) as error:
+                                response['error']=str(error)
+                            self.parameter_read.emit(response)
                         elif kind == 'inspect':
                             number=message[1]
                             raw=bus.read(profile_for(effective),effective.addressing,number,1)[number]

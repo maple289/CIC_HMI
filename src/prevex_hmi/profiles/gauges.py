@@ -14,7 +14,7 @@ def gauges_for(config):
     else:
         base = GAUGE_REGISTERS[config.family]
     # The main gauge already presents register1. Register50 is an output copy.
-    extras = (29,30,28,7,56,5,6,72,73,74) if profile_for(config).revision=='700' else (29,30,28,7,56,5,6,17,18)
+    extras = (29,30,28,7,56,5,6,17,18,72,73,74) if profile_for(config).revision=='700' else (29,30,28,7,56,5,6,17,18)
     profile = profile_for(config)
     return tuple(dict.fromkeys(n for n in (*base,*extras) if n not in (1,50) and n in profile.registers))
 

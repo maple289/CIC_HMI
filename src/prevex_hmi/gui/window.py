@@ -389,20 +389,21 @@ class MainWindow(QMainWindow):
         self.snapshot_family=(family,profile.revision)
         for container in self.readout_groups.values():container.clear_cards()
         self.readouts={};self.readout_names={};self.parameter_menus={}
-        from prevex_hmi.profiles.parameters import PARAMETERS,supported
-        editable={n:key for key,(n,title) in PARAMETERS.items()} if supported(config) else {}
+        from prevex_hmi.profiles.parameters import definitions
+        specs=definitions(config)
+        editable={spec.number:key for key,spec in specs.items()}
         numbers=list(gauges_for(config) if config.family==family else (n for n in GAUGE_REGISTERS[family] if n not in (1,50)))
         if family=='BTU':numbers.append(42)
         for i,n in enumerate(numbers):
             r=profile.register(n);frame=QFrame();frame.setObjectName('readout');box=QVBoxLayout(frame)
-            title='SPAN °C' if n==56 and family!='FID' else r.name
+            title=specs[editable[n]].title if n in editable else r.name
             name=QLabel(f'{title}  [{n}]');name.setWordWrap(True);name.setObjectName('parameterLabel')
             header=QHBoxLayout();header.setContentsMargins(0,0,0,0);header.setSpacing(2);header.addWidget(name,1);box.addLayout(header)
             if n in editable:
                 key=editable[n];button=QToolButton();button.setText('...');button.setFixedSize(24,24);button.setAutoRaise(True)
                 button.setStyleSheet('QToolButton::menu-indicator {width:0px;}')
                 button.setAccessibleName(f'{title} options');button.setToolTip(f'Adjust {title}')
-                menu=QMenu(button);menu.addAction(f'Adjust {title}…',lambda checked=False,k=key:self.edit_parameter(k))
+                menu=QMenu(button);menu.addAction(f'{"View" if specs[key].reason else "Adjust"} {title}…',lambda checked=False,k=key:self.edit_parameter(k))
                 button.setMenu(menu);button.setPopupMode(QToolButton.InstantPopup);header.addWidget(button,0,Qt.AlignTop)
                 self.parameter_menus[n]=button
             if n==18:name.setToolTip('Read-only: FAILSAFE must be changed at the controller panel; Modbus adjustment is prohibited/unverified.')
@@ -916,12 +917,14 @@ class MainWindow(QMainWindow):
         elif control.get('ambiguous'):self.command_message.setText('Unknown command outcome. No retry; reconnect and review state.')
         elif control.get('effect_pending'):self.command_message.setText('Acknowledged. Checking effects asynchronously; new confirmed actions are available after the short cooldown.')
         elif self.settings['mode']=='hardware':self.command_message.setText('Documented commands require individual confirmation; write acknowledgment does not prove execution.' if documented else 'Real controller: sign in as Operator/Administrator to test Acknowledge or Reset. Each action requires confirmation.' if bench else 'Read-only controller test. No commands enabled in this session.')
-        from prevex_hmi.profiles.parameters import PARAMETERS
-        for key,(number,title) in PARAMETERS.items():
-            button=getattr(self,'parameter_menus',{}).get(number)
+        from prevex_hmi.profiles.parameters import definitions
+        for key,spec in definitions(self.config if not self.snapshot else DeviceConfig(**self.snapshot['config'])).items():
+            button=getattr(self,'parameter_menus',{}).get(spec.number)
             if button:
                 reason=self.parameter_access_reason(key)
-                button.setEnabled(not reason);button.setToolTip(reason or f'Adjust {title}; confirmation required')
+                # Viewing/refreshing is read-only and remains available to every role.
+                button.setEnabled(bool(self.profile_current and self.connection_established and self.worker and self.worker.isRunning()))
+                button.setToolTip(reason or f'Adjust {spec.title}; confirmation required')
 
     def send_command(self,code):
         if code not in COMMANDS or not self.command_buttons[code].isEnabled():return
@@ -945,12 +948,14 @@ class MainWindow(QMainWindow):
         self.show_command_receipt({'id':request_id,'code':code,'state':'SENDING','reply_received':False})
 
     def parameter_access_reason(self,key):
-        from prevex_hmi.profiles.parameters import PARAMETERS,supported
+        from prevex_hmi.profiles.parameters import definition
         snapshot=self.snapshot
         if not self.profile_current or not self.connection_established or not snapshot or not self.worker or not self.worker.isRunning():return 'Connect to an analyzer before adjusting a parameter.'
         config=DeviceConfig(**snapshot['config'])
-        if not supported(config):return 'Adjustments are unverified for this profile.'
-        if self.users.resolve(self.session)[1] not in ('Operator','Administrator'):return 'Sign in as Operator or Administrator to adjust settings. Guest/Viewer access is read-only.'
+        try:spec=definition(config,key)
+        except PermissionError as error:return str(error)
+        if spec.reason:return spec.reason
+        if self.users.resolve(self.session)[1]!='Administrator':return 'Sign in as Administrator to adjust settings. Other roles have read-only access.'
         if self.settings['mode']!='simulation':
             from prevex_hmi.communication.validated_controls import validated_670
             if not validated_670(config):return 'Physical adjustments are unverified for this firmware/profile.'
@@ -958,29 +963,45 @@ class MainWindow(QMainWindow):
         if not control.get('verified') or control.get('pending') or control.get('transmitting') or time.monotonic()<control.get('cooldown_until',0) or control.get('ambiguous') or self.command_dispatching:return 'Identity unresolved or an action is pending/unknown.'
         elapsed=max(0,time.monotonic()-self.snapshot_received_at)
         limit=max(5,config.interval*3)
-        required=(2,60,PARAMETERS[key][0])+((5,6) if key in ('warning','danger') else ())
+        lock_number=27 if profile_for(config).revision=='700' else 60
+        required=(2,lock_number,spec.number)+((5,6) if key in ('warning','danger') else ())
         if snapshot['quality']!='GOOD' or snapshot.get('age') is None or snapshot['age']+elapsed>limit:return 'Communication is not current.'
         if any(n not in snapshot['raw'] or snapshot.get('register_ages',{}).get(n,float('inf'))+elapsed>limit for n in required):return 'Wait for fresh parameter, STATUS and lock values.'
-        if snapshot['raw'][60]!=0:return 'Calibration lock is active or unverified.'
+        if snapshot['raw'][lock_number]!=0:return 'Calibration lock is active or unverified.'
         if snapshot['raw'][2] not in profile_for(config).statuses or snapshot['raw'][2] in (4,5,6,7,11,12):return 'Instrument is busy/warming up or STATUS is unknown.'
         return ''
 
     def edit_parameter(self,key):
         from prevex_hmi.gui.parameter_editor import ParameterEditor
-        from prevex_hmi.profiles.parameters import PARAMETERS,encode
+        from prevex_hmi.profiles.parameters import definition,encode
         if not self.snapshot:return
-        config=DeviceConfig(**self.snapshot['config']);number,title=PARAMETERS[key]
-        raw=self.snapshot['raw'].get(number)
-        if raw is None:
-            self.statusBar().showMessage('Parameter has not been read yet.');return
+        config=DeviceConfig(**self.snapshot['config']);spec=definition(config,key);number,title=spec.number,spec.title
         target=copy.deepcopy(self.snapshot['config'])
         physical=self.settings['mode']=='hardware'
-        dialog=ParameterEditor(config,key,raw,reason=self.parameter_access_reason(key),physical=physical,parent=self)
-        if dialog.exec()!=QDialog.Accepted:return
+        worker=self.worker
+        def refresh():
+            if self.worker is not worker or not self.snapshot or self.snapshot['config']!=target or not self.connection_established:
+                dialog.set_raw(None,'Analyzer connection changed');return
+            self.request('parameter_read',key)
+        dialog=ParameterEditor(config,key,self.snapshot['raw'].get(number),reason=self.parameter_access_reason(key),physical=physical,refresh=refresh,parent=self)
+        def received(result):
+            if result['key']!=key or result['config']!=target:return
+            if self.worker is not worker or not self.snapshot or self.snapshot['config']!=target or not self.connection_established:
+                dialog.set_raw(None,'Analyzer connection changed');return
+            dialog.set_raw(result.get('raw'),result.get('error',''))
+        if worker:worker.parameter_read.connect(received)
+        try:
+            dialog.refresh()
+            accepted=dialog.exec()==QDialog.Accepted and dialog.save_button.isEnabled()
+        finally:
+            if worker:worker.parameter_read.disconnect(received)
+        if not accepted:return
+        raw=dialog.current_raw
         value=dialog.proposed()
         try:new_raw=encode(config,key,value,previous=raw)
         except (ValueError,PermissionError) as error:QMessageBox.warning(self,'Invalid value',str(error));return
         old_value,unit=profile_for(config).register(number).decode(raw,config.family,config.context)
+        unit=spec.unit or unit
         new_value,_=profile_for(config).register(number).decode(new_raw,config.family,config.context)
         if new_raw==raw:self.statusBar().showMessage('Value is unchanged.');return
         status=self.snapshot['raw'].get(2)

@@ -3,7 +3,7 @@ from .commands import require_current_session
 from .validated_controls import validated_670,ValidatedControlGrant
 from prevex_hmi.devices.identification import detect
 from prevex_hmi.profiles import profile_for
-from prevex_hmi.profiles.parameters import PARAMETERS,encode,validate_word
+from prevex_hmi.profiles.parameters import PARAMETERS,definition,limits,encode,validate_word
 from prevex_hmi.simulator.bus import SimulatedBus
 
 
@@ -19,7 +19,9 @@ class ParameterAdjustments:
         try:
             physical=not isinstance(c.bus.transport,SimulatedBus)
             if not current:raise PermissionError('Communication is not current')
-            if role not in ('Operator','Administrator') or not confirmed:raise PermissionError('Confirmed Operator/Administrator adjustment required')
+            if role != 'Administrator' or not confirmed:raise PermissionError('Confirmed Administrator adjustment required')
+            spec=definition(c.config,key)
+            limits(c.config,key)  # Reject read-only/prohibited/unspecified settings before any I/O.
             if physical and not validated_670(c.config):raise PermissionError('Physical adjustment compatibility is unverified')
             if not c.identity_verified or c.pending or c.ambiguous:raise PermissionError('Identity unresolved or previous action pending/unknown')
             c.receipt=None
@@ -29,9 +31,10 @@ class ParameterAdjustments:
             if not identity.verified or (identity.family,identity.model,identity.version)!=(c.config.family,c.config.assembly,c.config.version) or c.expected_identity and identity.text!=c.expected_identity.text:
                 c.identity_verified=False;raise PermissionError('Fresh identity differs; adjustment not sent')
             profile=profile_for(c.config)
+            lock_number=27 if profile.revision=='700' else 60
             def read(n):return c.bus.read(profile,c.config.addressing,n,1)[n]
             def preflight():
-                status=read(2);lock=read(60);old=read(number)
+                status=read(2);lock=read(lock_number);old=read(number)
                 if status not in profile.statuses or status in (4,5,6,7,11,12):raise PermissionError('STATUS unknown or instrument busy/warming up')
                 if lock!=0:raise PermissionError('Calibration lock active or unverified')
                 if type(expected) is not int or old!=expected:raise PermissionError('Parameter changed since editor opened; review and confirm again')
@@ -50,9 +53,9 @@ class ParameterAdjustments:
                 try:grant.validate_identity(detect(c.bus,c.config.addressing))
                 except PermissionError:c.identity_verified=False;raise
                 if preflight()!=before:raise PermissionError('Instrument state changed during preflight; review and confirm again')
-            require_current_session(c.users,token,actor)
+            require_current_session(c.users,token,actor,administrator=True)
             status,lock,old,raw,peer=before
-            detail=f'{PARAMETERS[key][1]} [{number}]: raw {old} -> {raw}; STATUS {status} ({profile.status(status)}); lock {lock}'
+            detail=f'{spec.title} [{number}]: raw {old} -> {raw}; STATUS {status} ({profile.status(status)}); lock {lock}'
             if physical and c.config.version=='4.81':detail+='; firmware4.81 uses the5.12 map by user instruction; compatibility not independently validated'
             c.end_previous_effect()
             c.store.command_audit(c.config.id,actor,code,'SENDING',detail+f'; confirmed {"REAL CONTROLLER" if physical else "simulated"} adjustment, send once')

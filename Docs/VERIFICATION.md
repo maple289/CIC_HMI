@@ -1,3 +1,9 @@
+# Service adjustments across four profiles — 2026-11-05
+
+See [SERVICE_PARAMETERS.md](SERVICE_PARAMETERS.md) for the reviewed register/range/mask/unit matrix and remaining verification. Manufacturer PDF pages were rendered and inspected (tmp/service-manuals/). New windows reuse the existing editor and serialized read/write path. All setting writes now require Administrator per the latest request; read-only viewing/refresh remains available to all roles.
+
+700 has independent latch controls 72/73/74; legacy 17 and failsafe18 are read-only. BTU/FID undocumented span/alarm bounds block writes; FID FAILSAFE remains read-only pending a verified mask/procedure. New 700/BTU/FID physical write capabilities remain disabled. The authorized COM4 read identified LEL SNR671 4.81, not FID 650; one FC03 identity response, zero writes. No new physical compatibility is claimed.
+
 # ACK/RESET timing and manufacturer verification review (2026-10-28)
 
 670 Rev Q section 12.2 (printed87/PDF91), and the supplied LEL register extract, explicitly advise verifying COMMANDS by reading STATUS; COMMANDS itself clears as soon as execution occurs. This applies to both ACK and RESET. Sections8.2/8.3 do not require STATUS to change or impose an eight-second HMI lock. The subsequent read remains in normal polling; relay/service effect correlation continues independently of the 500ms post-acknowledgment cooldown. Never equate a valid Modbus echo with verified alarm clearing, or an unchanged persistent fault with invalid command delivery.

@@ -37,7 +37,12 @@ class SimulatedAnalyzer:
                 self.raw[number] = self.profile.register(number).encode(value, self.config.family, self.config.context)
         self.raw[4] = 0x80
         self.raw[16] = 506
+        if self.config.family=='LEL':self.raw[18]=7
+        elif self.config.family=='BTU':self.raw[18]=4
         if self.profile.revision == "700":
+            self.raw[18]=7
+            self.raw[17]=7
+            for n in (72,73,74):self.raw[n]=1
             self.raw[3]=100
             self.raw[21]=self.config.address
             self.raw[22]=self.raw[47]=16  # documented default 19200 baud
@@ -90,6 +95,7 @@ class SimulatedAnalyzer:
         code = self.raw[2]
         self.raw[4] = 0x80 | (1 if code == 1 else 2 if code == 2 else 4 if code in (3,8,9,10,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27) else 0)
         if self.profile.revision == "700":
+            self.raw[17]=sum((self.raw[n]&1)<<bit for bit,n in enumerate((72,73,74)))
             if code in (4,5,6,7):self.raw[4] |= 1<<8
             if self.raw[59]:self.raw[4] |= 1<<9
         if code in (4, 5):

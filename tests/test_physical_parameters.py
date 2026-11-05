@@ -44,7 +44,7 @@ def physical(tmp_path,request):
     bus.close();store.close()
 
 
-@pytest.mark.parametrize('token',['operator','admin'])
+@pytest.mark.parametrize('token',['admin'])
 @pytest.mark.parametrize('key,value',[('cal_time',2),('span_temperature',125),('warning',35),('danger',55),('latches',15)])
 def test_authorized_named_parameter_sends_once_and_verifies(physical,token,key,value):
     service,state,store=physical;c=service.controller;number=PARAMETERS[key][0];old=state['raw'][number]
@@ -60,10 +60,10 @@ def test_authorized_named_parameter_sends_once_and_verifies(physical,token,key,v
     service.execute(key,value,raw,token,confirmed=True);assert len(state['writes'])==1
 
 
-@pytest.mark.parametrize('failure',['guest','viewer','confirmation','offline','identity','unsupported','lock','busy','unknown_lock','unknown_status','changed_value','range','alarm_order','invalid_peer','pending','ambiguous','firmware','revoked'])
+@pytest.mark.parametrize('failure',['operator','guest','viewer','confirmation','offline','identity','unsupported','lock','busy','unknown_lock','unknown_status','changed_value','range','alarm_order','invalid_peer','pending','ambiguous','firmware','revoked'])
 def test_rejected_before_any_physical_write(physical,failure):
     service,state,store=physical;c=service.controller;token='admin';confirmed=True;current=True;key='cal_time';value=2;expected=1
-    if failure in ('guest','viewer'):token=failure
+    if failure in ('operator','guest','viewer'):token=failure
     elif failure=='confirmation':confirmed=False
     elif failure=='offline':current=False
     elif failure=='identity':state['identity_changed']=True
@@ -105,9 +105,9 @@ def test_recheck_after_transport_activation(physical,change):
 @pytest.mark.parametrize('failure',['lost_ack','bad_echo','readback_timeout','readback_mismatch'])
 def test_unknown_outcome_blocks_all_retries_and_commands(physical,failure):
     service,state,store=physical;state['failure']=failure
-    service.execute('cal_time',2,1,'operator',confirmed=True)
+    service.execute('cal_time',2,1,'admin',confirmed=True)
     assert len(state['writes'])==1 and service.controller.ambiguous and store.audit_rows()[0][4]=='UNKNOWN'
-    service.execute('cal_time',2,1,'operator',confirmed=True)
+    service.execute('cal_time',2,1,'admin',confirmed=True)
     service.execute('danger',55,state['raw'][6],'admin',confirmed=True)
     service.controller.execute(0x100,'admin',confirmed=True)
     assert len(state['writes'])==1
@@ -115,7 +115,7 @@ def test_unknown_outcome_blocks_all_retries_and_commands(physical,failure):
 
 def test_fault_is_visible_in_audit_without_bypassing_other_checks(physical):
     service,state,store=physical;state['raw'][2]=25
-    service.execute('cal_time',2,1,'operator',confirmed=True)
+    service.execute('cal_time',2,1,'admin',confirmed=True)
     assert store.audit_rows()[0][4]=='VERIFIED_READBACK' and 'STATUS 25' in store.audit_rows()[0][5]
 
 

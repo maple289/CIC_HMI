@@ -31,7 +31,7 @@ def service(tmp_path):
     bus.close();store.close()
 
 
-@pytest.mark.parametrize('token',['operator','admin'])
+@pytest.mark.parametrize('token',['admin'])
 @pytest.mark.parametrize('key,value',[('cal_time',4),('span_temperature',125),('warning',35),('danger',55),('latches',15)])
 def test_named_adjustments_have_fresh_readback_and_audit(service,key,value,token):
     s,target=service;n=PARAMETERS[key][0];old=target.raw[n]
@@ -48,7 +48,7 @@ def test_named_adjustments_have_fresh_readback_and_audit(service,key,value,token
     assert s.controller.store.audit_rows()[0][4]=='REJECTED'
 
 
-@pytest.mark.parametrize('failure',['viewer','confirmation','lock','bad_lock','busy','bad_status','identity','pending','unknown','changed','range','alarm_order','unsupported','revoked'])
+@pytest.mark.parametrize('failure',['operator','viewer','confirmation','lock','bad_lock','busy','bad_status','identity','pending','unknown','changed','range','alarm_order','unsupported','revoked'])
 def test_preflight_blocks_without_simulated_write(service,failure):
     s,target=service;c=s.controller;key='cal_time';value=2;token='admin';confirmed=True
     expected=target.raw[28]
@@ -143,23 +143,23 @@ def test_categories_menus_and_stale_confirmation(app,tmp_path,monkeypatch):
         assert set(w.readout_groups)=={'Gauges','Calibration parameters','Alarm settings'}
         assert 1 not in w.readouts and 50 not in w.readouts
         assert {7,28,29,30,56,5,6,17,18}<=w.readouts.keys()
-        assert set(w.parameter_menus)=={5,6,17,28,56}
+        assert set(w.parameter_menus)=={5,6,17,18,28,56}
         assert all(len(button.menu().actions())==1 for button in w.parameter_menus.values())
-        assert 18 not in w.parameter_menus
+        assert 18 in w.parameter_menus
         calls=[]
         monkeypatch.setattr(w,'parameter_access_reason',lambda key:'')
         monkeypatch.setattr(w,'request',lambda *args:calls.append(args))
-        monkeypatch.setattr('prevex_hmi.gui.parameter_editor.ParameterEditor.exec',lambda d:QDialog.Accepted)
+        monkeypatch.setattr('prevex_hmi.gui.parameter_editor.ParameterEditor.exec',lambda d:(d.set_raw(w.snapshot['raw'][28]),QDialog.Accepted)[1])
         monkeypatch.setattr('prevex_hmi.gui.parameter_editor.ParameterEditor.proposed',lambda d:2)
         monkeypatch.setattr(QMessageBox,'question',lambda *args:QMessageBox.No)
-        w.edit_parameter('cal_time');assert not calls
+        w.edit_parameter('cal_time');assert not [c for c in calls if c[0]=='parameter']
         def changed(*args):w.snapshot['raw'][28]=3;return QMessageBox.Yes
         monkeypatch.setattr(QMessageBox,'question',changed)
-        w.edit_parameter('cal_time');assert not calls
+        w.edit_parameter('cal_time');assert not [c for c in calls if c[0]=='parameter']
         w.snapshot['raw'][28]=1
         monkeypatch.setattr(QMessageBox,'question',lambda *args:QMessageBox.Yes)
         w.edit_parameter('cal_time')
-        assert calls==[('parameter','cal_time',2,1,w.session,True)]
+        assert [c for c in calls if c[0]=='parameter']==[('parameter','cal_time',2,1,w.session,True)]
     finally:w.close();bus.close();app.processEvents()
 
 
