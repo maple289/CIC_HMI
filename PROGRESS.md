@@ -1,3 +1,9 @@
+# Windows CI Trend resize assertion (2026-11-05)
+
+- Investigated failed run42107756071 at9f668bb:1 failed/1338 passed; the only failure was the FID Recording Parameters checkbox-grid narrow-window assertion. The old test sampled after exactly two processEvents calls. Isolated four-profile reproduction passed locally; no production layout defect was established from the available CI log.
+- Replaced the fixed event-loop pass count with a bounded wait for the actual requested window width and expected grid columns, and exercised wide/narrow resizing twice per profile. Retained strict3-column1100px/2-column720px checks and added actual window/group/minimum/column dimensions to timeout failures. Application code, executable, communication, permissions and recordings are unchanged.
+- Focused font/display/recording/Service checks:116 passed in42.13s (tmp/ci-resize-check.xml). Initial isolated profile reproduction:4 passed in3.08s (tmp/ci-trend-repro.xml). Windows CI must confirm the timing correction on the runner; no new full-suite success is claimed here.
+
 # Profile-specific Service setting windows (2026-11-05)
 
 - Reused the existing Service cards, three-dot menus, compact parameter editor, confirmation, serialized worker/bus, single-write/readback and audit workflow across LEL 670, LEL 700, BTU and FID. Added asynchronous fresh reads on opening and Refresh, with unavailable/error states separate from read-only restrictions. Setting writes require Administrator per the current request; other roles may view/refresh. Existing operating-command permissions and logic are unchanged.

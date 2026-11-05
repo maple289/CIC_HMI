@@ -28,10 +28,23 @@ def test_parameter_checkboxes_follow_profile_and_default_to_main(app,tmp_path,pr
         assert group.selected_numbers()==[1]
         assert all(p['name'] in group.checkboxes[p['number']].text() and (not p['unit'] or p['unit'] in group.checkboxes[p['number']].text()) for p in expected)
         assert w.trend_window.start_button.isEnabled()
-        w.open_trend();w.trend_window.resize(1100,840);app.processEvents();app.processEvents()
-        assert max(group.grid.getItemPosition(i)[1] for i in range(group.grid.count()))==2
-        w.trend_window.resize(720,650);app.processEvents();app.processEvents()
-        assert max(group.grid.getItemPosition(i)[1] for i in range(group.grid.count()))==1
+        w.open_trend()
+        for width,height,columns in ((1100,840,3),(720,650,2),(1100,840,3),(720,650,2)):
+            w.trend_window.resize(width,height)
+            # Qt posts child-layout work after the top-level resize. Two calls
+            # to processEvents are not a completion barrier on Windows CI.
+            # Wait for the actual narrow/wide layout, retaining the same strict
+            # column expectations and checking that the window really resized.
+            def settled():
+                return (w.trend_window.width()==width and
+                        max(group.grid.getItemPosition(i)[1] for i in range(group.grid.count()))==columns-1)
+            try:until(app,settled,timeout=5)
+            except AssertionError:
+                pytest.fail(f'{profile}: requested {width}px/{columns} columns; '
+                            f'window={w.trend_window.width()}px, group={group.width()}px, '
+                            f'minimum={w.trend_window.minimumSizeHint().width()}px, '
+                            f'columns={1+max(group.grid.getItemPosition(i)[1] for i in range(group.grid.count()))}')
+            assert group.width()<=width
     finally:w.close();app.processEvents()
 
 
