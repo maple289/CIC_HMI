@@ -16,11 +16,13 @@ from test_monitoring import app,until
 
 @pytest.mark.parametrize('profile',['LEL 670 Series','LEL 700 Series','BTU','FID'])
 def test_parameter_checkboxes_follow_profile_and_default_to_main(app,tmp_path,profile):
-    settings=load_settings(tmp_path/'settings.json');config=library_config(profile);settings['devices']=[asdict(config)]
-    w=MainWindow(settings,tmp_path/'settings.json',tmp_path,start_worker=False)
+    from test_command_result_layout import setup_window
+    config=library_config(profile)
+    # A claimed connection without a GOOD snapshot is correctly cleared by
+    # the 250ms communication watchdog. Supply actual simulated cached data,
+    # as the other connected layout tests do, rather than racing that timer.
+    w,bus,_=setup_window(tmp_path,profile)
     try:
-        from test_monitoring import identify
-        identify(w,config);w.set_connection_status(True)
         group=w.trend_window.recording_parameters
         assert group.title()=='Recording Parameters' and group.profile==profile
         expected=recording_parameters(config)
@@ -29,6 +31,8 @@ def test_parameter_checkboxes_follow_profile_and_default_to_main(app,tmp_path,pr
         assert all(p['name'] in group.checkboxes[p['number']].text() and (not p['unit'] or p['unit'] in group.checkboxes[p['number']].text()) for p in expected)
         assert w.trend_window.start_button.isEnabled()
         w.open_trend()
+        QTest.qWait(350)  # Cross the watchdog interval deliberately on all runners.
+        assert w.connection_established and group.isVisible()
         for width,height,columns in ((1100,840,3),(720,650,2),(1100,840,3),(720,650,2)):
             w.trend_window.resize(width,height)
             # Qt posts child-layout work after the top-level resize. Two calls
@@ -45,7 +49,7 @@ def test_parameter_checkboxes_follow_profile_and_default_to_main(app,tmp_path,pr
                             f'minimum={w.trend_window.minimumSizeHint().width()}px, '
                             f'columns={1+max(group.grid.getItemPosition(i)[1] for i in range(group.grid.count()))}')
             assert group.width()<=width
-    finally:w.close();app.processEvents()
+    finally:w.close();bus.close();app.processEvents()
 
 
 def test_per_profile_selections_clear_all_and_relaunch(app,tmp_path):
