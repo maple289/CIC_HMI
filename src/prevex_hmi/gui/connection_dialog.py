@@ -22,9 +22,9 @@ class AnalyzerChoice(QDialog):
         note=QLabel("Auto Detect reads identity registers before loading a profile. Manual selection remains available; an unresolved identity or mismatch blocks commands.")
         note.setWordWrap(True);root.addWidget(note)
         row=QHBoxLayout();row.addWidget(QLabel("Analyzer profile"));root.addLayout(row)
-        choices=["Auto Detect","LEL 670 Series","LEL 700 Series","BTU","FID"]
+        choices=["Auto Detect","LEL","BTU","FID"]
         selection=settings["analyzer_selection"]
-        if selection=='LEL':selection='LEL 700 Series' if d_is_700(settings) else 'LEL 670 Series'
+        if selection in ('LEL 670 Series','LEL 700 Series'):selection='LEL'
         self.types=QComboBox();self.types.addItems(choices);self.types.setCurrentText(selection)
         row.addWidget(self.types,1)
         self.profile_status=QLabel();self.profile_status.setWordWrap(True);root.addWidget(self.profile_status)
@@ -35,8 +35,8 @@ class AnalyzerChoice(QDialog):
         self.mode=QComboBox();self.mode.addItems(["simulation","hardware"]);self.mode.setCurrentText(settings["mode"])
         self.sim_family=QComboBox();self.sim_family.addItems(["LEL","BTU","FID"]);self.sim_family.setCurrentText(settings["simulated_family"])
         self.lel_revision=QComboBox();self.lel_revision.addItems(["700","legacy"]);self.lel_revision.setCurrentText(settings.get("simulated_lel_revision","legacy"))
-        if selection in ('LEL 670 Series','LEL 700 Series'):
-            self.lel_revision.setCurrentText('700' if '700' in selection else 'legacy')
+        if selection == 'LEL':
+            self.lel_revision.setCurrentText('700' if d_is_700(settings) else settings.get('simulated_lel_revision','legacy'))
         form.addRow("Simulated LEL generation",self.lel_revision)
         self.port=SerialPortChoice(c["port"])
         self.baud=QComboBox();self.baud.addItems([str(n) for n in (300,600,1200,2400,4800,9600,19200)]);self.baud.setCurrentText(str(c["baud"]))
@@ -70,7 +70,7 @@ class AnalyzerChoice(QDialog):
         # family defaults on opening while retaining user-defined names.
         family=self.selected_family()
         prefix={'LEL':('SNR67','SNR70'),'BTU':('SNR69',),'FID':('SNR65',)}[family]
-        series_mismatch=selection=='LEL 700 Series' and not d.assembly.startswith('SNR70') or selection=='LEL 670 Series' and not d.assembly.startswith('SNR67')
+        series_mismatch=False  # LEL functional selection retains actual series from identification
         self.refresh_type(reset=d.family!=family or not d.assembly.startswith(prefix) or series_mismatch)
         self.update_address()
 
@@ -85,7 +85,8 @@ class AnalyzerChoice(QDialog):
             self.sim_family.blockSignals(True)
             self.sim_family.setCurrentText('LEL' if selection.startswith('LEL') else selection)
             if selection.startswith('LEL'):
-                self.lel_revision.blockSignals(True);self.lel_revision.setCurrentText('700' if '700' in selection else 'legacy');self.lel_revision.blockSignals(False)
+                # Retain the previously chosen simulated series; do not silently change hardware series.
+                pass
             self.sim_family.blockSignals(False)
         self.refresh_type(reset=True)
 
@@ -96,7 +97,7 @@ class AnalyzerChoice(QDialog):
         if self.types.currentIndex()!=0:
             self.sim_family.blockSignals(True);self.sim_family.setCurrentText(family);self.sim_family.blockSignals(False)
         defaults=next(d for d in default_devices() if d.family==family)
-        if family=='LEL' and (self.types.currentText()=='LEL 700 Series' or self.types.currentIndex()==0 and self.lel_revision.currentText()=='700'):
+        if family=='LEL' and self.mode.currentText()=='simulation' and self.lel_revision.currentText()=='700':
             defaults=replace(defaults,assembly='SNR705',version='7.01')
         default_names={d.name for d in default_devices()}
         if not self.name.text().strip() or self.name.text() in default_names:
@@ -125,7 +126,7 @@ class AnalyzerChoice(QDialog):
         d=replace(d,register_profile='auto')
         selection=self.types.currentText()
         family=self.selected_family()
-        register_profile=('700' if '700' in selection else '670') if selection in ('LEL 670 Series','LEL 700 Series') else 'auto'
+        register_profile='auto'  # The detected hardware series determines the concrete Modbus map
         new_stream=(selection != data["analyzer_selection"] or self.sim_family.currentText() != data["simulated_family"] or self.lel_revision.currentText() != data.get("simulated_lel_revision","legacy") or (self.units.currentText() or "Unknown") != (d.units or "Unknown"))
         d=replace(d,id=uuid.uuid4().hex if new_stream else d.id,name=self.name.text().strip(),family=family,register_profile=register_profile,address=self.address.value(),address_mode=self.address_mode.currentText(),pdu_offset=int(self.offset.currentText()),assembly=self.assembly.text().strip(),version=self.version.text().strip(),enabled=True,fullscale=self.fullscale.value(),units=None if self.units.currentText()=="Unknown" else self.units.currentText(),interval=self.interval.value(),logging_enabled=self.logging_enabled.isChecked(),range_mode=self.range_mode.currentText(),manual_maximum=self.manual.value() if self.use_fallback.isChecked() or self.range_mode.currentText()=="manual" else None)
         data.update(analyzer_selection=selection,mode=self.mode.currentText(),simulated_family=self.sim_family.currentText(),devices=[asdict(d)],connection={**data["connection"],"port":self.port.text().strip(),"baud":int(self.baud.currentText()),"timeout":self.timeout.value(),"identification_page":self.page.currentText()})
