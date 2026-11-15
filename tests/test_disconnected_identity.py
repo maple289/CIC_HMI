@@ -26,7 +26,7 @@ def test_startup_saved_hardware_is_idle_and_manual_selection_is_only_a_preferenc
         assert w.pages.currentWidget() is w.connection_screen and not w.gauge.isVisibleTo(w)
         assert not w.command_scroll.isVisibleTo(w) and not w.indicators.isVisibleTo(w)
         assert not w.warning.text() and not w.monitor_model.text()
-        w.connection_screen.profile.setCurrentText('LEL 670 Series');until(app,lambda:w.settings['analyzer_selection']=='LEL 670 Series')
+        w.connection_screen.profile.setCurrentText('LEL');until(app,lambda:w.settings['analyzer_selection']=='LEL')
         assert 'Not Verified' in w.connection_screen.selection.text() and w.worker is None
         assert w.connection_screen.port.text()=='COM7' and w.connection_screen.baud.currentData()==9600 and w.connection_screen.address.value()==3
         w.show_diagnostics();assert w.pages.currentIndex()==4
@@ -46,9 +46,13 @@ def test_explicit_connect_identifies_profiles_and_sends_no_commands(app,tmp_path
     def factory(devices):
         sim=SimulatedBus(devices);simulations.append(sim);return sim
     monkeypatch.setattr('prevex_hmi.gui.worker.SimulatedBus',factory)
-    w=MainWindow(load_settings(tmp_path/'settings.json'),tmp_path/'settings.json',tmp_path);w.show()
+    settings=load_settings(tmp_path/'settings.json')
+    from dataclasses import asdict
+    from prevex_hmi.gui.profile_library import library_config
+    settings['devices']=[asdict(library_config(profile))];settings['simulated_lel_revision']='700' if profile=='LEL 700 Series' else 'legacy'
+    w=MainWindow(settings,tmp_path/'settings.json',tmp_path);w.show()
     try:
-        w.connection_screen.profile.setCurrentText(profile);app.processEvents()
+        w.connection_screen.profile.setCurrentText('LEL' if profile.startswith('LEL') else profile);app.processEvents()
         assert w.worker is None
         w.connection_screen.connect_button.click()
         until(app,lambda:w.profile_current and w.snapshot is not None and w.snapshot['quality']=='GOOD')

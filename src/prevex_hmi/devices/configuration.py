@@ -32,11 +32,23 @@ def load_settings(path: Path) -> dict:
         backup=path.with_suffix(".v1-backup.json")
         if not backup.exists(): backup.write_text(original,encoding="utf-8")
         save_settings(path,data)
+    normalize_profiles(data)
     validate_settings(data)
     if 'parameters_by_profile' in data.get('recording',{}):
         from prevex_hmi.logging_db.recordings import normalize_selections
         data['recording']['parameters_by_profile']=normalize_selections(data['recording']['parameters_by_profile'])
     return data
+
+
+def normalize_profiles(settings):
+    """Normalize obsolete selection labels without changing identity/history IDs."""
+    previous=settings.get('analyzer_selection')
+    if previous in ('LEL 670 Series','LEL 700 Series'):
+        settings['analyzer_selection']='LEL'
+        settings['simulated_lel_revision']='700' if previous=='LEL 700 Series' else 'legacy'
+    for row in settings.get('devices',[]):
+        if row.get('register_profile')=='fta_4x':row['register_profile']='670'
+    return settings
 
 
 def validate_settings(settings):
@@ -64,6 +76,7 @@ def validate_settings(settings):
 
 
 def save_settings(path: Path, settings: dict) -> None:
+    settings=normalize_profiles(json.loads(json.dumps(settings)))
     validate_settings(settings)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import asdict, replace
+import copy
 import logging
 from pathlib import Path
 from queue import Empty, Full, PriorityQueue
@@ -12,13 +13,13 @@ from PySide6.QtCore import QThread, Signal
 from prevex_hmi.communication.engine import BusEngine
 from prevex_hmi.communication.commands import CommandController
 from prevex_hmi.communication.scheduler import PollingScheduler
-from prevex_hmi.devices.identification import detect, resolve_profile
+from prevex_hmi.devices.identification import detect,identity_key, resolve_profile
 from prevex_hmi.devices.configuration import default_devices
 from prevex_hmi.devices.models import DeviceConfig, utc_now
 from prevex_hmi.gui.presentation import measurement,uses_controller_fault_display
 from prevex_hmi.logging_db.store import Historian,MonitoringHistorian
 from prevex_hmi.security.users import UserStore
-from prevex_hmi.profiles import PROFILES, profile_for,profile_name
+from prevex_hmi.profiles import PROFILES, profile_for,profile_name,series_for
 from prevex_hmi.simulator.bus import SimulatedBus
 from prevex_hmi.communication.validated_controls import validated_670
 from prevex_hmi.profiles.common import COMMANDS
@@ -41,6 +42,8 @@ class MonitoringWorker(QThread):
 
     def __init__(self,settings:dict,data_path:Path,parent=None,*,test_only=False,hardware_grant=None):
         super().__init__(parent)
+        from prevex_hmi.devices.configuration import normalize_profiles
+        settings=normalize_profiles(copy.deepcopy(settings))
         if len(settings['devices']) != 1: raise ValueError('One active analyzer required')
         self.settings,self.data_path=settings,data_path
         self.test_only=test_only
@@ -94,22 +97,23 @@ class MonitoringWorker(QThread):
                 if self.hardware_grant is not None:self.hardware_grant.validate(self.settings,configured)
                 elif connection['port'] not in available_ports():
                     raise ValueError('Select an available serial port. No port was opened.')
-                from prevex_hmi.devices.compatibility import assumed_481
-                bench=bool(self.hardware_grant and self.hardware_grant.operator_commands and not assumed_481(configured.assembly,configured.version))
+                bench=False  # Confirmed 670 actions use the normal series-scoped transport.
                 factory=ControllerBenchTransport if bench else ReadOnlySerialTransport
                 options={'bench_grant':self.hardware_grant} if bench else {}
                 transport=factory(connection['port'],hardware_authorized=True,addressing_reviewed=True,baud=connection['baud'],timeout=connection['timeout'],**options)
             else:
                 actual=next(d for d in default_devices() if d.family == self.settings['simulated_family'])
                 actual=replace(actual,id=configured.id,name=configured.name,address=configured.address,address_mode=configured.address_mode,pdu_offset=configured.pdu_offset,enabled=True,interval=configured.interval,range_mode=configured.range_mode,manual_maximum=configured.manual_maximum,gauge_minimum=configured.gauge_minimum,logging_enabled=configured.logging_enabled)
+                from prevex_hmi.devices.identification import model_family
+                if model_family(configured.assembly)==actual.family:actual=replace(actual,assembly=configured.assembly,version=configured.version)
                 selection=self.settings['analyzer_selection']
-                if actual.family == "LEL" and (selection=='LEL 700 Series' or selection=='Auto Detect' and self.settings.get("simulated_lel_revision","legacy") == "700"):
+                if actual.family == "LEL" and self.settings.get("simulated_lel_revision","legacy") == "700":
                     from prevex_hmi.profiles.lel700 import TYPES
                     model=configured.assembly if configured.assembly in TYPES.values() else 'SNR705'
-                    actual=replace(actual,assembly=model,version="7.01",fullscale=100)
+                    actual=replace(actual,assembly=model,version=configured.version if configured.assembly in TYPES.values() else "7.01",fullscale=100)
                 elif actual.family == 'LEL':
                     from prevex_hmi.profiles.lel670 import MODELS
-                    actual=replace(actual,assembly=configured.assembly if configured.assembly in MODELS else actual.assembly,version='5.11')
+                    actual=replace(actual,assembly=configured.assembly if configured.assembly in MODELS else actual.assembly,version=configured.version if configured.assembly in MODELS else actual.version,fullscale=configured.fullscale if configured.assembly in MODELS else actual.fullscale)
                 if actual.family == 'FID':actual=replace(actual,fullscale=configured.fullscale,units=configured.units or 'US')
                 simulation=SimulatedBus([actual]);transport=simulation
             bus=BusEngine(transport,baud=connection['baud'])
@@ -123,12 +127,16 @@ class MonitoringWorker(QThread):
             if effective:
                 if effective.family == 'FID': effective=replace(effective,units=configured.units or 'US')
                 effective=replace(effective,enabled=True)
+                primary=bus.read(profile_for(effective),effective.addressing,1,4)
+                if effective.family=='LEL' and primary.get(3) in (100,200):effective=replace(effective,fullscale=primary[3])
                 info['config']=asdict(effective)
-                bus.read(profile_for(effective),effective.addressing,1,4)
                 info['loaded_profile']=profile_name(effective)
                 info['register_revision']=profile_for(effective).revision
             info['communication']='Valid Modbus response' if bus.stats.successes else 'No valid Modbus response'
             info['communication_ok']=bool(bus.stats.successes)
+            bus.identity_metadata={key:info.get(key) for key in ('family','model','version','reported_version','serial','text')}
+            if effective:bus.identity_metadata['series']=series_for(effective)
+            log.info('analyzer_identified',extra={'detail':bus.identity_metadata})
             self.identified.emit(info)
             if self.test_only or effective is None: return
             scheduler=PollingScheduler(bus,[effective])
@@ -239,7 +247,7 @@ class MonitoringWorker(QThread):
                     # Use the same serialized bus after recovery; cached GOOD
                     # measurements cannot restore a previous identity grant.
                     check=detect(bus,effective.addressing)
-                    if not check.verified or (check.family,check.model,check.version,check.serial,check.text)!=(identity.family,identity.model,identity.version,identity.serial,identity.text):
+                    if not check.verified or identity_key(check)!=identity_key(identity):
                         raise OSError('Analyzer identity changed or could not be revalidated after communication loss. Connect to Analyzer to identify the current instrument.')
                     identity_current=True;needs_identity_recheck=False;last_identity=now;controller.identity_verified=controls_verified
                     self.identified.emit({**info,'revalidated':True,'communication_ok':True,'communication':'Fresh identity verified after communication recovery'})
@@ -248,7 +256,7 @@ class MonitoringWorker(QThread):
                     check=detect(bus,effective.addressing)
                     if physical and self.hardware_grant:self.hardware_grant.validate_identity(check)
                     last_identity=now
-                    if (identity.verified and (not check.verified or (check.family,check.model,check.version,check.serial) != (identity.family,identity.model,identity.version,identity.serial))) or (check.family and check.family != effective.family):
+                    if (identity.verified and (not check.verified or identity_key(check)!=identity_key(identity))) or (check.family and check.family != effective.family):
                         raise OSError('Instrument identity changed or became unverifiable. Polling stopped; reconnect to identify again.')
                 if now-last_emit >= 0.25:
                     snapshot=state.snapshot(now)

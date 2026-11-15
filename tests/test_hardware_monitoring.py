@@ -46,8 +46,8 @@ def test_available_ports_are_readonly_without_bench_grant(tmp_path,monkeypatch,p
     worker.failed.connect(errors.append);worker.identified.connect(identified.append)
     worker.run()
     assert not errors and identified and calls and instances[0].closed
-    assert not identified[0]['controls_verified']
-    if not test_only:assert updates and not updates[0]['control']['verified']
+    assert identified[0]['controls_verified']==(not test_only)
+    if not test_only:assert updates and updates[0]['control']['verified']
     assert worker.hardware_grant is None
 
 
@@ -62,11 +62,11 @@ def settings_for(path):
 def test_fta_identity_uses_explicit_compatibility_assumption():
     identity=parse_identity(IDENTITY.decode('latin-1'))
     assert identity.family=='LEL' and identity.model=='SNR671' and identity.version=='4.81'
-    assert identity.legacy_format and identity.warning and identity.verified and identity.compatibility_assumed
+    assert identity.legacy_format and not identity.warning and identity.verified
     config,warning,controls=resolve_profile(default_devices()[0],'Auto Detect',identity)
-    assert config.register_profile=='fta_4x' and warning and controls
-    assert profile_for(config).revision=='fta_4x' and len(commands_for(config))==11
-    for number in (8,40,57,62,1281):
+    assert config.register_profile=='670' and not warning and controls
+    assert profile_for(config).revision=='670' and len(commands_for(config))==11
+    for number in (40,65):
         with pytest.raises((ValueError,PermissionError)):validate_read(profile_for(config),number,1)
     assert parse_identity('TYPE FTAVER 4\xa781 SNR671 BTU').family is None
 
@@ -125,7 +125,7 @@ def test_hardware_gui_replays_real_signals_and_blocks_injection_and_commands(tmp
     try:
         wait(lambda:w.snapshot is not None and all(n in w.snapshot['raw'] for n in RAW))
         assert w.snapshot['source']=='hardware' and w.snapshot['instrument_quality']=='INSTRUMENT_FAULT'
-        assert w.snapshot['config']['register_profile']=='fta_4x'
+        assert w.snapshot['config']['register_profile']=='670'
         assert 'Connection Established' in w.monitor_status.text() and '-99 %LFL' in w.controller_display.text()
         assert measurement(w.snapshot,5)[0]==40 and measurement(w.snapshot,6)[0]==50
         assert measurement(w.snapshot,50)[0]==106
@@ -144,7 +144,7 @@ def test_hardware_gui_replays_real_signals_and_blocks_injection_and_commands(tmp
             w.users.create_user('admin','bench-test-password')
             w.session=w.users.authenticate('admin','bench-test-password');w.update_command_buttons()
             assert w.command_access_button.isHidden()
-            assert 'Firmware4.81' in w.command_access_note.text()
+            assert 'Firmware4.81' not in w.command_access_note.text()
             assert all(b.isEnabled() for b in w.command_buttons.values())
             # Sign-in advertises readiness; no write-capable transport is opened.
             assert len(instances)==1
@@ -153,7 +153,7 @@ def test_hardware_gui_replays_real_signals_and_blocks_injection_and_commands(tmp
         w.worker.request('reading',42)
         wait(lambda:'Simulation injection' in w.command_message.text() or 'Simulation injection' in w.statusBar().currentMessage())
         assert w.snapshot['raw'][1]==32769
-        assert len(instances)==1 and all(pdu+1 not in (8,40,57,62) for _,pdu,_ in instances[0].calls)
+        assert len(instances)==1 and all(pdu+1 not in (8,40,57) for _,pdu,_ in instances[0].calls)
     finally:
         w.close();wait(lambda:not w.worker.isRunning());app.processEvents()
     assert instances[0].closed

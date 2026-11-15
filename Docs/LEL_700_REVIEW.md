@@ -1,3 +1,5 @@
+Current policy (2026-11-14):700 is an internal definition under the shared LEL functional profile. Firmware is informational; series-specific restrictions below remain. See FUNCTIONAL_PROFILES.md.
+
 # LEL 700-series full-manual review
 
 Source: `H7FTA700_RevD_PrevEx_instruction_manual.pdf`, H7FTA700 Rev D, August 2025. The PDF has 143 pages; core manual printed page numbers match PDF pages. Reviewed menus61–68, service90, serial115–127 and revision128–130. Serial tables119/127 were rendered and checked. Complete searchable extraction is in `extracted/`. This is the primary LEL 700-series reference. The older LEL extract remains the reference for older assemblies/firmware.
@@ -6,7 +8,7 @@ Source: `H7FTA700_RevD_PrevEx_instruction_manual.pdf`, H7FTA700 Rev D, August 20
 
 | Area | Rev D evidence | Implemented behavior |
 | --- | --- | --- |
-| Identification | p125 TYPE62 adds16–23 for SNR701/702/704/705 and D variants; VERSION40 is numeric; SERIAL63 and YEAR65 identify the unit. p127 removes ASCII257+ (blanks). | Try legacy FC03 identification first. Only on blank/failed legacy identification and recognized700 TYPE, read40/63/65 separately and validate firmware/year/serial. Never use40 as a version register on legacy units. |
+| Identification | p125 TYPE62 adds16–23 for SNR701/702/704/705 and D variants; VERSION40 is numeric; SERIAL63 and YEAR65 identify the unit. p127 removes ASCII257+ (blanks). | Try legacy FC03 identification first. Only on blank/failed legacy identification and recognized700 TYPE, read40/63/65 separately and validate model/year/serial; firmware decoding is informational and may be Unknown. Never use40 as a version register on legacy units. |
 | GAUGES | p61/64/119 list peaks38/39, BLOCK TEMP9, BLOCK SETTING24, SAMPLE FLOW15, FLAME TEMP11, ZERO FLAME TEMP29, SPAN FLAME TEMP30. | Dedicated700 readouts include these plus primary reading1/status2. Flow thresholds23/42 and output50 belong to other menus, not the700 Gauge menu. |
 | Conversions | p116 specifies temperature0.2442 (older extract0.24426), flow0.00172936, %LFL0.00390625, bar0.0001, hPa/kPa0.01, version0.01, seconds0.1, percent0.01; engineering values signed16-bit. | Independent700 inventory and exact factors. Do not change older profiles to the new temperature factor. |
 | Main scale | p127 FULL SCALE3 and analog scale57 always100. | Prefer live3; retain optional manual display range. Manual display changes do not modify the instrument. |

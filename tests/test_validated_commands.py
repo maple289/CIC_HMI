@@ -53,7 +53,7 @@ def control(tmp_path,request):
         def read_holding_registers(self,pdu,*,count,device_id):
             assert device_id==1
             identity=(b'TYPE FTAVER 4\xa781 SNR671' if request.param=='4.81' else b'LEL VER5.12 SNR675 S/N UNIT1').ljust(32,b' ')
-            raw={1:256,2:state['status'],3:100,4:state.get('relays',128),28:state['minutes'],60:state['lock'],62:11}
+            raw={1:256,2:state['status'],3:100,4:state.get('relays',128),28:state['minutes'],60:state['lock'],62:1 if request.param=='4.81' else 11}
             raw.update({257+i//2:int.from_bytes(identity[i:i+2],'big') for i in range(0,32,2)})
             return SimpleNamespace(isError=lambda:False,registers=[raw.get(n,0) for n in range(pdu+1,pdu+count+1)])
         def write_register(self,pdu,code,*,device_id):
@@ -126,8 +126,8 @@ def test_ambiguous_echo_never_retries(control,failure):
 
 
 @pytest.mark.parametrize('version',['4.80','4.82','5.08','5.11','6.00','7.01','unknown'])
-def test_wrong_firmware_never_allowed(version):
-    assert not validated_670(replace(default_devices()[0],version=version))
+def test_firmware_does_not_disable_documented_670(version):
+    assert validated_670(replace(default_devices()[0],version=version))
 
 
 @pytest.mark.parametrize('code,after_role',[(0x300,'Viewer'),(0x900,'Operator')])
@@ -217,11 +217,11 @@ def test_481_assumption_is_explicit_and_does_not_override_mismatches(text):
     # Standard ASCII identities still need their normal TYPE cross-check.
     if not identity.legacy_format:identity=replace(identity,verified=True)
     config,warning,ready=resolve_profile(default_devices()[0],'Auto Detect',identity)
-    assert ready and identity.compatibility_assumed and 'by explicit user instruction' in warning
+    assert ready and not warning and not identity.warning
     assert validated_670(config) and set(commands_for(config))==WORDS
     assert profile_for(config).registers[60].access=='R'
     validate_read(profile_for(config),60,1)
-    assert not resolve_profile(default_devices()[0],'LEL 700 Series',identity)[2]
+    assert resolve_profile(default_devices()[0],'LEL 700 Series',identity)[2]  # Obsolete label normalizes to LEL; model selects 670.
     assert not resolve_profile(default_devices()[0],'BTU',identity)[2]
     assert not validated_670(replace(config,assembly='SNR673'))
     assert not validated_670(replace(config,family='FID',register_profile='auto'))

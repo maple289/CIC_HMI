@@ -37,7 +37,7 @@ class PollingScheduler:
             # Removing a duplicate card does not remove the existing output
             # observation from Diagnostics/history on legacy LEL/BTU profiles.
             if profile.revision!='700' and 50 in GAUGE_REGISTERS[device.family]:gauge_numbers.add(50)
-            if profile.revision=='fta_4x':gauge_numbers.update(range(51,56))
+            if profile.revision=='670':gauge_numbers.update(range(51,56))
             if 59 in profile.registers: gauge_numbers.add(59)
             gauge_numbers-= {1,2}
             for start,count in block_reads(profile,sorted(gauge_numbers)):

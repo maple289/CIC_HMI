@@ -43,15 +43,12 @@ class Register:
     def scale(self, family: str, context: Context) -> tuple[Decimal, Decimal, str]:
         if self.conversion == "reading":
             if family == "LEL":
-                if not re.fullmatch(r"SNR(?:67[1245](?:D|K|P|PL)?|70[1245]D?)", context.assembly.upper()) or not context.version:
-                    raise UnverifiedDefinition("LEL reading requires assembly and software version")
-                try:
-                    parts = tuple(int(n) for n in context.version.split("."))
-                    version = (parts + (0, 0))[:2]
-                except ValueError as exc:
-                    raise UnverifiedDefinition("Unrecognized software version") from exc
+                if not re.fullmatch(r"SNR(?:67[1245](?:D|K|P|PL)?|70[1245]D?)", context.assembly.upper()):
+                    raise UnverifiedDefinition("LEL reading requires a documented assembly")
                 diluted = context.assembly.upper().endswith(("D", "K"))
-                factor = "0.0078125" if diluted and version <= (5, 8) else "0.00390625"
+                if context.assembly.upper().startswith('SNR67') and diluted and context.fullscale not in (100,200):
+                    raise UnverifiedDefinition('LEL D/K reading requires the configured FULLSCLE range (100 or 200)')
+                factor = "0.0078125" if context.assembly.upper().startswith('SNR67') and diluted and context.fullscale==200 else "0.00390625"
                 return Decimal(factor), Decimal(0), "%LFL"
             if family == "BTU":
                 return Decimal("0.0390625"), Decimal(0), context.btu_unit

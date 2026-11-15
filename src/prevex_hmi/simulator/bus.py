@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from decimal import Decimal
+from decimal import Decimal,InvalidOperation
 import math
 import struct
 import threading
@@ -48,7 +48,9 @@ class SimulatedAnalyzer:
             self.raw[22]=self.raw[47]=16  # documented default 19200 baud
             for n,value in ((7,60),(23,1.8),(42,.4)):
                 self.raw[n]=self.profile.register(n).encode(value,'LEL',self.config.context)
-            self.raw[40]=int(Decimal(self.config.version)*100)
+            try:self.raw[40]=int(Decimal(self.config.version)*100)
+            except (InvalidOperation,ValueError,OverflowError):self.raw[40]=0
+            if not 0<self.raw[40]<32768:self.raw[40]=0
             self.raw[63]=101;self.raw[65]=2026
             self.raw[29]=self.profile.register(29).encode(500,"LEL",self.config.context)
             self.raw[30]=self.profile.register(30).encode(80,"LEL",self.config.context)

@@ -51,3 +51,7 @@ The single-analyzer HMI now offers Auto Detect, **LEL 670 Series**, **LEL 700 Se
 Raised command buttons have individual three-second acknowledgment LEDs. Documented calibration/test commands are exercised in simulation, with execution tracked separately through STATUS and the audit log. Physical access still defaults to read-only; the previously authorized SNR671/COM4 exception remains limited to confirmed Operator/Administrator Acknowledge and Reset. Real 700-series controls are disabled pending hardware validation. SNR673 behavior is undocumented and is not claimed as supported.
 
 See [Interface and series guide](Docs/INTERFACE_AND_SERIES.md), [700-series manual review](Docs/LEL_700_REVIEW.md), and [verification gates](Docs/VERIFICATION.md). Profile settings provides read-only access to documented parameters and restrictions. BTU/FID register definitions and conversions remain unchanged.
+
+## Analyzer selection
+
+Auto Detect, LEL, BTU and FID are the functional choices. Internal650/670/690/700 definitions retain manufacturer-specific registers, conversions and restrictions. Firmware is informational. See [functional profile behavior and migration](Docs/FUNCTIONAL_PROFILES.md).

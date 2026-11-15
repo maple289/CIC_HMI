@@ -85,8 +85,8 @@ def test_profile_dropdown_browses_without_reinterpreting_or_changing_connected_a
     original=copy.deepcopy(w.settings)
     try:
         assert isinstance(w.profile_selector,QComboBox)
-        assert [w.profile_selector.itemData(i) for i in range(1,5)]==list(PROFILE_CHOICES)
-        for name in ('LEL 700 Series','BTU','FID'):
+        assert [w.profile_selector.itemData(i) for i in range(1,4)]==list(PROFILE_CHOICES)
+        for name in ('BTU','FID'):
             w.profile_selector.setCurrentIndex(w.profile_selector.findData(name));flush(app)
             assert w.settings==original and w.snapshot==snap
             assert not w.read_setting_button.isEnabled()

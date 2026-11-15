@@ -2,7 +2,7 @@
 import uuid
 from .commands import CommandController,PendingCommand,require_current_session
 from .validated_controls import ValidatedControlGrant,WORDS,validated_670
-from prevex_hmi.devices.identification import detect
+from prevex_hmi.devices.identification import detect,identity_key
 from prevex_hmi.devices.models import utc_now
 from prevex_hmi.profiles import profile_for
 from prevex_hmi.profiles.common import COMMANDS
@@ -20,13 +20,13 @@ class ValidatedOperatingCommands(CommandController):
             if role not in ('Operator','Administrator'):raise PermissionError('Operator/Administrator sign-in required')
             if not confirmed:raise PermissionError('Explicit target confirmation required')
             if code==0x900 and role!='Administrator':raise PermissionError('Save All requires Administrator')
-            if code not in WORDS or not validated_670(self.config):raise PermissionError('Unsupported command/model/firmware')
+            if code not in WORDS or not validated_670(self.config):raise PermissionError('Unsupported command/model/series')
             if not self.identity_verified:raise PermissionError('Identity/profile unresolved')
             if self.pending or self.ambiguous:raise PermissionError('Previous command pending/unknown; no retry')
             if self.clock()<self.cooldown_until:raise PermissionError('Short command anti-repeat cooldown active')
             if code not in (0x100,0x200) and self.clock()-self.last_attempt.get(code,float('-inf'))<2:raise PermissionError('Duplicate command suppressed')
             identity=detect(self.bus,self.config.addressing)
-            if not identity.verified or (identity.family,identity.model,identity.version)!=(self.config.family,self.config.assembly,self.config.version) or self.expected_identity and identity.text!=self.expected_identity.text:
+            if not identity.verified or (identity.family,identity.model)!=(self.config.family,self.config.assembly) or self.expected_identity and identity_key(identity)!=identity_key(self.expected_identity):
                 self.identity_verified=False;raise PermissionError('Fresh identity differs or is unverified')
             profile=profile_for(self.config)
             grant=ValidatedControlGrant(self.connection['port'],self.connection['baud'],self.config.addressing.packet_address,self.config.pdu_offset,self.config.assembly,self.config.version,identity.text,self.connection['timeout'])
@@ -55,7 +55,7 @@ class ValidatedOperatingCommands(CommandController):
             effect_before=self.bus.read(profile,self.config.addressing,4,1) if code in (0x100,0x200) else None
             if code==0x100:effect_before.update(self.bus.read(profile,self.config.addressing,59,1))
             require_current_session(self.users,token,actor,administrator=code==0x900)
-            assumption='; firmware4.81 uses the 5.12 map by user instruction, physical compatibility unverified' if self.config.version=='4.81' else ''
+            assumption=f'; firmware {self.config.version or "Unknown"} (informational)'
             self.end_previous_effect()
             self.record(actor,code,'SENDING',f'{COMMANDS[code]} confirmed; send once{assumption}')
             sent=True;self.last_attempt[code]=self.clock()

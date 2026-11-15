@@ -22,8 +22,7 @@ class ConnectionTestResult(QDialog):
         semantic_style(self.result_label,'#39c66c' if identified else '#e7b55e' if responding else '#f27778','font-size:20px;font-weight:bold;')
         layout.addWidget(self.result_label)
         c=settings['connection'];d=settings['devices'][0]
-        firmware=info.get('version') or 'Unavailable'
-        if info.get('version_provisional'):firmware+=f" (reported {info.get('reported_version')}; provisional interpretation)"
+        firmware=info.get('version') or 'Unknown'
         lines=[f"Mode: {settings['mode'].upper()}",f"Port: {c['port'] or 'Not selected'} | {c['baud']} baud / 8N1",f"Configured address: {d['address']} ({d['address_mode']})",f"Selected profile: {settings['analyzer_selection']}",f"Detected profile: {info.get('loaded_profile') or info.get('family') or 'Unrecognized'}",f"Model: {info.get('model') or 'Unavailable'}",f"Firmware: {firmware}",f"Serial number: {info.get('serial') or 'Unavailable'}",f"Communication: {'Valid Modbus response received' if responding else 'Not confirmed'}"]
         if error:lines+=['',f'Error: {error}']
         if info.get('warning'):lines+=['',f"Compatibility / identification: {info['warning']}"]

@@ -45,10 +45,11 @@ def test_every_documented_scaled_register_roundtrips(family, number, raw):
     assert r.encode(engineering, family, CONTEXT[family]) == raw
 
 
-@pytest.mark.parametrize("version,expected", [("5.08", "200"), ("5.8", "200"), ("5.09", "100"), ("5.11", "100")])
+@pytest.mark.parametrize("version", ["5.08", "5.8", "5.09", "5.11", "Unknown"])
 @pytest.mark.parametrize("assembly", ["SNR674D", "SNR675K"])
-def test_legacy_dilution(version, expected, assembly):
-    assert PROFILES["LEL"].register(1).decode(25600, "LEL", Context(assembly, version))[0] == Decimal(expected)
+@pytest.mark.parametrize("fullscale",[100,200])
+def test_dilution_depends_on_documented_range_not_firmware(version, assembly, fullscale):
+    assert PROFILES["LEL"].register(1).decode(25600, "LEL", Context(assembly, version, fullscale=fullscale))[0] == Decimal(fullscale)
 
 
 def test_reading_refuses_missing_context():

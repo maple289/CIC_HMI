@@ -103,8 +103,10 @@ def test_post_write_failure_is_unknown_and_blocks_other_actions(service,monkeypa
     assert len(written)==1 and c.store.audit_rows()[0][4]=='REJECTED'
 
 
-def test_physical_transport_never_receives_setting_or_constructs_writer(service):
+def test_unvalidated_physical_series_never_receives_setting_or_constructs_writer(service):
     s,target=service;sim=s.controller.bus.transport
+    original=s.controller.config
+    s.controller.config=replace(original,assembly='SNR705',register_profile='700')
     physical=object.__new__(ReadOnlySerialTransport)
     s.controller.bus.transport=physical
     try:
@@ -112,7 +114,7 @@ def test_physical_transport_never_receives_setting_or_constructs_writer(service)
         assert s.controller.store.audit_rows()[0][4]=='REJECTED'
         with pytest.raises(PermissionError):s.controller.bus.simulated_parameter(target.config,'cal_time',2,previous=1)
         assert not hasattr(physical,'adjust_parameter')
-    finally:s.controller.bus.transport=sim
+    finally:s.controller.bus.transport=sim;s.controller.config=original
 
 
 def test_offline_request_is_audited_without_io(service):

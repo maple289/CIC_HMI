@@ -47,7 +47,7 @@ def test_admin_test_connection_does_not_change_profile_or_activate_commands(app,
         def read(self,address,pdu,count):
             calls.append((address,pdu,count))
             self.trace(True,frame(struct.pack('>BBHH',address,3,pdu,count)))
-            raw={**RAW,62:11}
+            raw={**RAW,62:1 if legacy else 11}
             raw.update({257+i//2:int.from_bytes(payload[i:i+2],'big') for i in range(0,32,2)})
             words=[raw.get(n,0) for n in range(pdu+1,pdu+count+1)]
             self.trace(False,frame(bytes((address,3,count*2))+struct.pack(f'>{count}H',*words)))
@@ -87,17 +87,12 @@ def test_admin_test_connection_does_not_change_profile_or_activate_commands(app,
             assert 'Selected: Auto Detect' in w.identity_label.text()
             assert 'Detected: LEL 670 Series' in w.identity_label.text()
             assert 'Valid Modbus response' in w.identity_label.text()
-            if legacy:
-                assert '0xA7' in w.warning.text() and 'by explicit user instruction' in w.warning.text()
-                assert 'Only explicitly authorized operator' not in w.warning.text()
-                assert 'provisional; reported 4\xa781' in w.identity_label.text()
-                assert w.identity['config']['register_profile']=='fta_4x'
-            else:
-                assert not w.warning.text() and w.warning.isHidden()
-                assert w.identity['config']['register_profile']=='670'
+            assert not w.warning.text() and w.warning.isHidden()
+            assert w.identity['config']['register_profile']=='670'
+            if legacy:assert '4.81' in w.identity_label.text()
         assert results[0]==results[1]
         assert all(item.closed for item in instances)
-        if legacy:assert all(pdu+1 not in (8,60,62) for _,pdu,_ in calls)
+        if legacy:assert all(pdu+1 not in (8,60) for _,pdu,_ in calls)
     finally:w.close();app.processEvents()
 
 
@@ -160,10 +155,10 @@ def test_focused_test_view_returns_without_stale_live_widgets(app,tmp_path,actio
 
 def test_legacy_warning_distinguishes_raw_separator_and_firmware_scope():
     raw=parse_identity('TYPE FTAVER 4\xa781 SNR671')
-    assert raw.reported_version=='4\xa781' and raw.version=='4.81' and raw.version_provisional
+    assert raw.reported_version=='4\xa781' and raw.version=='4.81' and not raw.warning
     normal=parse_identity('TYPE FTAVER 4.81 SNR671')
     assert not normal.version_provisional and '0xA7' not in normal.warning
-    assert '5.12+' in normal.warning and normal.verified and normal.compatibility_assumed
+    assert not normal.warning and normal.verified
     modern=parse_identity('PREVEX VER5.12 SNR675 2005')
     assert not modern.warning and not modern.legacy_format
 
@@ -172,8 +167,8 @@ def test_profile_mismatch_keeps_genuine_firmware_details():
     from prevex_hmi.devices.identification import resolve_profile,Identification
     identity=parse_identity('TYPE FTAVER 4\xa781 SNR671')
     config,warning,controls=resolve_profile(default_devices()[0],'BTU',identity)
-    assert 'MISMATCH' in warning and '0xA7' in warning and 'by explicit user instruction' in warning
-    assert not controls and config.register_profile=='fta_4x'
+    assert 'MISMATCH' in warning and 'by explicit user instruction' not in warning
+    assert not controls and config.register_profile=='670'
     _,warning,controls=resolve_profile(default_devices()[0],'BTU',Identification('LEL','SNR673','5.12',verified=True))
     assert 'MISMATCH' in warning and 'Undocumented' in warning and not controls
 

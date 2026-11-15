@@ -155,7 +155,7 @@ class CircularGauge(QWidget):
         state = gauge_state(snapshot)
         self._latest = state
         if snapshot is not None and state.value is not None:
-            numbers = range(51,56) if snapshot.get('reading_source') == 'controller_lcd_fault' or snapshot['config'].get('register_profile') == 'fta_4x' and snapshot['raw'].get(1) == 0x8001 else (1,)
+            numbers = range(51,56) if snapshot.get('reading_source') == 'controller_lcd_fault' or profile_for(DeviceConfig(**snapshot['config'])).revision == '670' and snapshot['raw'].get(1) == 0x8001 else (1,)
             age = max(snapshot.get('register_ages',{}).get(n,0) for n in numbers)
             if age <= 4:
                 self._last_valid = state; self._deadline = now + 4 - age

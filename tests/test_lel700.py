@@ -42,7 +42,8 @@ def test_numeric_identity_replaces_removed_ascii_registers(config):
         assert not transport.events
         assert {257,62,40,63,65}<={r['register'] for r in bus.traffic if r['direction']=='TX'}
         transport.devices[1].raw[40]=0
-        assert not detect(bus,config.addressing).verified
+        unknown=detect(bus,config.addressing)
+        assert unknown.verified and unknown.version=='Unknown'
         transport.devices[1].raw[40]=701
         transport.set_fault(1,'unknown_identity')
         assert not detect(bus,config.addressing).verified

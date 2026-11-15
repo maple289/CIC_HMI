@@ -45,7 +45,8 @@ def test_guest_viewer_operator_admin_and_revoked_sessions(app,tmp_path,monkeypat
         monkeypatch.setattr(ParameterEditor,'proposed',lambda d:2)
         monkeypatch.setattr(QMessageBox,'question',lambda *args:captured.append(args[2]) or QMessageBox.No)
         w.edit_parameter('cal_time')
-        assert 'REAL CONTROLLER' in captured[0] and '4.81' in captured[0] and 'SAVE ALL' in captured[0]
+        assert 'REAL CONTROLLER' in captured[0] and 'SNR671' in captured[0] and 'SAVE ALL' in captured[0]
+        assert 'map by your instruction' not in captured[0]
         requests=[];w.worker.request=lambda *args:requests.append(args)
         monkeypatch.setattr(QMessageBox,'question',lambda *args:QMessageBox.Yes)
         w.snapshot_received_at=time.monotonic();w.edit_parameter('cal_time')

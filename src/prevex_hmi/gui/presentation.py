@@ -12,7 +12,7 @@ from prevex_hmi.registers.schema import UnverifiedDefinition
 def uses_controller_fault_display(snapshot: dict) -> bool:
     """Observed legacy FTA fault word: use the actual LCD, never invent -128%."""
     config=snapshot['config'];raw=snapshot['raw'];ages=snapshot.get('register_ages',{})
-    if snapshot['quality']!='GOOD' or config.get('register_profile')!='fta_4x' or raw.get(1)!=0x8001:return False
+    if snapshot['quality']!='GOOD' or profile_for(DeviceConfig(**config)).revision!='670' or raw.get(1)!=0x8001:return False
     limit=max(5,config['interval']*3);status=raw.get(2)
     fault=(ages.get(2,0)<=limit and status in profile_for(DeviceConfig(**config)).statuses and status not in (0,1,2,4,5,6,7,11,12)) or (ages.get(4,0)<=limit and bool(raw.get(4,0)&4))
     return bool(fault)
@@ -53,7 +53,7 @@ def measurement(snapshot: dict, number: int = 1) -> tuple[Decimal | None, str]:
         return direct_controller_fault_reading(snapshot)
     device = DeviceConfig(**snapshot["config"])
     context = device.context
-    if device.family == "FID":
+    if device.family in ("FID","LEL"):
         context = replace(context, fullscale=raw.get(3))
     try:
         return profile_for(device).register(number).decode(raw[number], device.family, context)

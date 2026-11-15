@@ -44,7 +44,6 @@ class ParameterEditor(QDialog):
         note.setWordWrap(True);box.addWidget(note)
         self.current_label=QLabel();self.current_label.setWordWrap(True);box.addWidget(self.current_label)
         note='Real controller adjustment. Review and confirm before changing the live setting. SAVE ALL remains separate.' if physical else 'Simulator adjustment. You will review and confirm the change before it is sent.'
-        if physical and config.version=='4.81':note+=' Firmware4.81 uses the5.12 map by your instruction.'
         self.access_note=QLabel(self.reason or note);self.access_note.setWordWrap(True);box.addWidget(self.access_note)
         self.read_status=QLabel();self.read_status.setWordWrap(True);box.addWidget(self.read_status)
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel)

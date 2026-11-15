@@ -19,7 +19,7 @@ def run(folder):
     screen=app.primaryScreen();results=[]
     def check(condition,detail):
         if not condition:raise AssertionError(detail)
-    for profile in PROFILE_CHOICES:
+    for profile in ('LEL 670 Series','LEL 700 Series','BTU','FID'):
         data=folder/profile.replace(' ','-');data.mkdir(parents=True,exist_ok=True)
         w,bus,snapshot=setup_window(data,profile)
         w.users.create_user('operator','password8');w.session=w.users.authenticate('operator','password8')

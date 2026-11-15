@@ -55,12 +55,12 @@ def test_authorized_named_parameter_sends_once_and_verifies(physical,token,key,v
     assert isinstance(c.bus.transport,ValidatedOperatingTransport) and len(state['clients'])==2 and state['clients'][0].closed
     assert store.audit_rows()[0][4]=='VERIFIED_READBACK' and store.audit_rows()[1][4]=='SENDING'
     assert 'SAVE ALL' in store.audit_rows()[0][5]
-    if c.config.version=='4.81':assert 'by user instruction' in store.audit_rows()[0][5]
+    assert f'firmware {c.config.version}' in store.audit_rows()[0][5]
     if key=='latches':assert raw&~15==old&~15
     service.execute(key,value,raw,token,confirmed=True);assert len(state['writes'])==1
 
 
-@pytest.mark.parametrize('failure',['operator','guest','viewer','confirmation','offline','identity','unsupported','lock','busy','unknown_lock','unknown_status','changed_value','range','alarm_order','invalid_peer','pending','ambiguous','firmware','revoked'])
+@pytest.mark.parametrize('failure',['operator','guest','viewer','confirmation','offline','identity','unsupported','lock','busy','unknown_lock','unknown_status','changed_value','range','alarm_order','invalid_peer','pending','ambiguous','unvalidated_series','revoked'])
 def test_rejected_before_any_physical_write(physical,failure):
     service,state,store=physical;c=service.controller;token='admin';confirmed=True;current=True;key='cal_time';value=2;expected=1
     if failure in ('operator','guest','viewer'):token=failure
@@ -78,7 +78,7 @@ def test_rejected_before_any_physical_write(physical,failure):
     elif failure=='invalid_peer':key='warning';value=35;expected=state['raw'][5];state['raw'][6]=65535
     elif failure=='pending':c.pending=object()
     elif failure=='ambiguous':c.ambiguous=True
-    elif failure=='firmware':c.config=replace(c.config,version='5.11',register_profile='670')
+    elif failure=='unvalidated_series':c.config=replace(c.config,assembly='SNR705',register_profile='700')
     elif failure=='revoked':
         calls=[]
         def resolve(token):calls.append(token);return ('test','Administrator' if len(calls)==1 else 'Viewer')
@@ -127,3 +127,10 @@ def test_default_transport_has_no_adjustment_capability_and_prohibited_keys_stay
     for key in ('failsafe','address','command','cold_start',18,8):
         with pytest.raises((PermissionError,KeyError)):c.bus.transport.adjust_parameter(key,0,previous=0)
     assert len(state['writes'])==1
+
+
+def test_named_670_adjustment_allows_unknown_firmware_information(physical):
+    service,state,store=physical
+    service.controller.config=replace(service.controller.config,version='Unknown')
+    assert service.execute('cal_time',2,1,'admin',confirmed=True)=={28:2}
+    assert len(state['writes'])==1 and store.audit_rows()[0][4]=='VERIFIED_READBACK'

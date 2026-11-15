@@ -80,10 +80,10 @@ class CommandController:
             if self.ambiguous or self.pending: raise PermissionError("A command is pending or has an unknown outcome; reconnect required")
             if self.clock()<self.cooldown_until:raise PermissionError('Short command anti-repeat cooldown active')
             if not isinstance(self.bus.transport,SimulatedBus): raise PermissionError("Physical commands disabled")
-            from prevex_hmi.devices.identification import detect
+            from prevex_hmi.devices.identification import detect,identity_key
             identity=detect(self.bus,self.config.addressing)
             expected=self.expected_identity
-            if not identity.verified or (identity.family,identity.model,identity.version) != (self.config.family,self.config.assembly,self.config.version) or (expected and expected.serial and expected.serial != identity.serial):
+            if not identity.verified or (identity.family,identity.model) != (self.config.family,self.config.assembly) or (expected and expected.serial and expected.serial != identity.serial):
                 self.identity_verified=False
                 raise PermissionError("Fresh identification does not match the target; command not issued")
             profile=profile_for(self.config)
@@ -144,7 +144,7 @@ class CommandController:
     def _observe_effect(self,snapshot):
         pending=self.effect;elapsed=max(0,self.clock()-pending.started)
         config=snapshot.get('config')
-        if config and any(config.get(key)!=getattr(self.config,key) for key in ('id','family','assembly','version','address','register_profile')):
+        if config and any(config.get(key)!=getattr(self.config,key) for key in ('id','family','assembly','address','register_profile')):
             self.effect=None;self.ambiguous=True
             self.record(pending.actor,pending.code,'UNKNOWN','Analyzer/profile changed during effect observation; no retry.')
             return
@@ -209,7 +209,7 @@ class CommandController:
             self.pending=None
             if fresh:
                 self.receipt.update(lock_register=60,lock_readback=word)
-                self.record(pending.actor,pending.code,'FAILED',f'Software-lock change not confirmed within{pending.timeout:g}s; CAL LOCK [60] still reads {word}. Controller may not have applied the command, or this firmware may report lock state differently. Check CAL LOCK on the controller; no automatic retry.')
+                self.record(pending.actor,pending.code,'FAILED',f'Software-lock change not confirmed within{pending.timeout:g}s; CAL LOCK [60] still reads {word}. Controller has not reported the requested software-lock state. Check CAL LOCK on the controller; no automatic retry.')
             else:
                 self.ambiguous=True
                 self.record(pending.actor,pending.code,'UNKNOWN','No fresh post-command CAL LOCK [60] verification within the observation period; execution unknown. No automatic retry; reconnect and check controller lock state.')

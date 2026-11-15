@@ -29,8 +29,7 @@ def definitions(config):
     profile = profile_for(config)
     if config.family not in ('LEL', 'BTU', 'FID'): return {}
     if config.family == 'LEL' and profile.revision != '700':
-        from prevex_hmi.devices.compatibility import assumed_481
-        if config.assembly not in MODELS or not (profile.revision == '670' or profile.revision == 'fta_4x' and assumed_481(config.assembly, config.version)):
+        if config.assembly not in MODELS:
             return {}
     names = ('Low Alarm', 'High Alarm', 'Fault', 'Horn') if config.family == 'BTU' else ('Warning', 'Danger', 'Fault', 'Horn')
     relays = tuple(enumerate(names))

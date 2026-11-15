@@ -6,13 +6,10 @@ PROFILES = {p.family: p for p in (LEL, BTU, FID)}
 
 
 def profile_for(config):
-    """Select the documented firmware/model revision, retaining legacy profiles."""
-    if getattr(config,'register_profile','auto')=='fta_4x':
-        from .fta import PROFILE,ASSUMED_481
-        from prevex_hmi.devices.compatibility import assumed_481
-        return ASSUMED_481 if assumed_481(config.assembly,config.version) else PROFILE
+    """Three functional families, with model/series-specific register tables."""
     from .lel700 import TYPES
-    if config.family == "LEL" and (getattr(config,'register_profile','auto')=='700' or getattr(config,'register_profile','auto')!='670' and config.assembly.upper() in TYPES.values()):
+    from .lel670 import MODELS
+    if config.family == "LEL" and (config.assembly.upper() in TYPES.values() or config.assembly.upper() not in MODELS and getattr(config,'register_profile','auto')=='700'):
         from .lel700 import PROFILE
         return PROFILE
     if config.family == 'LEL':
@@ -29,12 +26,17 @@ def profile_name(config):
 
 def commands_for(config):
     from .common import COMMANDS
-    if profile_for(config).revision=='fta_4x':
-        from prevex_hmi.devices.compatibility import assumed_481
-        if not assumed_481(config.assembly,config.version):return {}
     # Rev D p118: Lock/Unlock over Modbus no longer have any effect. Save
     # Settings allows factory changes; exclude it from ordinary controls.
     return {code:name for code,name in COMMANDS.items() if profile_for(config).revision != '700' or code not in (0x900,0xF00,0x1000)}
+
+
+def series_for(config):
+    return profile_for(config).revision if config.family=='LEL' else {'BTU':'690','FID':'650'}[config.family]
+
+
+def normalize_selection(selection):
+    return 'LEL' if selection in ('LEL 670 Series','LEL 700 Series') else selection
 
 
 def relays_for(word,config):

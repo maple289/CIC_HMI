@@ -121,7 +121,7 @@ class BusEngine:
         with self._lock:
             data = asdict(self.stats)
             data["success_rate"] = 100 * self.stats.successes / self.stats.polls if self.stats.polls else None
-            return {"bus": data, "devices": {str(n): asdict(s) for n,s in self.device_stats.items()}, "traffic": list(self.traffic), "baud": self.baud}
+            return {"identity":getattr(self,"identity_metadata",{}).copy(),"bus": data, "devices": {str(n): asdict(s) for n,s in self.device_stats.items()}, "traffic": list(self.traffic), "baud": self.baud}
 
     def close(self) -> None:
         with self._lock:
@@ -162,7 +162,7 @@ class BusEngine:
             self._active={'address':address,'register':number,'count':1,'family':'SIMULATED_PARAMETER'}
             try:
                 target=self.transport.devices[address]
-                if (target.config.family,target.config.assembly,target.config.version,target.config.addressing)!=(config.family,config.assembly,config.version,config.addressing):raise PermissionError('Simulation target differs')
+                if (target.config.family,target.config.assembly,target.config.addressing)!=(config.family,config.assembly,config.addressing):raise PermissionError('Simulation target differs')
                 if target.fault!='none':raise TimeoutError('Simulated setting reply unavailable')
                 packet=frame(struct.pack('>BBHH',address,6,config.addressing.pdu(number),raw))
                 self._trace(True,packet);target.raw[number]=raw;self._trace(False,packet)
@@ -188,7 +188,7 @@ class BusEngine:
         with self._lock:
             if self.closed:raise RuntimeError('Bus closed')
             if isinstance(self.transport,ValidatedOperatingTransport):
-                if self.transport.control_grant!=grant:raise PermissionError('Control scope changed')
+                if self.transport.control_grant.scope_key()!=grant.scope_key():raise PermissionError('Control scope changed')
                 return
             if type(self.transport) is not ReadOnlySerialTransport:raise PermissionError('Normal read-only serial connection required')
             # One worker owns the bus. Release the old COM handle before opening

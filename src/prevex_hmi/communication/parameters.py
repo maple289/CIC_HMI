@@ -1,7 +1,7 @@
 """Confirmed named670 adjustments, using the existing serialized bus owner."""
 from .commands import require_current_session
 from .validated_controls import validated_670,ValidatedControlGrant
-from prevex_hmi.devices.identification import detect
+from prevex_hmi.devices.identification import detect,identity_key
 from prevex_hmi.profiles import profile_for
 from prevex_hmi.profiles.parameters import PARAMETERS,definition,limits,encode,validate_word
 from prevex_hmi.simulator.bus import SimulatedBus
@@ -22,13 +22,13 @@ class ParameterAdjustments:
             if role != 'Administrator' or not confirmed:raise PermissionError('Confirmed Administrator adjustment required')
             spec=definition(c.config,key)
             limits(c.config,key)  # Reject read-only/prohibited/unspecified settings before any I/O.
-            if physical and not validated_670(c.config):raise PermissionError('Physical adjustment compatibility is unverified')
+            if physical and not validated_670(c.config):raise PermissionError('Physical adjustments remain unvalidated for this analyzer series')
             if not c.identity_verified or c.pending or c.ambiguous:raise PermissionError('Identity unresolved or previous action pending/unknown')
             c.receipt=None
             if key not in PARAMETERS:raise PermissionError('Unsupported parameter')
             if c.clock()-self.last_attempt.get(key,float('-inf'))<2:raise PermissionError('Duplicate adjustment suppressed')
             identity=detect(c.bus,c.config.addressing)
-            if not identity.verified or (identity.family,identity.model,identity.version)!=(c.config.family,c.config.assembly,c.config.version) or c.expected_identity and identity.text!=c.expected_identity.text:
+            if not identity.verified or (identity.family,identity.model)!=(c.config.family,c.config.assembly) or c.expected_identity and identity_key(identity)!=identity_key(c.expected_identity):
                 c.identity_verified=False;raise PermissionError('Fresh identity differs; adjustment not sent')
             profile=profile_for(c.config)
             lock_number=27 if profile.revision=='700' else 60
@@ -56,7 +56,7 @@ class ParameterAdjustments:
             require_current_session(c.users,token,actor,administrator=True)
             status,lock,old,raw,peer=before
             detail=f'{spec.title} [{number}]: raw {old} -> {raw}; STATUS {status} ({profile.status(status)}); lock {lock}'
-            if physical and c.config.version=='4.81':detail+='; firmware4.81 uses the5.12 map by user instruction; compatibility not independently validated'
+            detail+=f'; firmware {c.config.version or "Unknown"} (informational)'
             c.end_previous_effect()
             c.store.command_audit(c.config.id,actor,code,'SENDING',detail+f'; confirmed {"REAL CONTROLLER" if physical else "simulated"} adjustment, send once')
             sent=True;self.last_attempt[key]=c.clock()

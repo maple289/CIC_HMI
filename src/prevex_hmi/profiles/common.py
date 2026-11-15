@@ -48,7 +48,7 @@ def make_profile(family: str) -> Profile:
     add(3, "FULLSCLE", "Maximum measurement at 20 mA" if fid else "Full-scale range; standard 100 LEL / 1000 BTU",
         section="alarms" if fid else "diagnostics", access="RW" if fid else "R",
         minimum="10" if fid else None, maximum="32000" if fid else None,
-        write_policy="validated" if fid else "blocked", restrictions="Changing FID scale changes measurement interpretation" if fid else "Legacy LEL D/K <=5.08 has full scale 200")
+        write_policy="validated" if fid else "blocked", restrictions="Changing FID scale changes measurement interpretation" if fid else "LEL D/K: use the documented configured FULLSCLE range,100 or200")
     add(4, "RELAYS", "Logical active flags: bits 7..0 TISZ HFDW")
     for n, name in [(5, "LO ALARM" if family == "BTU" else "WARNING"), (6, "HI ALARM" if family == "BTU" else "DANGER")]:
         scaled(n, name, "Alarm threshold in reading format", "reading", section="alarms", category="Alarm Settings", access="RW",
@@ -116,7 +116,7 @@ def make_profile(family: str) -> Profile:
             add(n, f"DISPLAY {n - 50}", "LCD display buffer, ASCII word", conversion="raw", restrictions="Decode ASCII only; layout/length not specified")
     if lel:
         add(41, "LINEAR", "D/K air dilution linear range: off40%LFL / on80%LFL", choices=(0, 1), restrictions="Legacy/menu-only history; no writable symbol; read-only")
-        add(57, "MA SCALE", "%LFL equal to 20 mA:100; legacy D/K<=5.08 100 or200", restrictions="Conversion not specified; expose raw")
+        add(57, "MA SCALE", "%LFL equal to 20 mA:100; D/K configured range100 or200", restrictions="Conversion not specified; expose raw")
     add(58, "RLY CNFG", "Horn relay: 0 horn / 1 air-fuel / 2 always energized", section="outputs", access="RW", choices=(0, 1, 2), restrictions="Changes relay behavior; initial release read-only")
     if not fid:
         add(59, "SERVICE", "Service flags 0000 0000 A0RD LSZF; BTU F is N/A")

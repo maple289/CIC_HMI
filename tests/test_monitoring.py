@@ -72,7 +72,7 @@ def test_settings_roundtrip_and_corruption_preserved(tmp_path):
 
 def test_choice_has_five_options_and_preserves_manual_range(app,tmp_path):
     settings=load_settings(tmp_path/'settings.json');dialog=AnalyzerChoice(settings)
-    assert [dialog.types.itemText(i) for i in range(5)]==['Auto Detect','LEL 670 Series','LEL 700 Series','BTU','FID']
+    assert [dialog.types.itemText(i) for i in range(4)]==['Auto Detect','LEL','BTU','FID']
     dialog.range_mode.setCurrentText('manual');dialog.manual.setValue(250)
     dialog.logging_enabled.setChecked(False)
     result=dialog.settings();assert result['devices'][0]['manual_maximum']==250
@@ -89,8 +89,8 @@ def test_chooser_clicks_select_matching_simulator_and_confirms_ok(app,tmp_path):
         assert dialog.name.text()=='LEL - Process line 1'
         assert dialog.sim_family.currentText()=='LEL'
         assert not dialog.units.isVisible() and not dialog.fullscale.isVisible()
-        assert dialog.assembly.text()=='SNR675'
-        for family,index,prefix in [('FID',4,'SNR65'),('BTU',3,'SNR69'),('LEL',1,'SNR67'),('LEL',2,'SNR70')]:
+        assert dialog.assembly.text()=='SNR705'
+        for family,index,prefix in [('FID',3,'SNR65'),('BTU',2,'SNR69'),('LEL',1,'SNR70')]:
             dialog.types.showPopup()
             app.processEvents()
             item=dialog.types.model().index(index,0)
@@ -102,7 +102,7 @@ def test_chooser_clicks_select_matching_simulator_and_confirms_ok(app,tmp_path):
             assert dialog.name.text().startswith(family)
             assert dialog.units.isVisible()==(family=='FID')
             assert dialog.fullscale.isVisible()==(family=='FID')
-            assert not dialog.lel_revision.isVisible()
+            assert dialog.lel_revision.isVisible()==(family=='LEL')
             result=dialog.settings()
             assert result['devices'][0]['family']==family and result['simulated_family']==family
         dialog.address.setValue(1);dialog.address_mode.setCurrentText('display_minus_one')
@@ -123,7 +123,7 @@ def test_chooser_preserves_custom_name_and_auto_detect_simulator_choice(app,tmp_
     try:
         dialog.sim_family.setCurrentText('FID')
         assert dialog.name.text()=='My process' and dialog.settings()['devices'][0]['family']=='FID'
-        dialog.types.setCurrentIndex(3)
+        dialog.types.setCurrentIndex(2)
         assert dialog.name.text()=='My process' and dialog.sim_family.currentText()=='BTU'
         dialog.address_mode.setCurrentText('display_minus_one');dialog.address_mode.setCurrentText('direct');dialog.address.setValue(1)
         assert DeviceConfig(**dialog.settings()['devices'][0]).addressing.packet_address==1

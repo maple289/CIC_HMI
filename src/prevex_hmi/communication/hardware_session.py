@@ -14,7 +14,7 @@ def controller_bench_settings(settings: dict) -> dict:
     result['mode']='hardware'
     result['analyzer_selection']='Auto Detect'
     result['connection'].update(port='COM4',baud=9600,timeout=.5,identification_page='standard')
-    result['devices'][0].update(family='LEL',assembly='SNR671',version='4.81',address=1,address_mode='direct',pdu_offset=-1,register_profile='fta_4x',name='LEL SNR671 — real controller',id='hardware-com4-snr671')
+    result['devices'][0].update(family='LEL',assembly='SNR671',version='4.81',address=1,address_mode='direct',pdu_offset=-1,register_profile='670',name='LEL SNR671 — real controller',id='hardware-com4-snr671')
     return result
 
 
@@ -32,5 +32,5 @@ class ReadOnlyControllerGrant:
             raise PermissionError('Authorized read-only bench session is COM4 /9600 /packet1 /PDU offset-1 /standard page only. No port was opened.')
 
     def validate_identity(self,identity) -> None:
-        if not identity.legacy_format or identity.family!='LEL' or identity.model!='SNR671' or identity.version!='4.81':
+        if not identity.verified or identity.family!='LEL' or identity.model!='SNR671':
             raise PermissionError('Controller identity differs from the authorized SNR671 legacy endpoint; monitoring stopped.')

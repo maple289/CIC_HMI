@@ -1,14 +1,16 @@
+Current firmware policy (2026-11-14): see FUNCTIONAL_PROFILES.md. Firmware no longer selects register subsets or disables series capabilities. Known assembly and actual range context remain required where the manufacturer defines different conversions. Earlier source-edition descriptions below identify documentation provenance, not a minimum firmware requirement.
+
 # PREVEX register specification
 
 ## Authority and scope
 
-**700-series update:** `H7FTA700_RevD_PrevEx_instruction_manual.pdf` is authoritative for LEL700-series models and the reviewed7.xx firmware. Its independent inventory is included in REGISTER_TABLES.md. See LEL_700_REVIEW.md for menus and revised conversions, numeric identification, lock state, relay/service bits and command restrictions. The legacy LEL protocol/page/conversion descriptions below apply to the older extract only; they must not be carried into700-series handling automatically.
+**700-series update:** `H7FTA700_RevD_PrevEx_instruction_manual.pdf` is authoritative for LEL700-series models across its series firmware revisions (per user-reported manufacturer confirmation). Its independent inventory is included in REGISTER_TABLES.md. See LEL_700_REVIEW.md for menus and revised conversions, numeric identification, lock state, relay/service bits and command restrictions. The legacy LEL protocol/page/conversion descriptions below apply to the older extract only; they must not be carried into700-series handling automatically.
 
 The authoritative sources are `LEL Menu registers.pdf` (7 PDF pages, printed85..91), `BTU menu registers.pdf` (7 pages, printed69..75, H7SNR690 Rev C) and `FID_Menu_registers.pdf` (5 pages, printed37..41), all in this folder. Page-separated extracted text is retained in `extracted/`. The inventory in REGISTER_TABLES.md records every numbered register shown in those extracts, including internal/prohibited entries excluded from polling. Gaps are unsupported, not zero-valued supported registers. FID UNITS and LEL/BTU menu VERSION have no separate numbered register; identification blocks carry VERSION.
 
 ## Protocol and pages
 
-LEL/BTU: RTU, half-duplex RS485,8N1, default9600, supported300/600/1200/2400/4800/9600/19200. FC03 up to127 words, FC06 one word, FC16 exactly one word. Initial physical adapter implements READS ONLY, is not reachable from the GUI, and requires explicit authorization. Manufacturer broadcast support is deliberately excluded.
+LEL/BTU: RTU, half-duplex RS485,8N1, default9600, supported300/600/1200/2400/4800/9600/19200. FC03 up to127 words, FC06 one word, FC16 exactly one word. Default physical connections are read-only. Previously authorized670 named controls/settings use the scoped, confirmed write path; see OPERATING.md and FUNCTIONAL_PROFILES.md.700/BTU/FID physical writes remain unvalidated. Manufacturer broadcast support is deliberately excluded.
 
 | Page | Documented logical registers | Wire-byte order | Applies to |
 | --- | --- | --- | --- |
@@ -23,11 +25,11 @@ Reject crossing any supported window and reject unsupported/internal registers e
 
 ## Conversion rules
 
-All registers listed in the conversion tables are signed16-bit two's-complement. Exact decimal factors are retained. Other enum/bitfield/raw words are unsigned; unknown encodings are not invented. Inverse conversions round to the closest representable word, half away from zero. Ordinary simulated configuration writes require documented safe access and complete bounds, followed by readback. Physical writes remain unavailable.
+All registers listed in the conversion tables are signed16-bit two's-complement. Exact decimal factors are retained. Other enum/bitfield/raw words are unsigned; unknown encodings are not invented. Inverse conversions round to the closest representable word, half away from zero. Ordinary simulated configuration writes require documented safe access and complete bounds, followed by readback. Physical write eligibility follows series-specific validated capabilities, permissions and manufacturer restrictions; firmware alone does not disable them.
 
 | Format | LEL | BTU | FID |
 | --- | --- | --- | --- |
-| reading | raw*0.00390625 %LFL; D/K<=5.08 raw*0.0078125 | raw*0.0390625; unit unverified | raw*0.0000390625*FULLSCLE; US=PPM / metric=MG |
+| reading | raw*0.00390625 %LFL; 670 D/K configured FULLSCLE200 raw*0.0078125 (FULLSCLE100 uses0.00390625; firmware informational) | raw*0.0390625; unit unverified | raw*0.0000390625*FULLSCLE; US=PPM / metric=MG |
 | temperature | raw*0.24426 degC | raw*0.24426 degC | raw*0.24426 degC |
 | flow | raw*0.00172936 SL/min | not documented | not documented |
 | voltage | not documented | not documented | raw*0.0024426 VDC |

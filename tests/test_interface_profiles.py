@@ -101,7 +101,7 @@ def test_explicit_legacy_bench_api_prepares_only_authorized_session_without_savi
     assert grant.operator_commands and prepared['mode']=='hardware'
     assert prepared['connection']['port']=='COM4' and prepared['connection']['baud']==9600
     assert prepared['devices'][0]['assembly']=='SNR671' and prepared['devices'][0]['address']==1
-    assert prepared['devices'][0]['register_profile']=='fta_4x'
+    assert prepared['devices'][0]['register_profile']=='670'
     assert settings==original and path.read_bytes()==saved
     from prevex_hmi.devices.models import DeviceConfig
     grant.validate(prepared,DeviceConfig(**prepared['devices'][0]))
@@ -249,8 +249,8 @@ def test_all_documented_700_models_detect_from_numeric_registers(model):
         assert all(bytes.fromhex(row['hex'])[1]==3 for row in bus.traffic)
         for selected in ('LEL 670 Series','LEL 700 Series'):
             _,warning,verified=resolve_profile(config,selected,identity)
-            assert verified==(selected=='LEL 700 Series')
-            assert bool(warning)==(selected=='LEL 670 Series')
+            assert verified
+            assert not warning
     finally:bus.close()
 
 

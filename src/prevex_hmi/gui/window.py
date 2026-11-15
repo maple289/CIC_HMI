@@ -3,6 +3,7 @@ from collections import deque
 from datetime import datetime
 import copy
 import csv
+import json
 from pathlib import Path
 import time
 import uuid
@@ -28,7 +29,7 @@ from prevex_hmi.gui.serial_ports import require_available_port
 from prevex_hmi.gui.indicators import IndicatorPanel
 from prevex_hmi.gui.presentation import measurement,severity,uses_controller_fault_display,monitor_condition
 from prevex_hmi.gui.worker import MonitoringWorker
-from prevex_hmi.profiles import PROFILES,profile_for,commands_for,profile_name
+from prevex_hmi.profiles import PROFILES,profile_for,commands_for,profile_name,series_for,normalize_selection
 from prevex_hmi.profiles.common import COMMANDS
 from prevex_hmi.profiles.gauges import GAUGE_REGISTERS,precision,gauges_for
 from prevex_hmi.security.users import UserStore
@@ -70,6 +71,8 @@ class MainWindow(QMainWindow):
 
     def __init__(self,settings,settings_path:Path,data_path:Path,*,start_worker=False,hardware_grant=None):
         super().__init__()
+        from prevex_hmi.devices.configuration import normalize_profiles
+        settings=normalize_profiles(copy.deepcopy(settings))
         self.settings,self.settings_path,self.data_path=settings,settings_path,data_path
         self.hardware_grant=hardware_grant
         self.worker=None;self.snapshot=None;self.identity={};self.diagnostics={}
@@ -482,7 +485,7 @@ class MainWindow(QMainWindow):
     def selected_library_profile(self):
         active=DeviceConfig(**self.snapshot['config']) if self.snapshot else self.config
         selection=self.profile_selector.currentData()
-        matches=selection in ('connected',profile_name(active))
+        matches=selection in ('connected',active.family,profile_name(active))
         return (active if matches else library_config(selection)),matches
 
     def use_library_profile(self):
@@ -520,6 +523,7 @@ class MainWindow(QMainWindow):
     def build_diagnostics(self):
         layout=self.page('Diagnostics','One connection, serialized transactions. Raw traffic limited to500 frames; latest100 displayed.')
         self.diagnostics_summary=QLabel('Disconnected');self.diagnostics_summary.setWordWrap(True);layout.addWidget(self.diagnostics_summary)
+        export=QPushButton('Export Diagnostics JSON');export.setMaximumWidth(260);export.clicked.connect(self.export_diagnostics);layout.addWidget(export)
         self.simulation_controls=[]
         row=QHBoxLayout();self.fault_kind=QComboBox();self.fault_kind.addItems(['none','timeout','delay','crc','protocol','unknown_identity','ambiguous_command']);row.addWidget(self.fault_kind)
         fault=QPushButton('Apply simulated fault / recovery');fault.clicked.connect(lambda:self.request('fault',self.fault_kind.currentText()));row.addWidget(fault);layout.addLayout(row)
@@ -651,21 +655,19 @@ class MainWindow(QMainWindow):
         if self.profile_current:self.link_state='connecting'
         if self.profile_current:self.recording_identity=copy.deepcopy(info)
         if not self.profile_current and not info.get('test_only'):self.link_state='unknown'
-        if not self.profile_current and not info.get('test_only'):self.connection_screen.note.setText('Analyzer Type Unknown. Select a manual profile or review Diagnostics. Commands remain disabled until identification and compatibility checks pass.')
+        if not self.profile_current and not info.get('test_only'):self.connection_screen.note.setText('Analyzer Type Unknown. Select a manual profile or review Diagnostics. Commands remain disabled until identification checks pass.')
         if info.get('test_only'):self.test_result_info=info
         if info.get('config'):
             family=info['config']['family']
             config=DeviceConfig(**info["config"])
             if (family,profile_for(config).revision)!=self.snapshot_family:self.build_readouts(family,config)
-        firmware=info.get('version') or 'unavailable'
-        if info.get('version_provisional'):firmware+=f" (provisional; reported {info.get('reported_version')})"
+        firmware=info.get('version') or 'Unknown'
         detected=info.get('loaded_profile') if info.get('family') else 'UNKNOWN'
-        if info.get('register_revision')=='fta_4x':detected+=' (older-firmware register subset)'
         text=f"Selected: {info.get('selected_profile',self.settings['analyzer_selection'])} | Detected: {detected or info.get('family') or 'UNKNOWN'} | Assembly: {info.get('model') or 'unavailable'} | Software: {firmware} | Serial: {info.get('serial') or 'unavailable'} | Communication: {info.get('communication','not verified')}"
         if info.get('test_only'):text+=' | TEST ONLY: monitoring and controls remain inactive'
         self.identity_label.setText(text);self.warning.setText(info.get('warning',''));self.warning.setVisible(bool(info.get('warning')) and not self.test_view_active)
-        self.monitor_model.setText(info.get('text',''))
-        self.compatibility_notice.setText(('Analyzer profile mismatch - see Technical Details' if 'MISMATCH' in info.get('warning','') else 'Compatibility review required - see Technical Details') if info.get('warning') else '')
+        self.monitor_model.setText(f"{info.get('model') or 'Unknown'} | Series {series_for(config) if info.get('config') else 'Unknown'} | Firmware {firmware}")
+        self.compatibility_notice.setText(('Analyzer profile mismatch - see Technical Details' if 'MISMATCH' in info.get('warning','') else 'Identification requires review - see Technical Details') if info.get('warning') else '')
         self.operational_warning.clear();self.operational_warning.hide()
         self.sync_technical_details()
         self.inspect_register.clear()
@@ -679,7 +681,7 @@ class MainWindow(QMainWindow):
     def update_data(self,snapshot,diagnostics):
         if self.next_action or self.closing:return
         expected=self.identity.get('config')
-        if self.profile_current and expected and any(expected.get(key)!=snapshot['config'].get(key) for key in ('id','family','assembly','version','address','register_profile')):self.connection_lost()
+        if self.profile_current and expected and any(expected.get(key)!=snapshot['config'].get(key) for key in ('id','family','assembly','address','register_profile')):self.connection_lost()
         current=bool(snapshot['quality']=='GOOD' and snapshot.get('identity_current',self.profile_current))
         if not current and self.profile_current:self.connection_lost()
         if snapshot['quality']!='GOOD' or current and self.profile_current:self.recording_worker.observe({**snapshot,'identity':self.recording_identity.copy()})
@@ -719,7 +721,7 @@ class MainWindow(QMainWindow):
             value,unit=measurement(snapshot,n)
             if n in (38,39) and n in snapshot['raw']:
                 word=snapshot['raw'][n];signed=word-65536 if word&0x8000 else word
-                widget.setToolTip(f'Raw 0x{word:04X}; signed {signed}; documented engineering conversion.'+(' This legacy extreme word has no verified Peak sentinel rule; see Technical Details.' if config.register_profile=='fta_4x' and word==0x8001 else ''))
+                widget.setToolTip(f'Raw 0x{word:04X}; signed {signed}; documented engineering conversion.'+(' This legacy extreme word has no verified Peak sentinel rule; see Technical Details.' if profile_for(config).revision=='670' and word==0x8001 else ''))
             if n==1:
                 self.readout_retained=retained
                 style=f'color:{display_color("#e7b55e",self.settings.get("theme","dark")=="dark")};' if retained else ''
@@ -738,7 +740,7 @@ class MainWindow(QMainWindow):
             widget.setMinimumHeight(max(0,widget.heightForWidth(self.readout_container.card_width-14)))
         for container in self.readout_groups.values():container.refresh_height()
         value,unit=measurement(snapshot)
-        scope=tuple(snapshot['config'].get(k) for k in ('id','family','assembly','version','address','register_profile'))
+        scope=tuple(snapshot['config'].get(k) for k in ('id','family','assembly','address','register_profile'))
         if scope!=self.trend_scope:
             self.series.clear();self.display_trend.clear();self.last_sample=None;self.trend_scope=scope
         marker=(snapshot['last_success'],snapshot['quality'],value,retained)
@@ -755,7 +757,7 @@ class MainWindow(QMainWindow):
         self.overview_plot.setLabel('left','Measurement',units=unit if value is not None else '')
         self.trend_plot.setLabel('left','Measurement',units=unit if value is not None else '')
         stats=diagnostics['bus'];rate=stats['success_rate']
-        self.diagnostics_summary.setText(f"Single bus | {diagnostics['baud']} baud / 8N1 | Polls {stats['polls']} | Success {rate if rate is not None else '--'}% | Timeouts {stats['timeouts']} | CRC {stats['crc_errors']} | Protocol {stats['protocol_errors']}\nLast reply {stats['last_response']} | {stats['last_response_ms']:.2f} ms")
+        self.diagnostics_summary.setText(f"{family} | Series {series_for(config)} | {config.assembly} | Firmware {config.version or 'Unknown'}\nSingle bus | {diagnostics['baud']} baud / 8N1 | Polls {stats['polls']} | Success {rate if rate is not None else '--'}% | Timeouts {stats['timeouts']} | CRC {stats['crc_errors']} | Protocol {stats['protocol_errors']}\nLast reply {stats['last_response']} | {stats['last_response_ms']:.2f} ms")
         fill_table(self.traffic,[(r['time'],r['direction'],r['address'],r['register'],r['hex']) for r in diagnostics['traffic'][-100:]])
         self.sync_technical_details()
         self.update_command_buttons();self.received.emit()
@@ -864,16 +866,14 @@ class MainWindow(QMainWindow):
         if not current:reason='Commands unavailable: no current connection.'
         elif role not in ('Operator','Administrator'):reason='Sign in as Operator or Administrator. Viewer accounts cannot use commands.'
         elif physical and not bench and not documented:
-            reason='Read-only connection. Use Enable Acknowledge / Reset for the approved SNR671 bench session.' if self.command_bench_target_matches() else 'Read-only: operating commands are unverified for this firmware/profile.'
+            reason='Read-only connection. Use Enable Acknowledge / Reset for the approved SNR671 bench session.' if self.command_bench_target_matches() else 'Read-only: operating commands are unverified for this series/profile.'
         elif temporary:reason='Command transaction / short anti-repeat cooldown active.'
         elif control.get('pending'):reason='Verifying software lock through CAL LOCK [60].' if control.get('pending_kind')=='lock' else 'Command pending; waiting for STATUS evidence.'
         elif control.get('ambiguous'):reason='Command outcome unknown. Review state and reconnect; do not retry.'
         elif not control.get('verified'):reason='Commands unavailable: identity or selected profile is unresolved.'
         elif physical and documented:reason='Documented670 operating commands available. Each requires target confirmation. Save All requires Administrator.'
-        elif physical:reason='Acknowledge and Reset available. Other commands need applicable firmware documentation.'
+        elif physical:reason='Acknowledge and Reset available. Other commands need documented series capabilities.'
         else:reason='Simulator controls. Each command requires target confirmation.'
-        if physical and snapshot and snapshot['config'].get('register_profile')=='fta_4x':
-            reason+='\nFirmware4.81 uses the 5.12 register/command map by user instruction; hardware compatibility remains unverified.'
         self.command_access_note.setText(reason)
         enabled=bool(self.profile_current and self.connection_established and snapshot and snapshot['quality']=='GOOD' and control.get('verified') and not temporary and not control.get('pending') and not control.get('ambiguous') and role in ('Operator','Administrator') and not self.command_dispatching and self.worker and self.worker.isRunning() and (self.settings['mode']=='simulation' or bench or documented))
         locked=not enabled
@@ -909,8 +909,8 @@ class MainWindow(QMainWindow):
             if bool(allow)!=was_enabled and control.get('receipt'):
                 receipt=control['receipt'];self.command_timing.event('BUTTON_ENABLED' if allow else 'BUTTON_DISABLED',receipt.get('id'),code,request_code=receipt['code'])
             button.setToolTip('Verified simulator identity, current communication and Operator/Administrator session required')
-            if code not in commands_for(active_config):button.setToolTip('Legacy firmware command behavior is unverified.' if profile_for(active_config).revision=='fta_4x' else '700-series Rev D: Lock/Unlock have no effect over Modbus; Save Settings permits factory changes. Not available in operational controls.' if profile_for(active_config).revision=='700' else 'Not supported by the selected profile.')
-            if physical:button.setToolTip(('Real controller:670 Rev Q p90. Operator/Administrator login and explicit confirmation required.' if bench else 'Start the explicitly authorized command bench session to test Acknowledge/Reset.') if code in (0x100,0x200) else 'Unavailable for the current physical firmware/profile; see the command-readiness explanation above.')
+            if code not in commands_for(active_config):button.setToolTip('700-series Rev D: Lock/Unlock have no effect over Modbus; Save Settings permits factory changes. Not available in operational controls.' if profile_for(active_config).revision=='700' else 'Not supported by the selected profile.')
+            if physical:button.setToolTip(('Real controller:670 Rev Q p90. Operator/Administrator login and explicit confirmation required.' if bench else 'Start the explicitly authorized command bench session to test Acknowledge/Reset.') if code in (0x100,0x200) else 'Unavailable for the current physical series/profile; see the command-readiness explanation above.')
             if physical and code in documented:button.setToolTip('Documented670 command. Fresh identity/status/lock checks, target confirmation and audit required. Save All: Administrator only.')
         if temporary:self.command_message.setText('Command transaction / short anti-repeat cooldown active.')
         elif control.get('pending'):self.command_message.setText('Verifying software lock: waiting for CAL LOCK [60] readback. Command sent once; duplicate commands disabled.' if control.get('pending_kind')=='lock' else 'Command pending: waiting for STATUS evidence. Duplicate commands disabled.')
@@ -958,7 +958,7 @@ class MainWindow(QMainWindow):
         if self.users.resolve(self.session)[1]!='Administrator':return 'Sign in as Administrator to adjust settings. Other roles have read-only access.'
         if self.settings['mode']!='simulation':
             from prevex_hmi.communication.validated_controls import validated_670
-            if not validated_670(config):return 'Physical adjustments are unverified for this firmware/profile.'
+            if not validated_670(config):return 'Physical adjustments are unverified for this series/profile.'
         control=snapshot.get('control',{})
         if not control.get('verified') or control.get('pending') or control.get('transmitting') or time.monotonic()<control.get('cooldown_until',0) or control.get('ambiguous') or self.command_dispatching:return 'Identity unresolved or an action is pending/unknown.'
         elapsed=max(0,time.monotonic()-self.snapshot_received_at)
@@ -1005,7 +1005,7 @@ class MainWindow(QMainWindow):
         new_value,_=profile_for(config).register(number).decode(new_raw,config.family,config.context)
         if new_raw==raw:self.statusBar().showMessage('Value is unchanged.');return
         status=self.snapshot['raw'].get(2)
-        note='\nFirmware4.81 uses the5.12 map by your instruction; compatibility is not independently validated.' if physical and config.version=='4.81' else ''
+        note=''
         answer=QMessageBox.question(self,'Confirm parameter adjustment',f'Target: {config.name} / {config.assembly} / address {config.address}\n{title} [{number}]: {old_value} → {new_value} {unit}\nSTATUS {status}: {profile_for(config).status(status)}{note}\nApply this {"REAL CONTROLLER" if physical else "simulated"} change once? Fresh readback will be verified; SAVE ALL remains separate.',QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
         if answer!=QMessageBox.Yes:return
         reason=self.parameter_access_reason(key)
@@ -1097,6 +1097,16 @@ class MainWindow(QMainWindow):
     def update_history(self,rows):
         self.history_rows=rows;fill_table(self.history_table,rows)
         self.history_curve.setData([datetime.fromisoformat(r[0]).timestamp() for r in rows],[r[1] if r[1] is not None else float('nan') for r in rows])
+
+    def export_diagnostics(self):
+        path,_=QFileDialog.getSaveFileName(self,'Export Diagnostics','prevex-diagnostics.json','JSON (*.json)')
+        if not path:return
+        from prevex_hmi.devices.models import utc_now
+        identity=copy.deepcopy(self.identity or self.diagnostics.get('identity',{}))
+        report=dict(exported_at=utc_now(),connection_current=bool(self.profile_current and self.connection_established),firmware=identity.get('version') or 'Unknown',identity=identity,diagnostics=copy.deepcopy(self.diagnostics))
+        try:Path(path).write_text(json.dumps(report,indent=2,ensure_ascii=False),encoding='utf-8')
+        except OSError as error:QMessageBox.warning(self,'Diagnostic export failed',str(error));return
+        self.statusBar().showMessage('Diagnostic snapshot exported; firmware is informational.')
 
     def export_history(self):
         if not self.history_rows:QMessageBox.information(self,'History','Load history before exporting.');return
