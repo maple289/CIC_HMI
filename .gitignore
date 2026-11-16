@@ -9,3 +9,9 @@ tmp/
 *.sqlite3*
 *.log
 .coverage
+
+# Release secrets must stay outside the repository.
+*.pfx
+*.p12
+*.key
+*.private.pem

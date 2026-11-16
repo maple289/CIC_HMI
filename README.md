@@ -55,3 +55,7 @@ See [Interface and series guide](Docs/INTERFACE_AND_SERIES.md), [700-series manu
 ## Analyzer selection
 
 Auto Detect, LEL, BTU and FID are the functional choices. Internal650/670/690/700 definitions retain manufacturer-specific registers, conversions and restrictions. Firmware is informational. See [functional profile behavior and migration](Docs/FUNCTIONAL_PROFILES.md).
+
+## Protected Windows releases
+
+The existing development package remains available. Native-compiled protected one-file/one-folder builds, the custom icon, encoded About attribution, offline integrity checks and optional Windows certificate signing are documented in [Release protection and signing](Docs/RELEASE_PROTECTION.md). Build-only dependencies are in `requirements-release.txt`; signing certificates/private keys must stay outside Git. Current unsigned builds do not claim a verified Windows publisher.

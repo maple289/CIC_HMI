@@ -9,6 +9,7 @@ import time
 import uuid
 from dataclasses import replace
 from PySide6.QtCore import Qt,Signal,QTimer
+from PySide6.QtGui import QAction,QKeySequence,QShortcut,QIcon
 from PySide6.QtWidgets import QAbstractItemView,QComboBox,QDialog,QDoubleSpinBox,QFileDialog,QFrame,QGridLayout,QHBoxLayout,QHeaderView,QLabel,QListWidget,QMainWindow,QMessageBox,QPushButton,QScrollArea,QSpinBox,QStackedWidget,QTableWidget,QTableWidgetItem,QVBoxLayout,QWidget,QSizePolicy,QToolButton,QMenu,QTabWidget,QLayout,QStyle
 import pyqtgraph as pg
 from prevex_hmi.devices.configuration import save_settings
@@ -98,6 +99,12 @@ class MainWindow(QMainWindow):
         self.recording_worker.failed.connect(lambda text:self.statusBar().showMessage(text))
         self.recording_worker.finished.connect(lambda:self.close() if self.closing else None)
         self.setWindowTitle('PREVEX HMI | Single analyzer');self.setMinimumSize(1100,600)
+        from .branding import application_icon
+        self.setWindowIcon(application_icon())
+        help_menu=self.menuBar().addMenu('Help')
+        self.about_action=QAction('About PREVEX HMI',self);self.about_action.triggered.connect(self.show_about);help_menu.addAction(self.about_action)
+        self.about_shortcut=QShortcut(QKeySequence('Ctrl+Alt+Shift+A'),self)
+        self.about_shortcut.setContext(Qt.ApplicationShortcut);self.about_shortcut.activated.connect(self.show_about)
         # Qt logical pixels: respect the work area and native frame at high DPI.
         available=self.screen().availableGeometry();frame=2*self.style().pixelMetric(QStyle.PM_DefaultFrameWidth)
         self.resize(min(1540,available.width()-frame),min(1020,available.height()-self.style().pixelMetric(QStyle.PM_TitleBarHeight)-frame))
@@ -150,6 +157,16 @@ class MainWindow(QMainWindow):
     def resizeEvent(self,event):
         super().resizeEvent(event)
         if hasattr(self,'hero'):self.update_display_density()
+
+    def show_about(self):
+        from .about import AboutDialog
+        try:dialog=AboutDialog(self)
+        except ValueError:
+            import logging
+            logging.exception('attribution_integrity_failed')
+            QMessageBox.critical(self,'Software integrity error','Developer information could not be verified. Use a verified distribution. Existing monitoring continues; no analyzer action was requested.')
+            return
+        dialog.exec()
 
     def update_display_density(self):
         # Use Qt logical client space, not physical pixels or a second DPI
@@ -477,7 +494,10 @@ class MainWindow(QMainWindow):
         self.setting_group=QComboBox();self.setting_group.addItem('All menus')
         self.setting_group.currentTextChanged.connect(lambda _:self.refresh_profile_settings())
         layout.addWidget(self.setting_group)
-        self.settings_table=table(['Register','Menu','Parameter','Raw','Value','Units','Documented access','Restrictions / reference'])
+        self.settings_table=table(['Register','Menu','Parameter','Raw','Value','Units','Documented access'])
+        header=self.settings_table.horizontalHeader();header.setMinimumSectionSize(48)
+        for index,width in enumerate((76,140,180,85,100,85,145)):self.settings_table.setColumnWidth(index,width)
+        for index in (1,2,4,6):header.setSectionResizeMode(index,QHeaderView.Stretch)
         self.settings_table.setSelectionBehavior(QAbstractItemView.SelectRows);layout.addWidget(self.settings_table)
         self.read_setting_button=QPushButton('Read selected setting (FC03)');self.read_setting_button.clicked.connect(self.read_setting);layout.addWidget(self.read_setting_button)
         self.profile_selector.currentIndexChanged.connect(lambda _:self.refresh_profile_settings())
@@ -512,8 +532,12 @@ class MainWindow(QMainWindow):
             if not r.safe_read or n>=257 or r.access=='command':continue
             if self.setting_group.currentText() not in ('All menus',r.category):continue
             value,unit=measurement(self.snapshot,n) if self.snapshot and matches else (None,r.unit)
-            rows.append((n,r.category,r.name,self.snapshot['raw'].get(n,'--') if self.snapshot and matches else '--',str(value) if value is not None else '--',unit if value is not None else r.unit,r.access,r.restrictions+' | '+r.source))
+            rows.append((n,r.category,r.name,self.snapshot['raw'].get(n,'--') if self.snapshot and matches else '--',str(value) if value is not None else '--',unit if value is not None else r.unit,r.access))
         fill_table(self.settings_table,rows)
+        # Retain reference/restriction information on the existing row items.
+        for row in range(self.settings_table.rowCount()):
+            register=profile.register(int(self.settings_table.item(row,0).text()))
+            for column in (2,6):self.settings_table.item(row,column).setToolTip(register.restrictions+' | '+register.source)
 
     def read_setting(self):
         if not self.read_setting_button.isEnabled():return

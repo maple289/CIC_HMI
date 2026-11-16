@@ -1,0 +1,59 @@
+name: Protected Release
+on:
+  workflow_dispatch:
+    inputs:
+      layout:
+        description: Windows package layout
+        type: choice
+        options: [onefile, onedir]
+        default: onefile
+permissions:
+  contents: read
+jobs:
+  protected:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: '1'
+      RELEASE_LAYOUT: ${{ inputs.layout }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install local build environment
+        run: |
+          python -m venv .venv
+          .venv/Scripts/python.exe -m pip install -r requirements-lock.txt -r requirements-release.txt
+          .venv/Scripts/python.exe -m pip check
+      - name: Run source tests without hardware
+        run: .venv/Scripts/python.exe -m pytest -q --junitxml=tmp/protected-tests.xml
+      - name: Compile and package unsigned protected release
+        run: .venv/Scripts/python.exe scripts/build_release.py --kind protected --layout $env:RELEASE_LAYOUT --compiler msvc --output dist/protected-ci
+      - name: Audit and test packaged application
+        run: |
+          $exe = if ($env:RELEASE_LAYOUT -eq 'onefile') { "$PWD/dist/protected-ci/PREVEX-HMI.exe" } else { "$PWD/dist/protected-ci/PREVEX-HMI/PREVEX-HMI.exe" }
+          .venv/Scripts/python.exe scripts/audit_release.py $exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $app = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', '--data-dir', "$PWD/tmp/protected-smoke") -WindowStyle Hidden -PassThru -Wait
+          if ($app.ExitCode -ne 0) { exit $app.ExitCode }
+          .venv/Scripts/python.exe scripts/release_integrity.py verify dist/protected-ci --manifest dist/protected-ci/release-manifest.json
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: protected-release-evidence
+          path: |
+            tmp/protected-tests.xml
+            tmp/protected-smoke/smoke-report.json
+            build/protected-*/native-report.xml
+            build/protected-*/build-result.json
+      - name: Upload unsigned protected release
+        uses: actions/upload-artifact@v4
+        with:
+          name: PREVEX-HMI-protected-${{ inputs.layout }}
+          path: dist/protected-ci/
+          retention-days: 14

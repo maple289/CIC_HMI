@@ -13,7 +13,6 @@ from PySide6.QtCore import QStandardPaths, QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from prevex_hmi.devices.configuration import load_settings
-from prevex_hmi.gui.window import MainWindow
 
 
 class JsonFormatter(logging.Formatter):
@@ -29,6 +28,7 @@ def main() -> int:
     parser=argparse.ArgumentParser(description="PREVEX HMI - one active analyzer. Physical access remains gated pending authorization.")
     parser.add_argument("--data-dir",type=Path,help="Override the user-writable data directory")
     parser.add_argument("--smoke-test",action="store_true",help="Run offscreen monitoring checks and exit")
+    parser.add_argument('--verify-installation',action='store_true',help='Verify protected components offline and exit without opening data or serial ports')
     parser.add_argument('--ui-scale',type=int,choices=(75,85,100),help='Override application size for this launch; Windows scaling is unchanged')
     parser.add_argument('--read-only-com4',action='store_true',help='Explicitly authorize the tested COM4/9600/address1 SNR671 read-only bench session')
     parser.add_argument('--controller-com4-bench',action='store_true',help='Authorized SNR671 COM4 bench monitoring with confirmed Operator ACK/RESET only')
@@ -43,6 +43,20 @@ def main() -> int:
     app.setProperty('launchSize',launch_size)
     app.setApplicationName("PREVEX HMI")
     app.setOrganizationName("CIC")
+    from prevex_hmi.security.integrity import verify_startup,IntegrityError
+    try:integrity=verify_startup()
+    except IntegrityError as error:
+        logging.critical('software_integrity_failed: %s',error)
+        if not (args.smoke_test or args.verify_installation):
+            QMessageBox.critical(None,'Software integrity error',str(error)+'\nNo analyzer connection was started. Obtain a verified distribution. Existing operator data was preserved.')
+        return 3
+    if args.verify_installation:
+        print(json.dumps(integrity));return 0
+    from prevex_hmi.gui.branding import application_icon
+    app.setWindowIcon(application_icon())
+    if sys.platform=='win32':
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('PREVEX.HMI.1')
     from prevex_hmi.gui.fonts import configure_application_font,display_diagnostics
     configure_application_font(app)
     if args.smoke_test and args.data_dir is None:
@@ -69,6 +83,7 @@ def main() -> int:
         from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant,controller_bench_settings
         grant=ReadOnlyControllerGrant(operator_commands=args.controller_com4_bench)
         settings=controller_bench_settings(settings)
+    from prevex_hmi.gui.window import MainWindow
     window=MainWindow(settings,settings_path,data_path,start_worker=bool(args.smoke_test or grant),hardware_grant=grant)
     window.show()
     logging.info('display_configuration',extra={'detail':display_diagnostics(app,window)})
