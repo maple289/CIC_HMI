@@ -28,7 +28,7 @@ Known670 assemblies retain their existing scoped physical controls/settings for 
 
 ## Saved settings and recordings
 
-Old selections LEL670Series/LEL700Series normalize to LEL, with the former simulation generation preserved. The old fta_4x key is accepted for migration and normalized to670; no separate legacy runtime profile remains. Instrument ID, name/model, connection/addressing settings, ranges, logging preferences and per-series recording selections are preserved. Selecting a family does not replace a saved physical instrument with a generic model. Both670 and700 simulation choices remain available.
+Old selections LEL670Series/LEL700Series normalize to LEL, with the former simulation generation preserved. The old fta_4x key is accepted for migration and normalized to670; no separate legacy runtime profile remains. Instrument ID, name/model, connection/addressing settings, ranges, logging preferences and per-series recording selections are preserved. Selecting a family does not replace a saved physical instrument with a generic model. Both670 and700 simulation definitions remain available only to the explicit source/development harness. Operator settings migrate older simulation mode to disconnected hardware without discarding the endpoint or historical databases; production has no simulation choice.
 
 Recording keys retain their existing per-series names, so saved recording parameter preferences and historical SQLite sessions remain readable. No database schema or historical data migration is required.
 

@@ -3,9 +3,10 @@ from dataclasses import asdict
 import csv,json
 import pytest
 from prevex_hmi.logging_db.recordings import recording_parameters,normalize_selections,EXCLUDED_RECORDING_PARAMETERS,sessions,export_csv,history_series
-from prevex_hmi.devices.configuration import load_settings,save_settings
+from prevex_hmi.devices.configuration import save_settings
+from dev_support import load_settings
 from prevex_hmi.gui.profile_library import library_config
-from prevex_hmi.gui.window import MainWindow
+from dev_support import MainWindow
 from test_recording_sessions import recorder,sample,stamp
 from test_monitoring import app
 

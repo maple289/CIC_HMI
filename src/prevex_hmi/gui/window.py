@@ -70,10 +70,14 @@ def fill_table(widget,rows):
 class MainWindow(QMainWindow):
     received=Signal()
 
-    def __init__(self,settings,settings_path:Path,data_path:Path,*,start_worker=False,hardware_grant=None):
+    def __init__(self,settings,settings_path:Path,data_path:Path,*,start_worker=False,hardware_grant=None,simulation_authorized=False):
         super().__init__()
         from prevex_hmi.devices.configuration import normalize_profiles
         settings=normalize_profiles(copy.deepcopy(settings))
+        from prevex_hmi.runtime_policy import simulation_allowed
+        from prevex_hmi.devices.configuration import operator_settings
+        self.simulation_authorized=simulation_allowed(simulation_authorized)
+        if not self.simulation_authorized:settings=operator_settings(settings)
         self.settings,self.settings_path,self.data_path=settings,settings_path,data_path
         self.hardware_grant=hardware_grant
         self.worker=None;self.snapshot=None;self.identity={};self.diagnostics={}
@@ -548,26 +552,15 @@ class MainWindow(QMainWindow):
         layout=self.page('Diagnostics','One connection, serialized transactions. Raw traffic limited to500 frames; latest100 displayed.')
         self.diagnostics_summary=QLabel('Disconnected');self.diagnostics_summary.setWordWrap(True);layout.addWidget(self.diagnostics_summary)
         export=QPushButton('Export Diagnostics JSON');export.setMaximumWidth(260);export.clicked.connect(self.export_diagnostics);layout.addWidget(export)
-        self.simulation_controls=[]
-        row=QHBoxLayout();self.fault_kind=QComboBox();self.fault_kind.addItems(['none','timeout','delay','crc','protocol','unknown_identity','ambiguous_command']);row.addWidget(self.fault_kind)
-        fault=QPushButton('Apply simulated fault / recovery');fault.clicked.connect(lambda:self.request('fault',self.fault_kind.currentText()));row.addWidget(fault);layout.addLayout(row)
-        row=QHBoxLayout();self.forced_value=QDoubleSpinBox();self.forced_value.setRange(-10000,32000);self.forced_value.setDecimals(3);self.forced_value.setValue(-20);row.addWidget(self.forced_value)
-        force=QPushButton('Set simulated reading');force.clicked.connect(lambda:self.request('reading',self.forced_value.value()));row.addWidget(force)
-        dynamic=QPushButton('Resume dynamic readings');dynamic.clicked.connect(lambda:self.request('reading',None));row.addWidget(dynamic);layout.addLayout(row)
-        row=QHBoxLayout();self.forced_status=QSpinBox();self.forced_status.setRange(0,255);row.addWidget(self.forced_status)
-        status=QPushButton('Set simulated STATUS');status.clicked.connect(lambda:self.request('status',self.forced_status.value()));row.addWidget(status)
-        dynamic_status=QPushButton('Resume dynamic status');dynamic_status.clicked.connect(lambda:self.request('status',None));row.addWidget(dynamic_status);layout.addLayout(row)
-        for controls in (self.fault_kind,self.forced_value,self.forced_status,fault,force,dynamic,status,dynamic_status):self.simulation_controls.append(controls)
         row=QHBoxLayout();self.inspect_register=QComboBox();row.addWidget(self.inspect_register)
-        inspect=QPushButton('Inspect register (FC03)');inspect.clicked.connect(lambda:self.request('inspect',self.inspect_register.currentData()));row.addWidget(inspect)
+        self.inspect_button=QPushButton('Inspect register');self.inspect_button.clicked.connect(lambda:self.request('inspect',self.inspect_register.currentData()));row.addWidget(self.inspect_button)
         self.inspection_result=QLabel('No manual read');row.addWidget(self.inspection_result,1);layout.addLayout(row)
-        self.traffic=table(['UTC timestamp','Direction','Address','Register','Hexadecimal bytes']);layout.addWidget(self.traffic)
+        self.traffic=table(['UTC timestamp','Direction','Address','Register','Hexadecimal bytes']);layout.addWidget(self.traffic,1)
 
     def refresh_connection_labels(self):
         c=self.settings['connection'];d=self.config
         self.selection_label.setText(f"{self.settings['analyzer_selection']} | Address {d.address} | {c['baud']} baud / 8N1 | {self.settings['mode'].upper()}")
         self.banner.setText('SIMULATION MODE | One synthetic instrument | No physical port open' if self.settings['mode']=='simulation' else ('LIVE CONTROLLER BENCH TEST | ACK/RESET require confirmation | Sensor assembly disconnected' if self.hardware_grant.operator_commands else 'LIVE CONTROLLER BENCH TEST | READ ONLY | Sensor assembly disconnected') if self.hardware_grant else f'LIVE HARDWARE | READ ONLY | {c["port"] or "Select a serial port"}')
-        for widget in self.simulation_controls:widget.setEnabled(self.settings['mode']=='simulation')
         self.refresh_connection_view()
 
     def invalidate(self,reason='Disconnected'):
@@ -619,7 +612,7 @@ class MainWindow(QMainWindow):
 
     def set_connection_buttons(self,enabled):
         for button in (self.choose_button,self.connect_button,self.test_button,self.connection_screen.connect_button,self.connection_screen.test_button,self.connection_screen.settings_button):button.setEnabled(enabled)
-        for control in (self.connection_screen.mode,self.connection_screen.port,self.connection_screen.baud,self.connection_screen.address,self.connection_screen.profile):control.setEnabled(enabled)
+        for control in (self.connection_screen.port,self.connection_screen.baud,self.connection_screen.address,self.connection_screen.profile):control.setEnabled(enabled)
         if enabled:
             self.connection_screen.port.setEnabled(self.settings['mode']=='hardware');self.connection_screen.baud.setEnabled(self.settings['mode']=='hardware')
 
@@ -633,7 +626,7 @@ class MainWindow(QMainWindow):
                 if test_only:self.finish_connection_test()
                 return
         worker_grant=replace(self.hardware_grant,operator_commands=False) if test_only and self.hardware_grant else self.hardware_grant
-        self.worker=MonitoringWorker(copy.deepcopy(self.settings),self.data_path,self,test_only=test_only,hardware_grant=worker_grant)
+        self.worker=MonitoringWorker(copy.deepcopy(self.settings),self.data_path,self,test_only=test_only,hardware_grant=worker_grant,simulation_authorized=self.simulation_authorized)
         owner=self.worker
         def current():return self.worker is owner and not self.next_action and not self.closing
         self.worker.updated.connect(lambda snapshot,diagnostics:self.update_data(snapshot,diagnostics) if current() else None);self.worker.identified.connect(lambda info:self.identification_result(info) if current() else None)

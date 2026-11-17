@@ -4,9 +4,9 @@
 
 Offline Windows monitoring for CIC PREVEX LEL, BTU and FID analyzers. Development in progress; physical-device compatibility is unverified. The initial physical transport will remain read-only. No hardware access is part of automated testing.
 
-**Serial-port access:** the user has authorized read-only connections on all available serial ports. Choose Hardware and an available port, then use Connect or Test Connection without additional authorization prompts or launch flags. Only the selected port is opened. Operating writes require the supported, individually confirmed command workflow below.
+**Serial-port access:** the user has authorized read-only connections on all available serial ports. Choose an available port, then use Connect or Test Connection without additional authorization prompts or launch flags. Only the selected port is opened. Operating writes require the supported, individually confirmed command workflow below.
 
-**Operating controls:** the user subsequently approved documented commands for validated firmware. Recognized LEL6705.12-5.x instruments now expose the full documented command set after sign-in, with individual confirmation and fresh identity/lock/status checks. SAVE ALL requires Administrator. The provisional4.81 controller remains limited to its existing Acknowledge/Reset exception; the supplied manual explicitly covers5.12+, so its additional commands/lock behavior remain unverified. See [command readiness](Docs/COMMAND_READINESS.md).
+**Operating controls:** supported670 actions require sign-in, individual confirmation and fresh identity/lock/status checks; SAVE ALL requires Administrator. Firmware is informational under the user's manufacturer-confirmation policy.700/BTU/FID physical writes remain unvalidated. See [command readiness](Docs/COMMAND_READINESS.md) and [verification gates](Docs/VERIFICATION.md).
 
 ## Development environment
 
@@ -28,29 +28,20 @@ Activation is optional; these commands work without enabling PowerShell scripts.
 - [Complete per-family inventory and statuses](Docs/REGISTER_TABLES.md)
 - [Ambiguities and pending hardware checks](Docs/VERIFICATION.md)
 - [Progress, test evidence and next steps](PROGRESS.md)
-- [Launch, simulation operation and Windows build](Docs/OPERATING.md)
+- [Launch, hardware operation and Windows build](Docs/OPERATING.md)
 
 Manufacturer PDFs in `Docs/` are the authority for analyzer behavior. The new full [LEL700 Rev D review](Docs/LEL_700_REVIEW.md) explains differences from the legacy LEL extract. Simulator assumptions must never be presented as proof of physical compatibility.
 
 ## Continuous integration
 
 GitHub Actions runs on pushes to `main`, pull requests and manual dispatch. The Windows/Python 3.12 job installs pinned dependencies, checks their consistency, compiles Python files, runs pytest, checks generated register tables and renders both setup and monitoring GUI smoke tests. Test reports and smoke-test images are retained as workflow artifacts for 14 days. CI requires Internet for dependency installation; normal HMI operation does not.
-## Current preview
+## Current application
 
-One active analyzer and one polling connection. **Choose Analyzer Type** offers Auto Detect, LEL, BTU and FID. New installations simulate a700-series LEL analyzer using the full Rev D manual; legacy LEL simulation remains selectable. The Gauge page has a signed circular scale, manufacturer-specific digital readouts, status/relay/service indicators and a confirmed command panel. Local Viewer/Operator/Administrator checks and command audit records protect simulator controls.
+One active analyzer and one serialized polling connection. **Choose Analyzer Type** offers Auto Detect, LEL, BTU and FID. Normal startup is disconnected and hardware-only; use **Connect to Analyzer** or **Test Connection** with the selected enumerated port. The dashboard appears after identification and live acquisition. Firmware is informational; actual model/series selects the register definitions.
 
-Physical connections and writes remain disabled. Test Connection identifies the simulated unit without enabling controls. Live/history trends, CSV export, diagnostics, fault injection and SQLite recording remain available. See [operating instructions](Docs/OPERATING.md) and [replacement specification](Docs/SINGLE_ANALYZER_SPECIFICATION.md).
+Monitor, Service and Diagnostics retain the signed gauge, compact readings, active indicators, confirmed command/setting workflows and audit. Trend, recording, historical sessions and CSV export remain in the independent Trend window and are accessible offline. Simulator controls and simulation source choices are absent from the operator UI; development testing retains the explicit harness described in [SIMULATOR.md](Docs/SIMULATOR.md).
 
-## Authorized real SNR671 bench session
-
-Open the application normally and click **Connect SNR671 / COM4** for the previously authorized legacy controller. The command-line alternatives remain `scripts/launch_controller_bench.cmd` or `PREVEX-HMI.exe --controller-com4-bench`: COM4,9600/8N1,address1, monitoring plus only confirmed Operator/Admin Acknowledge and Reset. Other physical writes remain blocked. See [bench evidence and command-result display](Docs/SNR671_BENCH.md). Use the read-only launcher when commands are not required. Close an existing bench instance before launching another.
-# Interface and LEL series update (2026-10-24)
-
-The single-analyzer HMI now offers Auto Detect, **LEL 670 Series**, **LEL 700 Series**, BTU and FID, plus an enumerated serial-port dropdown with Refresh. Compact digital cards and active indicators accompany a red/green Connection Status display. The main gauge has a four-second display-only hold; retained readings never become new historian or command-input samples.
-
-Raised command buttons have individual three-second acknowledgment LEDs. Documented calibration/test commands are exercised in simulation, with execution tracked separately through STATUS and the audit log. Physical access still defaults to read-only; the previously authorized SNR671/COM4 exception remains limited to confirmed Operator/Administrator Acknowledge and Reset. Real 700-series controls are disabled pending hardware validation. SNR673 behavior is undocumented and is not claimed as supported.
-
-See [Interface and series guide](Docs/INTERFACE_AND_SERIES.md), [700-series manual review](Docs/LEL_700_REVIEW.md), and [verification gates](Docs/VERIFICATION.md). Profile settings provides read-only access to documented parameters and restrictions. BTU/FID register definitions and conversions remain unchanged.
+Physical connections default to read-only. Separately authorized670 controls retain fresh identity/status/lock checks, sign-in and per-action confirmation; SAVE ALL requires Administrator.700/BTU/FID physical writes remain unvalidated and prohibited registers remain blocked. Historical scoped bench results are documented in [verification gates](Docs/VERIFICATION.md), not alternative production launch instructions. See [operating instructions](Docs/OPERATING.md) and [command readiness](Docs/COMMAND_READINESS.md).
 
 ## Analyzer selection
 
@@ -59,3 +50,7 @@ Auto Detect, LEL, BTU and FID are the functional choices. Internal650/670/690/70
 ## Protected Windows releases
 
 The existing development package remains available. Native-compiled protected one-file/one-folder builds, the custom icon, encoded About attribution, offline integrity checks and optional Windows certificate signing are documented in [Release protection and signing](Docs/RELEASE_PROTECTION.md). Build-only dependencies are in `requirements-release.txt`; signing certificates/private keys must stay outside Git. Current unsigned builds do not claim a verified Windows publisher.
+
+## Hardware-only operator interface
+
+The operator application offers Auto Detect/LEL/BTU/FID and starts disconnected. Simulation source/injection controls have been removed. Valid older simulation preferences migrate to hardware without discarding saved connection settings or historical recordings. The protected release rejects developer simulator/bench flags; source tests use an explicit development harness. See [release procedures](Docs/RELEASE_PROTECTION.md).

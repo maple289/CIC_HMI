@@ -1,5 +1,30 @@
 # Simulator and transport limits
 
+## Development-only use (2026-11-16)
+
+Simulation is no longer an operator mode. Diagnostics, Connection Settings and
+Choose Analyzer Type provide no simulation controls. Saved simulation preferences
+migrate to disconnected hardware mode without discarding the selected serial
+endpoint or existing historical databases. Historical simulation recordings retain
+their provenance and remain accessible for viewing, backup and export.
+
+The source/development build supports an explicit isolated check:
+
+```powershell
+.venv/Scripts/python.exe scripts/run_hmi.py --smoke-test --data-dir tmp/development-simulation
+```
+
+Source tests use `tests/dev_support.py` to explicitly authorize the in-memory
+transport. Other callers must opt in through `allow_simulation=True` when loading
+test settings and `simulation_authorized=True` when constructing a worker/window.
+The protected native build has a compiled production policy: it rejects that
+transport even with the constructor flag, and does not expose the simulator CLI.
+Its `--production-smoke-test --data-dir tmp/production-startup` checks disconnected
+hardware-only startup without creating a monitoring worker or opening a port.
+Neither automated check sends real analyzer commands.
+
+## Test model
+
 The desktop application owns one active analyzer and one serialized polling session. The reusable in-memory bus can still emulate multiple devices for library regression tests, including16-device backoff/isolation. It opens no COM port, socket or virtual serial driver.
 
 Profiles cover legacy LEL, Rev D700 LEL, BTU and FID independently.700 LEL returns blanks for removed257+ identification and exposes numeric62/40/63/65 identity. Gauge parameters and relay/service/status maps depend on model/revision. FID UNITS remain explicit context; BTU units remain unverified. Simulated PDU offset is configured, not hardware evidence.
@@ -10,6 +35,6 @@ Confirmed, permission-checked simulator commands use the same BusEngine transact
 
 The simulator does not reproduce all hardware latches, interlocks, input priorities, pressure-monitor options or failure combinations. It is a test model, not proof of physical compatibility. Real calibration/test commands may suppress alarms or move gas valves; hardware safety remains independent.
 
-The PyModbus/PySerial physical adapter remains read-only, with retries0 and configurable timeout(default0.5s). The GUI blocks physical mode before opening a port. FID lacks a complete protocol specification;700 page/address/timing questions are also unresolved. No generic physical write API exists. Adapter tests use fake clients only.
+The default PyModbus/PySerial physical adapter is read-only, with retries0 and configurable timeout(default0.5s). The operator can explicitly connect the selected enumerated port; startup does not connect automatically. Separately authorized670 controls retain identity, role, confirmation, lock, busy, pacing, readback/audit and no-retry restrictions.700/BTU/FID physical writes remain unvalidated; prohibited writes remain blocked. No generic register-write bypass exists. Simulator/fake-adapter tests do not validate physical protocol applicability; consult VERIFICATION.md for the distinct read-only hardware evidence.
 
 Tests cover independent exact factors, signed words, model/revision identities, enum/bit decoding, documented read windows, forbidden registers/commands, active profile switching, stale/offline GUI state, roles/password hashing, duplicate/ambiguous command handling, audit trails, total bus pacing, serialized ownership, fault backoff/recovery and packaging smoke tests. None validates electrical RS485, USB-converter timing or real firmware behavior.

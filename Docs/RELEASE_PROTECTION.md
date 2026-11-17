@@ -17,7 +17,7 @@ Use the existing project `.venv` (Python 3.12 x64); do not install system tools:
 .venv/Scripts/python.exe -m PyInstaller --noconfirm build_windows.spec
 
 # Protected portable EXE (default), or use --layout onedir:
-.venv/Scripts/python.exe scripts/build_release.py --kind protected --layout onefile --output dist/protected-release
+.venv/Scripts/python.exe scripts/build_release.py --kind protected --layout onefile --output dist/production-release
 .venv/Scripts/python.exe scripts/build_release.py --kind protected --layout onedir --output dist/protected-onedir
 
 # Development one-file is also supported:
@@ -40,6 +40,53 @@ With an already installed MSVC compiler, use `--compiler msvc`. Compilation uses
 four jobs by default (`--jobs N` adjusts this). Compiler/update access is build-time
 only; Nuitka update checking is disabled. Build reports are outside the artifact.
 If evaluating a new Python/Qt/compiler version, repeat the tests before release.
+
+## Hardware-only operator release (2026-11-16)
+
+Normal startup is disconnected and hardware-only. The operator UI has no simulation
+source selector, simulator generation/FID-scale fields, fault/reading/STATUS injection
+controls or associated GUI handlers. Auto Detect/LEL/BTU/FID remain available. Diagnostics
+keeps its summary/export controls, then the read-only **Inspect register** row, then
+an expanding Modbus traffic table. Removing the FC03 suffix changes only the label;
+the implementation remains FC03 on the existing serialized worker.
+
+`load_settings()` now defaults to hardware preferences and migrates a valid legacy
+simulation configuration by changing only its source mode (plus existing profile-label
+normalization). Port/baud/address/timing/IDs/unit/display/recording preferences survive.
+No connection, command or measurement is started by loading preferences. Historical
+`simulation.sqlite3` recordings remain accessible with their original provenance;
+showing those old records is not a runtime simulation option.
+
+Protected staging bakes `runtime_policy.PRODUCTION=True` into the freshly compiled
+package. Both the worker's explicit test-transport opt-in and the simulator constructor
+reject simulation in this flavor. The protected CLI does not accept `--smoke-test` or
+the old development COM4 bench launch options. There is no environment/configuration
+switch to enable them. Shared simulator type definitions are retained where existing
+strict physical-write guards reference them; those guards were not relaxed to remove
+an internal type. No production simulator can be constructed or selected.
+
+The source/development build retains an explicit isolated test harness:
+
+```powershell
+.venv/Scripts/python.exe scripts/run_hmi.py --smoke-test --data-dir tmp/development-simulation
+```
+
+Development tests use `tests/dev_support.py`, `load_settings(..., allow_simulation=True)`
+and explicit `simulation_authorized=True` constructors. None of that test harness is
+included in the release. Production tests use the actual unwrapped operator classes.
+The simulator remains usable for source tests of all four series and command safety;
+no real commands are issued. The protected release instead supports this **disconnected**
+startup check (it never opens a serial port):
+
+```powershell
+./dist/production-release/PREVEX-HMI.exe --production-smoke-test --data-dir tmp/production-startup
+```
+
+That check verifies hardware-only/disconnected startup and the absence of simulator
+widgets. It does not substitute for real-analyzer acceptance. `--verify-installation`
+remains an offline resource check. Both operate with the bundled internal manifest;
+the external `release-manifest.json` is never a runtime dependency. Rebuild native code
+and both manifests after application changes; never reuse an older compiled application.
 
 ## Branding, attribution and the Service table
 
@@ -103,7 +150,7 @@ PEM signing key, the build helper can pin its public key into the native module
 and sign the bundled manifest:
 
 ```powershell
-.venv/Scripts/python.exe scripts/build_release.py --kind protected --layout onefile --output dist/protected-release --manifest-signing-key X:/private-release-keys/manifest.private.pem
+.venv/Scripts/python.exe scripts/build_release.py --kind protected --layout onefile --output dist/production-release --manifest-signing-key X:/private-release-keys/manifest.private.pem
 ```
 
 The helper rejects key paths inside this repository. An encrypted PEM can use
@@ -121,9 +168,9 @@ Keep a trusted raw32-byte public key/fingerprint separately; do not automaticall
 trust a key in the manifest itself.
 
 ```powershell
-.venv/Scripts/python.exe scripts/release_integrity.py create dist/protected-release --manifest dist/protected-release/release-manifest.json
+.venv/Scripts/python.exe scripts/release_integrity.py create dist/production-release --manifest dist/production-release/release-manifest.json
 # After obtaining an external signing key, add --signing-key X:/private-release-keys/manifest.private.pem
-.venv/Scripts/python.exe scripts/release_integrity.py verify dist/protected-release --manifest dist/protected-release/release-manifest.json
+.venv/Scripts/python.exe scripts/release_integrity.py verify dist/production-release --manifest dist/production-release/release-manifest.json
 # Signed verification requires --public-key X:/trusted-public-keys/release.pub
 ```
 
@@ -154,18 +201,18 @@ SignTool already available (normally the Windows SDK):
 ```powershell
 # Use the actual code-signing certificate thumbprint from CurrentUser/My.
 # This is the certificate selector; the file signature algorithm is SHA256.
-./scripts/Sign-Release.ps1 -Executable dist/protected-release/PREVEX-HMI.exe -CertificateThumbprint YOUR_40_HEX_CERTIFICATE_THUMBPRINT -SignTool 'C:/Program Files (x86)/Windows Kits/10/bin/SDK_VERSION/x64/signtool.exe' -TimestampUrl 'https://YOUR_CERTIFICATE_PROVIDERS_RFC3161_TIMESTAMP_ENDPOINT'
+./scripts/Sign-Release.ps1 -Executable dist/production-release/PREVEX-HMI.exe -CertificateThumbprint YOUR_40_HEX_CERTIFICATE_THUMBPRINT -SignTool 'C:/Program Files (x86)/Windows Kits/10/bin/SDK_VERSION/x64/signtool.exe' -TimestampUrl 'https://YOUR_CERTIFICATE_PROVIDERS_RFC3161_TIMESTAMP_ENDPOINT'
 
 # Equivalent direct signing command (also useful if local policy blocks .ps1 files):
-& 'C:/path/to/signtool.exe' sign /sha1 YOUR_40_HEX_CERTIFICATE_THUMBPRINT /fd SHA256 /tr 'https://YOUR_PROVIDERS_TIMESTAMP_ENDPOINT' /td SHA256 dist/protected-release/PREVEX-HMI.exe
+& 'C:/path/to/signtool.exe' sign /sha1 YOUR_40_HEX_CERTIFICATE_THUMBPRINT /fd SHA256 /tr 'https://YOUR_PROVIDERS_TIMESTAMP_ENDPOINT' /td SHA256 dist/production-release/PREVEX-HMI.exe
 # Do not change Windows/PowerShell security policy to run these procedures.
 
 # Independent verification of the final executable:
-& 'C:/path/to/signtool.exe' verify /pa /v dist/protected-release/PREVEX-HMI.exe
-Get-AuthenticodeSignature dist/protected-release/PREVEX-HMI.exe | Format-List Status,StatusMessage,SignerCertificate
+& 'C:/path/to/signtool.exe' verify /pa /v dist/production-release/PREVEX-HMI.exe
+Get-AuthenticodeSignature dist/production-release/PREVEX-HMI.exe | Format-List Status,StatusMessage,SignerCertificate
 
 # Regenerate (and optionally sign) the external release manifest LAST:
-.venv/Scripts/python.exe scripts/release_integrity.py create dist/protected-release --manifest dist/protected-release/release-manifest.json
+.venv/Scripts/python.exe scripts/release_integrity.py create dist/production-release --manifest dist/production-release/release-manifest.json
 ```
 
 Timestamping is recommended so a signature can remain verifiable after certificate
@@ -181,22 +228,22 @@ no trusted signature is claimed until signing and verification actually succeed.
 
 ```powershell
 .venv/Scripts/python.exe -m pytest -q --junitxml=tmp/test-results.xml
-.venv/Scripts/python.exe scripts/audit_release.py dist/protected-release/PREVEX-HMI.exe
+.venv/Scripts/python.exe scripts/audit_release.py dist/production-release/PREVEX-HMI.exe
 # No analyzer activity; status0 means resource checks passed:
-./dist/protected-release/PREVEX-HMI.exe --verify-installation
-# Isolated simulator checks only; never point at the real operator data directory:
-./dist/protected-release/PREVEX-HMI.exe --smoke-test --data-dir tmp/protected-smoke
+./dist/production-release/PREVEX-HMI.exe --verify-installation
+# Disconnected hardware-only check; use an isolated operator data directory:
+./dist/production-release/PREVEX-HMI.exe --production-smoke-test --data-dir tmp/protected-smoke
 ```
 
-Run the full source suite, native-package focused tests, all four simulator series,
+Run the full source suite with its explicit development harness, native production checks, all four source simulator series,
 light/dark About/menu/shortcut/table checks, tamper/missing-resource/signature tests,
-PE-icon/archive audits, both layouts and isolated CSV/recording smoke tests. Verify
+PE-icon/archive audits, hardware-only protected startup and isolated development CSV/recording tests. Verify
 using a pristine Windows x64 PC without Python before external deployment. Removing
 Python from PATH during local packaged testing is useful evidence but is not a
 substitute for acceptance on a physically separate clean Windows PC.
 
 A manual `Protected Release` GitHub workflow is provided; it does not replace the
-existing development CI. It builds unsigned artifacts, runs simulation and never
+existing development CI. It builds unsigned artifacts, checks disconnected production startup and never
 contains signing credentials. Certificates can be applied later on the authorized
 signing workstation.
 

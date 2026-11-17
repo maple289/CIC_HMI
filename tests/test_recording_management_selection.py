@@ -3,8 +3,8 @@ from PySide6.QtCore import Qt,QItemSelectionModel
 from PySide6.QtGui import QColor,QPalette
 from PySide6.QtWidgets import QApplication,QAbstractItemView
 import pytest
-from prevex_hmi.gui.window import MainWindow
-from prevex_hmi.devices.configuration import load_settings
+from dev_support import MainWindow
+from dev_support import load_settings
 from prevex_hmi.logging_db.recordings import RecordingStore
 from test_recording_sessions import sample,stamp
 from test_monitoring import app,until

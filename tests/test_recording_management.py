@@ -9,8 +9,8 @@ from prevex_hmi.logging_db.maintenance import RecordingManagement,Busy,gate_for,
 from prevex_hmi.logging_db.recordings import RecordingStore,sessions,history_series,export_csv
 from prevex_hmi.logging_db.recorder import Recorder
 from prevex_hmi.security.users import UserStore
-from prevex_hmi.devices.configuration import load_settings
-from prevex_hmi.gui.window import MainWindow
+from dev_support import load_settings
+from dev_support import MainWindow
 from test_monitoring import app,until
 from test_recording_sessions import sample,stamp
 

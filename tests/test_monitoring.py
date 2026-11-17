@@ -9,10 +9,11 @@ import pytest
 from PySide6.QtWidgets import QApplication,QDialog,QDialogButtonBox
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from prevex_hmi.devices.configuration import default_devices,load_settings,save_settings
+from prevex_hmi.devices.configuration import default_devices,save_settings
+from dev_support import load_settings
 from prevex_hmi.devices.models import DeviceConfig
 from prevex_hmi.gui.presentation import format_reading,measurement,severity
-from prevex_hmi.gui.window import MainWindow
+from dev_support import MainWindow
 from prevex_hmi.gui.connection_dialog import AnalyzerChoice
 from prevex_hmi.profiles import PROFILES
 from prevex_hmi.profiles.gauges import GAUGE_REGISTERS,gauges_for
@@ -80,54 +81,39 @@ def test_choice_has_five_options_and_preserves_manual_range(app,tmp_path):
     dialog.close()
 
 
-def test_chooser_clicks_select_matching_simulator_and_confirms_ok(app,tmp_path):
-    settings=load_settings(tmp_path/'settings.json')
-    settings.update(analyzer_selection='LEL',simulated_family='FID')
-    settings['devices']=[asdict(next(d for d in default_devices() if d.family=='FID'))]
+def test_chooser_keeps_hardware_profiles_and_has_no_simulator_controls(app,tmp_path):
+    settings=load_settings(tmp_path/'settings.json');original=copy.deepcopy(settings['devices'][0])
     dialog=AnalyzerChoice(settings);dialog.show();app.processEvents()
     try:
-        assert dialog.name.text()=='LEL - Process line 1'
-        assert dialog.sim_family.currentText()=='LEL'
-        assert not dialog.units.isVisible() and not dialog.fullscale.isVisible()
-        assert dialog.assembly.text()=='SNR705'
-        for family,index,prefix in [('FID',3,'SNR65'),('BTU',2,'SNR69'),('LEL',1,'SNR70')]:
-            dialog.types.showPopup()
-            app.processEvents()
-            item=dialog.types.model().index(index,0)
-            dialog.types.view().scrollTo(item);app.processEvents()
-            QTest.mouseClick(dialog.types.view().viewport(),Qt.LeftButton,pos=dialog.types.view().visualRect(item).center())
-            app.processEvents()
-            assert dialog.sim_family.currentText()==family
-            assert dialog.assembly.text().startswith(prefix)
-            assert dialog.name.text().startswith(family)
+        assert not any(hasattr(dialog,n) for n in ('mode','sim_family','lel_revision','fullscale'))
+        for family,index in [('FID',3),('BTU',2),('LEL',1)]:
+            dialog.types.setCurrentIndex(index);app.processEvents()
+            assert dialog.types.currentText()==family
             assert dialog.units.isVisible()==(family=='FID')
-            assert dialog.fullscale.isVisible()==(family=='FID')
-            assert dialog.lel_revision.isVisible()==(family=='LEL')
             result=dialog.settings()
-            assert result['devices'][0]['family']==family and result['simulated_family']==family
-        dialog.address.setValue(1);dialog.address_mode.setCurrentText('display_minus_one')
-        assert dialog.address.value()==2
+            assert result['mode']=='hardware' and result['devices'][0]==original
+        dialog.address_mode.setCurrentText('display_minus_one');assert dialog.address.value()>=2
+        dialog.address.setValue(1);assert dialog.address.value()==2
         assert DeviceConfig(**dialog.settings()['devices'][0]).addressing.packet_address==1
-        dialog.address.setValue(1)
-        assert dialog.address.value()==2
+        dialog.port.is_valid=lambda:True
         buttons=dialog.findChild(QDialogButtonBox)
-        assert buttons.button(QDialogButtonBox.Save) is None
         QTest.mouseClick(buttons.button(QDialogButtonBox.Ok),Qt.LeftButton)
         assert dialog.result()==QDialog.Accepted
     finally:dialog.close()
 
 
-def test_chooser_preserves_custom_name_and_auto_detect_simulator_choice(app,tmp_path):
+def test_chooser_preserves_custom_name_and_identity_on_manual_profile_change(app,tmp_path):
     settings=load_settings(tmp_path/'settings.json');settings['devices'][0]['name']='My process'
-    dialog=AnalyzerChoice(settings)
+    original=copy.deepcopy(settings['devices'][0]);dialog=AnalyzerChoice(settings)
     try:
-        dialog.sim_family.setCurrentText('FID')
-        assert dialog.name.text()=='My process' and dialog.settings()['devices'][0]['family']=='FID'
-        dialog.types.setCurrentIndex(2)
-        assert dialog.name.text()=='My process' and dialog.sim_family.currentText()=='BTU'
+        for family in ('FID','BTU','LEL','Auto Detect'):
+            dialog.types.setCurrentText(family)
+            assert dialog.name.text()=='My process'
+            assert dialog.settings()['devices'][0]==original
         dialog.address_mode.setCurrentText('display_minus_one');dialog.address_mode.setCurrentText('direct');dialog.address.setValue(1)
         assert DeviceConfig(**dialog.settings()['devices'][0]).addressing.packet_address==1
     finally:dialog.close()
+
 
 def test_historian_quality_events_retention_and_audit(tmp_path):
     db=Historian(tmp_path/'test.sqlite3')

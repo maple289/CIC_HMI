@@ -4,12 +4,13 @@ import os,struct,time
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import pytest
 from PySide6.QtWidgets import QApplication
-from prevex_hmi.devices.configuration import load_settings,default_devices
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
 from prevex_hmi.devices.identification import parse_identity,resolve_profile
 from prevex_hmi.devices.models import DeviceConfig
 from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant
 from prevex_hmi.communication.protocol import frame,validate_read
-from prevex_hmi.gui.window import MainWindow
+from dev_support import MainWindow
 from prevex_hmi.profiles import profile_for,commands_for
 from prevex_hmi.gui.presentation import measurement
 
@@ -20,7 +21,7 @@ RAW={1:32769,2:25,3:100,4:4,5:10240,6:12800,7:15360,9:63548,11:0,15:0,23:815,24:
 @pytest.mark.parametrize('port',['COM1','COM7','COM18'])
 @pytest.mark.parametrize('test_only',[False,True])
 def test_available_ports_are_readonly_without_bench_grant(tmp_path,monkeypatch,port,test_only):
-    from prevex_hmi.gui.worker import MonitoringWorker
+    from dev_support import MonitoringWorker
     from prevex_hmi.devices.identification import Identification
     app=QApplication.instance() or QApplication([])
     settings=load_settings(tmp_path/'settings.json');settings['mode']='hardware'
@@ -148,7 +149,7 @@ def test_hardware_gui_replays_real_signals_and_blocks_injection_and_commands(tmp
             assert all(b.isEnabled() for b in w.command_buttons.values())
             # Sign-in advertises readiness; no write-capable transport is opened.
             assert len(instances)==1
-        assert all(not b.isEnabled() for b in w.simulation_controls)
+        assert not any(hasattr(w,name) for name in ('simulation_controls','fault_kind','forced_value','forced_status'))
         assert (tmp_path/'hardware.sqlite3').exists() and not (tmp_path/'simulation.sqlite3').exists()
         w.worker.request('reading',42)
         wait(lambda:'Simulation injection' in w.command_message.text() or 'Simulation injection' in w.statusBar().currentMessage())

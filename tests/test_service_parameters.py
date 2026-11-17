@@ -4,11 +4,12 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QDialog,QMessageBox
-from prevex_hmi.devices.configuration import default_devices,load_settings
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
 from prevex_hmi.profiles import profile_for
 from prevex_hmi.profiles.parameters import definitions,definition,encode,validate_word,limits
 from prevex_hmi.gui.parameter_editor import ParameterEditor
-from prevex_hmi.gui.window import MainWindow
+from dev_support import MainWindow
 from prevex_hmi.communication.engine import BusEngine
 from prevex_hmi.communication.commands import CommandController
 from prevex_hmi.communication.parameters import ParameterAdjustments

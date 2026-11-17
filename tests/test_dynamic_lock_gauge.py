@@ -7,9 +7,10 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import pytest
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication
-from prevex_hmi.devices.configuration import default_devices,load_settings
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
 from prevex_hmi.gui.gauge import gauge_state,CircularGauge
-from prevex_hmi.gui.window import MainWindow
+from dev_support import MainWindow
 from prevex_hmi.profiles import profile_for
 from test_validated_commands import control
 from test_identification_commands import controller

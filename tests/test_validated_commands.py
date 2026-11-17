@@ -158,8 +158,8 @@ def test_command_buttons_follow_documented_profile_role_and_lock_state(tmp_path,
     os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
     from dataclasses import asdict
     from PySide6.QtWidgets import QApplication
-    from prevex_hmi.gui.window import MainWindow
-    from prevex_hmi.devices.configuration import load_settings
+    from dev_support import MainWindow
+    from dev_support import load_settings
     app=QApplication.instance() or QApplication([])
     settings=load_settings(tmp_path/'settings.json');settings['mode']='hardware'
     config=replace(default_devices()[0],version='4.81' if legacy else '5.12',assembly='SNR671' if legacy else 'SNR675',register_profile='fta_4x' if legacy else '670')

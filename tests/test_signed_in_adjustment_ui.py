@@ -3,8 +3,9 @@ from dataclasses import asdict,replace
 from types import SimpleNamespace
 import time
 from PySide6.QtWidgets import QDialog,QMessageBox
-from prevex_hmi.devices.configuration import default_devices,load_settings
-from prevex_hmi.gui.window import MainWindow
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
+from dev_support import MainWindow
 from prevex_hmi.gui.parameter_editor import ParameterEditor
 from prevex_hmi.communication.engine import BusEngine
 from prevex_hmi.simulator.bus import SimulatedBus

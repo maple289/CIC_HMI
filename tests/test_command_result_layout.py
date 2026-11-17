@@ -9,8 +9,8 @@ from PySide6.QtCore import QPoint
 from PySide6.QtGui import QFont,QFontDatabase
 from PySide6.QtWidgets import QApplication,QDialog,QComboBox
 from prevex_hmi.communication.engine import BusEngine
-from prevex_hmi.devices.configuration import load_settings
-from prevex_hmi.gui.window import MainWindow
+from dev_support import load_settings
+from dev_support import MainWindow
 from prevex_hmi.gui.profile_library import PROFILE_CHOICES,library_config
 from prevex_hmi.profiles import profile_for
 from prevex_hmi.simulator.bus import SimulatedBus
@@ -108,7 +108,8 @@ def test_profile_dropdown_browses_without_reinterpreting_or_changing_connected_a
         monkeypatch.setattr(w,'start_worker',lambda **kwargs:started.append(copy.deepcopy(w.settings)))
         w.use_library_profile()
         assert started and started[0]['analyzer_selection']=='FID'
-        assert started[0]['devices'][0]['family']=='FID' and started[0]['simulated_family']=='FID'
+        assert started[0]['mode']=='hardware'
+        assert started[0]['devices'][0]['family']==original['devices'][0]['family']  # Selection is not detected identity.
         assert w.snapshot is None  # Old readings invalidated before a new worker can start.
         # Restore a live matching source for the read-only inspection check.
         w.snapshot=snap;w.settings=original

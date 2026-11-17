@@ -7,13 +7,14 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import pytest
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QApplication
-from prevex_hmi.devices.configuration import default_devices,load_settings
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
 from prevex_hmi.devices.identification import Identification,detect,resolve_profile
 from prevex_hmi.gui.connection_dialog import AnalyzerChoice
 from prevex_hmi.gui.gauge import CircularGauge
 from prevex_hmi.gui.presentation import measurement
 from prevex_hmi.gui.serial_ports import SerialPortChoice,require_available_port
-from prevex_hmi.gui.window import MainWindow
+from dev_support import MainWindow
 from prevex_hmi.profiles import profile_for,profile_name
 from prevex_hmi.profiles.lel700 import TYPES
 from prevex_hmi.profiles.lel670 import MODELS
@@ -71,7 +72,7 @@ def test_no_port_prevents_worker_creation(app,tmp_path,monkeypatch):
 @pytest.mark.parametrize('action',['connect','test'])
 @pytest.mark.parametrize('port',['COM4','COM7'])
 def test_normal_controls_use_available_ports_without_session_grants(app,tmp_path,monkeypatch,action,port):
-    from prevex_hmi.gui.worker import MonitoringWorker
+    from dev_support import MonitoringWorker
     from test_monitoring import until
     settings=load_settings(tmp_path/'settings.json');settings['mode']='hardware'
     settings['connection'].update(port=port,baud=9600)
@@ -112,7 +113,7 @@ def test_explicit_legacy_bench_api_prepares_only_authorized_session_without_savi
 
 def test_test_connection_is_readonly_and_port_change_drops_bench_capability(app,tmp_path,monkeypatch):
     from prevex_hmi.communication.hardware_session import ReadOnlyControllerGrant,controller_bench_settings
-    from prevex_hmi.gui.worker import MonitoringWorker
+    from dev_support import MonitoringWorker
     from test_monitoring import until
     settings=controller_bench_settings(load_settings(tmp_path/'settings.json'))
     calls=[]

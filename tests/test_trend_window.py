@@ -6,8 +6,9 @@ import pytest
 from PySide6.QtCore import Qt,QPoint,QTimeZone
 from PySide6.QtWidgets import QApplication,QFileDialog
 import pyqtgraph as pg
-from prevex_hmi.devices.configuration import load_settings,default_devices
-from prevex_hmi.gui.window import MainWindow
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
+from dev_support import MainWindow
 from prevex_hmi.logging_db.recordings import sessions,export_csv
 from prevex_hmi.logging_db.recordings import RecordingStore
 from prevex_hmi.communication.serial_transport import ReadOnlySerialTransport

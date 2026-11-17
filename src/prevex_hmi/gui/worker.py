@@ -40,10 +40,14 @@ class MonitoringWorker(QThread):
     failed=Signal(str)
     storage_warning=Signal(str)
 
-    def __init__(self,settings:dict,data_path:Path,parent=None,*,test_only=False,hardware_grant=None):
+    def __init__(self,settings:dict,data_path:Path,parent=None,*,test_only=False,hardware_grant=None,simulation_authorized=False):
         super().__init__(parent)
         from prevex_hmi.devices.configuration import normalize_profiles
         settings=normalize_profiles(copy.deepcopy(settings))
+        from prevex_hmi.runtime_policy import simulation_allowed
+        self.simulation_authorized=simulation_allowed(simulation_authorized)
+        if settings['mode']=='simulation' and not self.simulation_authorized:
+            raise ValueError('Simulation transport is available only to the explicit development/test harness')
         if len(settings['devices']) != 1: raise ValueError('One active analyzer required')
         self.settings,self.data_path=settings,data_path
         self.test_only=test_only

@@ -7,11 +7,12 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import pytest
 from PySide6.QtWidgets import QApplication
 from prevex_hmi.communication.engine import BusEngine
-from prevex_hmi.devices.configuration import default_devices,load_settings
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
 from prevex_hmi.gui.gauge import CircularGauge
 from prevex_hmi.gui.presentation import measurement
 from prevex_hmi.gui.trend_display import DisplayTrend
-from prevex_hmi.gui.window import MainWindow
+from dev_support import MainWindow
 from prevex_hmi.simulator.bus import SimulatedBus
 
 

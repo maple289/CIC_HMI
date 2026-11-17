@@ -3,8 +3,9 @@ from dataclasses import replace
 from types import SimpleNamespace
 import copy
 import pytest
-from prevex_hmi.gui.window import MainWindow
-from prevex_hmi.devices.configuration import load_settings,save_settings,default_devices
+from dev_support import MainWindow
+from prevex_hmi.devices.configuration import save_settings,default_devices
+from dev_support import load_settings
 from prevex_hmi.simulator.bus import SimulatedBus,SimulatedAnalyzer
 from test_monitoring import app,until
 

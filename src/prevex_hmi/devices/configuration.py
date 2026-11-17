@@ -17,10 +17,10 @@ def default_devices() -> list[DeviceConfig]:
     ]
 
 
-def load_settings(path: Path) -> dict:
+def load_settings(path: Path, *, allow_simulation=False) -> dict:
     if not path.exists():
         initial=replace(default_devices()[0],assembly="SNR705",version="7.01")
-        settings = {"schema_version": 2, "mode": "simulation", "theme": "dark", "analyzer_selection":"Auto Detect", "simulated_family":"LEL", "simulated_lel_revision":"700", "connection":{"port":"", "baud":19200,"timeout":0.5,"identification_page":"standard"}, "devices": [asdict(initial)]}
+        settings = {"schema_version": 2, "mode": "simulation" if allow_simulation else "hardware", "theme": "dark", "analyzer_selection":"Auto Detect", "simulated_family":"LEL", "simulated_lel_revision":"700", "connection":{"port":"", "baud":19200,"timeout":0.5,"identification_page":"standard"}, "devices": [asdict(initial)]}
         save_settings(path, settings)
         return settings
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -34,9 +34,20 @@ def load_settings(path: Path) -> dict:
         save_settings(path,data)
     normalize_profiles(data)
     validate_settings(data)
+    if not allow_simulation and data['mode']=='simulation':
+        # Change only the source preference. Never connect, replace identity/IDs,
+        # erase history or discard the last serial endpoint during migration.
+        data=operator_settings(data)
+        save_settings(path,data)
     if 'parameters_by_profile' in data.get('recording',{}):
         from prevex_hmi.logging_db.recordings import normalize_selections
         data['recording']['parameters_by_profile']=normalize_selections(data['recording']['parameters_by_profile'])
+    return data
+
+
+def operator_settings(settings):
+    data=normalize_profiles(json.loads(json.dumps(settings)))
+    data['mode']='hardware'
     return data
 
 

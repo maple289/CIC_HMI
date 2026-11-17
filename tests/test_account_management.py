@@ -7,8 +7,8 @@ import pytest
 from PySide6.QtWidgets import QApplication,QDialog,QLineEdit,QMessageBox
 from prevex_hmi.security.users import UserStore
 from prevex_hmi.gui.accounts import AccountsDialog,AccountPasswordDialog
-from prevex_hmi.gui.window import MainWindow
-from prevex_hmi.devices.configuration import load_settings
+from dev_support import MainWindow
+from dev_support import load_settings
 from prevex_hmi.gui.profile_library import library_config
 from dataclasses import asdict
 

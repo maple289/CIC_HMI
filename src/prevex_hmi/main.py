@@ -25,16 +25,23 @@ class JsonFormatter(logging.Formatter):
 
 
 def main() -> int:
+    from prevex_hmi.runtime_policy import PRODUCTION
     parser=argparse.ArgumentParser(description="PREVEX HMI - one active analyzer. Physical access remains gated pending authorization.")
     parser.add_argument("--data-dir",type=Path,help="Override the user-writable data directory")
-    parser.add_argument("--smoke-test",action="store_true",help="Run offscreen monitoring checks and exit")
+    parser.set_defaults(smoke_test=False)
+    parser.set_defaults(read_only_com4=False,controller_com4_bench=False)
+    if not PRODUCTION:parser.add_argument("--smoke-test",action="store_true",help="Development-only isolated simulator check")
+    parser.add_argument('--production-smoke-test',action='store_true',help='Check disconnected hardware-only UI without opening serial ports')
     parser.add_argument('--verify-installation',action='store_true',help='Verify protected components offline and exit without opening data or serial ports')
     parser.add_argument('--ui-scale',type=int,choices=(75,85,100),help='Override application size for this launch; Windows scaling is unchanged')
-    parser.add_argument('--read-only-com4',action='store_true',help='Explicitly authorize the tested COM4/9600/address1 SNR671 read-only bench session')
-    parser.add_argument('--controller-com4-bench',action='store_true',help='Authorized SNR671 COM4 bench monitoring with confirmed Operator ACK/RESET only')
+    if not PRODUCTION:
+        parser.add_argument('--read-only-com4',action='store_true',help='Development-only explicit read-only bench connection')
+        parser.add_argument('--controller-com4-bench',action='store_true',help='Development-only authorized controller bench connection')
     args=parser.parse_args()
-    if args.smoke_test and (args.read_only_com4 or args.controller_com4_bench):parser.error('Automated smoke tests cannot open hardware')
-    if args.smoke_test:
+    automated=args.smoke_test or args.production_smoke_test
+    if automated and (args.read_only_com4 or args.controller_com4_bench):parser.error('Automated smoke tests cannot open hardware')
+    if automated and args.data_dir is None:parser.error('Automated checks require an isolated --data-dir')
+    if automated:
         os.environ["QT_QPA_PLATFORM"]="offscreen"
     from prevex_hmi.gui.display import application_data_path,saved_size,apply_launch_size
     data_path=(args.data_dir or application_data_path()).resolve()
@@ -47,7 +54,7 @@ def main() -> int:
     try:integrity=verify_startup()
     except IntegrityError as error:
         logging.critical('software_integrity_failed: %s',error)
-        if not (args.smoke_test or args.verify_installation):
+        if not (automated or args.verify_installation):
             QMessageBox.critical(None,'Software integrity error',str(error)+'\nNo analyzer connection was started. Obtain a verified distribution. Existing operator data was preserved.')
         return 3
     if args.verify_installation:
@@ -67,10 +74,10 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO,handlers=[handler])
     settings_path=data_path/"settings.json"
     try:
-        settings=load_settings(settings_path)
+        settings=load_settings(settings_path,allow_simulation=bool(args.smoke_test))
     except (OSError,ValueError,KeyError,TypeError) as error:
         logging.exception("configuration_load_failed")
-        if args.smoke_test:
+        if automated:
             print(f"FAIL: {error}")
         else:
             QMessageBox.critical(None,"Configuration error",f"Could not load {settings_path}\n{error}\nThe existing file was preserved.")
@@ -84,10 +91,27 @@ def main() -> int:
         grant=ReadOnlyControllerGrant(operator_commands=args.controller_com4_bench)
         settings=controller_bench_settings(settings)
     from prevex_hmi.gui.window import MainWindow
-    window=MainWindow(settings,settings_path,data_path,start_worker=bool(args.smoke_test or grant),hardware_grant=grant)
+    window=MainWindow(settings,settings_path,data_path,start_worker=bool(args.smoke_test or grant),hardware_grant=grant,simulation_authorized=bool(args.smoke_test))
     window.show()
     logging.info('display_configuration',extra={'detail':display_diagnostics(app,window)})
     errors=[]
+    if args.production_smoke_test:
+        def finish_production():
+            try:
+                if window.settings['mode']!='hardware' or window.worker is not None or window.connection_established:
+                    raise RuntimeError('Production startup must remain disconnected and hardware-only')
+                if any(hasattr(window,name) for name in ('fault_kind','forced_value','forced_status','simulation_controls')):
+                    raise RuntimeError('Simulator widgets found in production UI')
+                if window.inspect_button.text()!='Inspect register':raise RuntimeError('Unexpected register inspection control')
+                window.show_diagnostics();app.processEvents()
+                window.grab().save(str(data_path/'production-diagnostics.png'))
+                report={'result':'PASS','mode':'hardware','disconnected':True,'physical_access':False,
+                        'monitoring_worker_started':False,'simulator_controls':False,'internal_integrity':integrity,
+                        'inspection_button':window.inspect_button.text(),'software_version':'1.0'}
+                (data_path/'smoke-report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+            except Exception as error:errors.append(str(error));print(f'FAIL: {error}')
+            finally:window.close()
+        QTimer.singleShot(1000,finish_production)
     if args.smoke_test:
         export_results=[];hidden_samples=[]
         def start_recording():

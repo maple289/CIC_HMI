@@ -38,8 +38,12 @@ jobs:
           $exe = if ($env:RELEASE_LAYOUT -eq 'onefile') { "$PWD/dist/protected-ci/PREVEX-HMI.exe" } else { "$PWD/dist/protected-ci/PREVEX-HMI/PREVEX-HMI.exe" }
           .venv/Scripts/python.exe scripts/audit_release.py $exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $app = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', '--data-dir', "$PWD/tmp/protected-smoke") -WindowStyle Hidden -PassThru -Wait
+          $app = Start-Process -FilePath $exe -ArgumentList @('--production-smoke-test', '--data-dir', "$PWD/tmp/protected-smoke") -WindowStyle Hidden -PassThru -Wait
           if ($app.ExitCode -ne 0) { exit $app.ExitCode }
+          $report = Get-Content -Raw tmp/protected-smoke/smoke-report.json | ConvertFrom-Json
+          if ($report.result -ne 'PASS' -or $report.mode -ne 'hardware' -or -not $report.disconnected -or $report.monitoring_worker_started -or -not $report.internal_integrity.protected) { throw 'Production startup boundary failed' }
+          $rejected = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', '--data-dir', "$PWD/tmp/forbidden-simulation") -WindowStyle Hidden -PassThru -Wait
+          if ($rejected.ExitCode -ne 2 -or (Test-Path tmp/forbidden-simulation)) { throw 'Production release accepted the development simulator flag' }
           .venv/Scripts/python.exe scripts/release_integrity.py verify dist/protected-ci --manifest dist/protected-ci/release-manifest.json
       - name: Upload verification evidence
         if: always()

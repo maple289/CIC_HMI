@@ -3,140 +3,74 @@ import copy
 import uuid
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox,QComboBox,QDialog,QDialogButtonBox,QDoubleSpinBox,QFormLayout,QHBoxLayout,QLabel,QLineEdit,QMessageBox,QScrollArea,QSpinBox,QVBoxLayout,QWidget
-from prevex_hmi.devices.configuration import default_devices,validate_settings,normalize_profiles
+from prevex_hmi.devices.configuration import validate_settings,operator_settings
 from prevex_hmi.devices.models import DeviceConfig
-from prevex_hmi.profiles import normalize_selection,profile_for
+from prevex_hmi.profiles import normalize_selection
 from prevex_hmi.gui.serial_ports import SerialPortChoice
-
-
-def d_is_700(settings):
-    return settings['devices'][0]['assembly'].upper().startswith('SNR70')
 
 
 class AnalyzerChoice(QDialog):
     def __init__(self,settings,parent=None):
         super().__init__(parent)
-        settings=normalize_profiles(copy.deepcopy(settings))
-        self.original=copy.deepcopy(settings)
-        self.setWindowTitle("Choose Analyzer Type")
-        self.resize(800,680)
+        self.original=operator_settings(copy.deepcopy(settings));settings=self.original
+        self.setWindowTitle('Choose Analyzer Type');self.resize(800,680)
         root=QVBoxLayout(self)
-        note=QLabel("Auto Detect reads identity registers before loading a profile. Manual selection remains available; an unresolved identity or mismatch blocks commands.")
+        note=QLabel('Auto Detect reads identity registers before loading a profile. Manual selection remains available; an unresolved identity or mismatch blocks commands.')
         note.setWordWrap(True);root.addWidget(note)
-        row=QHBoxLayout();row.addWidget(QLabel("Analyzer profile"));root.addLayout(row)
-        choices=["Auto Detect","LEL","BTU","FID"]
-        selection=normalize_selection(settings["analyzer_selection"])
-        self.types=QComboBox();self.types.addItems(choices);self.types.setCurrentText(selection)
-        row.addWidget(self.types,1)
+        row=QHBoxLayout();row.addWidget(QLabel('Analyzer profile'));root.addLayout(row)
+        self.types=QComboBox();self.types.addItems(['Auto Detect','LEL','BTU','FID']);self.types.setCurrentText(normalize_selection(settings['analyzer_selection']));row.addWidget(self.types,1)
         self.profile_status=QLabel();self.profile_status.setWordWrap(True);root.addWidget(self.profile_status)
-        fields=QWidget();form=QFormLayout(fields);self.form=form
+        fields=QWidget();self.form=form=QFormLayout(fields)
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(fields);root.addWidget(scroll,1)
-        d=DeviceConfig(**settings["devices"][0]);c=settings["connection"]
-        self.name=QLineEdit(d.name)
-        self.mode=QComboBox();self.mode.addItems(["simulation","hardware"]);self.mode.setCurrentText(settings["mode"])
-        self.sim_family=QComboBox();self.sim_family.addItems(["LEL","BTU","FID"]);self.sim_family.setCurrentText(settings["simulated_family"])
-        self.lel_revision=QComboBox();self.lel_revision.addItem("700","700");self.lel_revision.addItem("670","legacy");self.lel_revision.setCurrentIndex(self.lel_revision.findData(settings.get("simulated_lel_revision","legacy")))
-        if settings['devices'][0]['family']=='LEL':self.lel_revision.setCurrentIndex(self.lel_revision.findData('700' if d_is_700(settings) else settings.get('simulated_lel_revision','legacy')))
-        form.addRow("Simulated LEL generation",self.lel_revision)
-        self.port=SerialPortChoice(c["port"])
-        self.baud=QComboBox();self.baud.addItems([str(n) for n in (300,600,1200,2400,4800,9600,19200)]);self.baud.setCurrentText(str(c["baud"]))
-        self.timeout=QDoubleSpinBox();self.timeout.setRange(.05,5);self.timeout.setValue(c["timeout"]);self.timeout.setSuffix(" s")
+        d=DeviceConfig(**settings['devices'][0]);c=settings['connection']
+        self.name=QLineEdit(d.name);self.port=SerialPortChoice(c['port'])
+        self.baud=QComboBox();self.baud.addItems([str(n) for n in (300,600,1200,2400,4800,9600,19200)]);self.baud.setCurrentText(str(c['baud']))
+        self.timeout=QDoubleSpinBox();self.timeout.setRange(.05,5);self.timeout.setValue(c['timeout']);self.timeout.setSuffix(' s')
         self.address=QSpinBox();self.address.setRange(1,255);self.address.setValue(d.address)
-        self.address_mode=QComboBox();self.address_mode.addItems(["direct","display_minus_one"]);self.address_mode.setCurrentText(d.address_mode)
-        self.offset=QComboBox();self.offset.addItems(["-1","0"]);self.offset.setCurrentText(str(d.pdu_offset))
-        self.page=QComboBox();self.page.addItems(["standard","alternate"]);self.page.setCurrentText(c.get("identification_page","standard"))
+        self.address_mode=QComboBox();self.address_mode.addItems(['direct','display_minus_one']);self.address_mode.setCurrentText(d.address_mode)
+        self.offset=QComboBox();self.offset.addItems(['-1','0']);self.offset.setCurrentText(str(d.pdu_offset))
+        self.page=QComboBox();self.page.addItems(['standard','alternate']);self.page.setCurrentText(c.get('identification_page','standard'))
         self.assembly=QLineEdit(d.assembly);self.version=QLineEdit(d.version)
-        self.units=QComboBox();self.units.addItems(["Unknown","US","METRIC"]);self.units.setCurrentText(d.units or "Unknown")
-        self.fullscale=QSpinBox();self.fullscale.setRange(10,32000);self.fullscale.setValue(d.fullscale)
-        self.interval=QDoubleSpinBox();self.interval.setRange(.25,60);self.interval.setValue(d.interval);self.interval.setSuffix(" s")
-        self.logging_enabled=QCheckBox("Record measurements in local history");self.logging_enabled.setChecked(d.logging_enabled)
-        form.addRow("Measurement logging",self.logging_enabled)
-        self.range_mode=QComboBox();self.range_mode.addItems(["auto","manual"]);self.range_mode.setCurrentText(d.range_mode)
+        self.units=QComboBox();self.units.addItems(['Unknown','US','METRIC']);self.units.setCurrentText(d.units or 'Unknown')
+        self.interval=QDoubleSpinBox();self.interval.setRange(.25,60);self.interval.setValue(d.interval);self.interval.setSuffix(' s')
+        self.logging_enabled=QCheckBox('Record measurements in local history');self.logging_enabled.setChecked(d.logging_enabled)
+        self.range_mode=QComboBox();self.range_mode.addItems(['auto','manual']);self.range_mode.setCurrentText(d.range_mode)
         self.manual=QDoubleSpinBox();self.manual.setDecimals(3);self.manual.setRange(.001,1000000);self.manual.setValue(d.manual_maximum or d.fullscale)
-        self.use_fallback=QCheckBox("Use manual maximum if register3 is unavailable");self.use_fallback.setChecked(d.manual_maximum is not None)
-        for name,widget in [("Instrument name",self.name),("Connection source",self.mode),("Simulated instrument",self.sim_family),("Serial port",self.port),("Baud rate / 8N1",self.baud),("Timeout",self.timeout),("Displayed ADDRESS",self.address),("Packet-address compatibility",self.address_mode),("Register-to-PDU offset",self.offset),("Identity page",self.page),("Manual assembly fallback",self.assembly),("Firmware information",self.version),("FID unit context (verify physically)",self.units),("Simulated FID FULLSCLE",self.fullscale),("Refresh interval",self.interval),("Gauge range source",self.range_mode),("Manual display maximum",self.manual),("Fallback",self.use_fallback)]:form.addRow(name,widget)
-        warning=QLabel("Available serial ports connect directly for read-only monitoring. Operating commands require a supported identity, sign-in, current controller checks and individual confirmation. Display overrides change only the gauge scale.")
+        self.use_fallback=QCheckBox('Use manual maximum if register3 is unavailable');self.use_fallback.setChecked(d.manual_maximum is not None)
+        for name,widget in [('Instrument name',self.name),('Serial port',self.port),('Baud rate / 8N1',self.baud),('Timeout',self.timeout),('Displayed ADDRESS',self.address),('Packet-address compatibility',self.address_mode),('Register-to-PDU offset',self.offset),('Identity page',self.page),('Manual assembly fallback',self.assembly),('Firmware information',self.version),('FID unit context (verify physically)',self.units),('Refresh interval',self.interval),('Measurement logging',self.logging_enabled),('Gauge range source',self.range_mode),('Manual display maximum',self.manual),('Fallback',self.use_fallback)]:form.addRow(name,widget)
+        warning=QLabel('Available serial ports connect directly for read-only monitoring. Operating commands require a supported identity, sign-in, current controller checks and individual confirmation. Display overrides change only the gauge scale.')
         warning.setWordWrap(True);root.addWidget(warning)
-        self.packet_address=QLabel();form.addRow("Effective packet address",self.packet_address)
-        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);root.addWidget(buttons)
-        self.types.currentIndexChanged.connect(self.type_changed)
-        self.sim_family.currentTextChanged.connect(lambda _:self.refresh_type())
-        self.lel_revision.currentTextChanged.connect(lambda _:self.refresh_type(reset=True))
-        self.mode.currentTextChanged.connect(lambda _:self.refresh_type())
-        self.address_mode.currentTextChanged.connect(self.update_address)
-        self.address.valueChanged.connect(self.update_address)
-        # Old settings can contain a previous family's name/model. Normalize
-        # family defaults on opening while retaining user-defined names.
-        family=self.selected_family()
-        prefix={'LEL':('SNR67','SNR70'),'BTU':('SNR69',),'FID':('SNR65',)}[family]
-        self.refresh_type(reset=self.mode.currentText()=='simulation' and d.family!=family)
-        self.update_address()
+        self.packet_address=QLabel();form.addRow('Effective packet address',self.packet_address)
+        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);root.addWidget(buttons)
+        self.types.currentIndexChanged.connect(self.refresh_type);self.address_mode.currentTextChanged.connect(self.update_address);self.address.valueChanged.connect(self.update_address)
+        self.refresh_type();self.update_address()
 
-    def selected_family(self) -> str:
-        selection=self.types.currentText()
-        if selection != 'Auto Detect':return 'LEL' if selection.startswith('LEL') else selection
-        return self.sim_family.currentText() if self.mode.currentText()=='simulation' else self.original['devices'][0]['family']
+    def selected_family(self):
+        return self.types.currentText() if self.types.currentText()!='Auto Detect' else self.original['devices'][0]['family']
 
-    def type_changed(self,index: int) -> None:
-        selection=self.types.currentText()
-        if selection != 'Auto Detect':
-            self.sim_family.blockSignals(True)
-            self.sim_family.setCurrentText('LEL' if selection.startswith('LEL') else selection)
-            self.sim_family.blockSignals(False)
-        self.refresh_type(reset=self.mode.currentText()=='simulation' and self.selected_family()!=self.original['devices'][0]['family'])
-
-    def refresh_type(self,*,reset: bool=False) -> None:
-        family=self.selected_family()
-        from prevex_hmi.gui.profile_library import PROFILE_STATUS
+    def refresh_type(self,*_):
+        from .profile_library import PROFILE_STATUS
         self.profile_status.setText(PROFILE_STATUS.get(self.types.currentText(),'Auto Detect identifies the connected analyzer before loading a profile.'))
-        if self.types.currentIndex()!=0:
-            self.sim_family.blockSignals(True);self.sim_family.setCurrentText(family);self.sim_family.blockSignals(False)
-        defaults=next(d for d in default_devices() if d.family==family)
-        if family=='LEL' and self.lel_revision.currentData()=='700':
-            defaults=replace(defaults,assembly='SNR705',version='7.01')
-        default_names={d.name for d in default_devices()}
-        if not self.name.text().strip() or self.name.text() in default_names:
-            self.name.setText(defaults.name)
-        if self.mode.currentText()=='simulation' and (reset or getattr(self,'display_family',family)!=family):
-            self.assembly.setText(defaults.assembly);self.version.setText(defaults.version)
-            self.units.setCurrentText(defaults.units or 'Unknown');self.fullscale.setValue(defaults.fullscale)
-            self.manual.setValue(defaults.fullscale)
-        self.display_family=family
-        simulation=self.mode.currentText()=='simulation'
-        self.form.setRowVisible(self.lel_revision,simulation and family=='LEL')
-        self.form.setRowVisible(self.units,family=='FID')
-        self.form.setRowVisible(self.fullscale,simulation and family=='FID')
-        self.form.setRowVisible(self.sim_family,simulation and self.types.currentIndex()==0)
-        self.sim_family.setEnabled(simulation and self.types.currentIndex()==0)
+        self.form.setRowVisible(self.units,self.selected_family()=='FID')
 
-    def update_address(self,*_) -> None:
+    def update_address(self,*_):
         minimum=2 if self.address_mode.currentText()=='display_minus_one' else 1
         if self.address.minimum()!=minimum:self.address.setMinimum(minimum)
-        packet=self.address.value()-(minimum==2)
-        self.packet_address.setText(f'{packet} (address zero is never used)')
+        self.packet_address.setText(f'{self.address.value()-(minimum==2)} (address zero is never used)')
 
     def settings(self):
-        data=copy.deepcopy(self.original)
-        d=DeviceConfig(**data["devices"][0])
-        selection=self.types.currentText()
-        family=self.selected_family()
-        register_profile=d.register_profile
-        if self.mode.currentText()=='simulation':register_profile=('700' if self.lel_revision.currentData()=='700' else '670') if family=='LEL' else 'auto'
-        if register_profile=='fta_4x':register_profile='670'
-        new_stream=(self.mode.currentText()=='simulation' and (self.sim_family.currentText()!=data['simulated_family'] or self.lel_revision.currentData()!=data.get('simulated_lel_revision','legacy')) or (self.units.currentText() or 'Unknown')!=(d.units or 'Unknown'))
-        d=replace(d,id=uuid.uuid4().hex if new_stream else d.id,name=self.name.text().strip(),family=family if self.mode.currentText()=='simulation' else d.family,register_profile=register_profile,address=self.address.value(),address_mode=self.address_mode.currentText(),pdu_offset=int(self.offset.currentText()),assembly=self.assembly.text().strip(),version=self.version.text().strip(),enabled=True,fullscale=self.fullscale.value(),units=None if self.units.currentText()=="Unknown" else self.units.currentText(),interval=self.interval.value(),logging_enabled=self.logging_enabled.isChecked(),range_mode=self.range_mode.currentText(),manual_maximum=self.manual.value() if self.use_fallback.isChecked() or self.range_mode.currentText()=="manual" else None)
-        data.update(analyzer_selection=selection,mode=self.mode.currentText(),simulated_family=self.sim_family.currentText(),devices=[asdict(d)],connection={**data["connection"],"port":self.port.text().strip(),"baud":int(self.baud.currentText()),"timeout":self.timeout.value(),"identification_page":self.page.currentText()})
-        data['simulated_lel_revision']=self.lel_revision.currentData()
-        if data['mode']=='hardware' and not self.port.is_valid():
-            raise ValueError('Select an available COM port. Refresh to rescan attached adapters.')
-        validate_settings(data)
-        return data
+        data=copy.deepcopy(self.original);d=DeviceConfig(**data['devices'][0])
+        units=None if self.units.currentText()=='Unknown' else self.units.currentText()
+        d=replace(d,id=uuid.uuid4().hex if units!=d.units else d.id,name=self.name.text().strip(),address=self.address.value(),address_mode=self.address_mode.currentText(),pdu_offset=int(self.offset.currentText()),assembly=self.assembly.text().strip(),version=self.version.text().strip(),enabled=True,units=units,interval=self.interval.value(),logging_enabled=self.logging_enabled.isChecked(),range_mode=self.range_mode.currentText(),manual_maximum=self.manual.value() if self.use_fallback.isChecked() or self.range_mode.currentText()=='manual' else None)
+        data.update(analyzer_selection=self.types.currentText(),mode='hardware',devices=[asdict(d)],connection={**data['connection'],'port':self.port.text().strip(),'baud':int(self.baud.currentText()),'timeout':self.timeout.value(),'identification_page':self.page.currentText()})
+        validate_settings(data);return data
 
     def accept(self):
-        try:self.settings()
+        try:
+            self.settings()
+            if not self.port.is_valid():raise ValueError('Select an available COM port. Refresh to rescan attached adapters.')
         except (ValueError,PermissionError) as error:
-            QMessageBox.warning(self,"Invalid connection settings",str(error));return
+            QMessageBox.warning(self,'Invalid connection settings',str(error));return
         super().accept()
 
 

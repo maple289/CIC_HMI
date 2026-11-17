@@ -4,9 +4,10 @@ from datetime import datetime
 import pytest
 from PySide6.QtCore import QTimeZone
 from prevex_hmi.gui.history_view import LocalTimeAxis,display_zone,friendly_time,session_label,HistoricalPlots
-from prevex_hmi.gui.window import MainWindow
+from dev_support import MainWindow
 from prevex_hmi.gui.parameter_editor import ParameterEditor
-from prevex_hmi.devices.configuration import load_settings,default_devices
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
 from prevex_hmi.logging_db.recordings import RecordingStore,sessions,history_series,export_csv
 from test_monitoring import app,until
 from test_recording_sessions import sample,stamp

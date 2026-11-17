@@ -112,6 +112,8 @@ class SimulatedBus:
     physical = False
 
     def __init__(self, devices: list[DeviceConfig], *, clock=time.monotonic, sleep=time.sleep):
+        from prevex_hmi.runtime_policy import PRODUCTION
+        if PRODUCTION:raise PermissionError('Simulator transport is disabled in the production application')
         validate_devices(devices)
         self.devices = {d.addressing.packet_address: SimulatedAnalyzer(d) for d in devices if d.enabled}
         self.clock = clock

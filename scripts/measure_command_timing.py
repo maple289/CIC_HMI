@@ -33,7 +33,7 @@ def run(folder,code):
     def watching(self,*args,**kwargs):mark('verification_started');return watch(self,*args,**kwargs)
     folder.mkdir(parents=True,exist_ok=True);settings=load_settings(folder/'settings.json');settings.update(mode='simulation',analyzer_selection='LEL 670 Series',simulated_family='LEL',simulated_lel_revision='legacy',devices=[asdict(default_devices()[0])]);settings['devices'][0]['interval']=.25
     with patch('prevex_hmi.gui.worker.SimulatedBus',ProbeBus),patch.object(CommandController,'record',recorded),patch.object(CommandController,'watch_effect',watching),patch('prevex_hmi.gui.window.confirm_command',return_value=True):
-        w=MainWindow(settings,folder/'settings.json',folder,start_worker=True);w.show()
+        w=MainWindow(settings,folder/'settings.json',folder,start_worker=True,simulation_authorized=True);w.show()
         deadline=time.monotonic()+12
         while not (w.profile_current and w.snapshot and 60 in w.snapshot['raw']):
             app.processEvents();time.sleep(.005)

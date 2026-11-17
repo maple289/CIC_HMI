@@ -44,6 +44,8 @@ def main():
         public=base64.b64encode(key.public_key().public_bytes_raw()).decode() if key else ''
         text=text.replace('_PROTECTED = False','_PROTECTED = True').replace("_PUBLIC_KEY = ''",f'_PUBLIC_KEY = {public!r}')
         guard.write_text(text,encoding='utf-8')
+        policy=source/'runtime_policy.py'
+        policy.write_text(policy.read_text(encoding='utf-8').replace('PRODUCTION = False','PRODUCTION = True'),encoding='utf-8')
         native=stage/'native';env['NUITKA_CACHE_DIR']=str(ROOT/'.venv/nuitka-cache')
         command=[sys.executable,'-m','nuitka','--mode=package',str(source),'--include-package=prevex_hmi',
                  '--nofollow-imports','--no-pyi-stubs','--python-flag=no_docstrings','--update-check=never',
@@ -63,7 +65,7 @@ try:
     from prevex_hmi.main import main
     result=main()
 except Exception as error:
-    if not any(flag in sys.argv for flag in ('--smoke-test','--verify-installation')):
+    if not any(flag in sys.argv for flag in ('--smoke-test','--production-smoke-test','--verify-installation')):
         raise
     print('FAIL: packaged component could not load:',error,file=sys.stderr)
     result=3

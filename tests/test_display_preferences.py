@@ -4,7 +4,8 @@ import pytest
 from PySide6.QtGui import QRawFont,QTextLayout
 from prevex_hmi.gui.display import choose_size,apply_launch_size,saved_size
 from prevex_hmi.gui.fonts import FONT_DIR,configure_application_font
-from prevex_hmi.devices.configuration import load_settings,validate_settings
+from prevex_hmi.devices.configuration import validate_settings
+from dev_support import load_settings
 from test_command_result_layout import app,setup_window,flush
 
 

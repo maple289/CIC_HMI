@@ -2,9 +2,10 @@
 from dataclasses import asdict
 import time
 import pytest
-from prevex_hmi.devices.configuration import load_settings,default_devices
-from prevex_hmi.gui.window import MainWindow
-from prevex_hmi.gui.worker import MonitoringWorker
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
+from dev_support import MainWindow
+from dev_support import MonitoringWorker
 from prevex_hmi.simulator.bus import SimulatedBus
 from test_monitoring import app,until
 

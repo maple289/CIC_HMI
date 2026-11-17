@@ -6,10 +6,11 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import pytest
 from PySide6.QtGui import QFont,QFontDatabase
 from PySide6.QtWidgets import QApplication,QLabel
-from prevex_hmi.devices.configuration import default_devices,load_settings
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
 from prevex_hmi.devices.identification import parse_identity
 from prevex_hmi.devices.models import DeviceConfig
-from prevex_hmi.gui.window import MainWindow
+from dev_support import MainWindow
 from prevex_hmi.communication.protocol import frame
 from prevex_hmi.profiles import profile_for
 from prevex_hmi.simulator.bus import SimulatedBus
@@ -98,7 +99,7 @@ def test_admin_test_connection_does_not_change_profile_or_activate_commands(app,
 
 @pytest.mark.parametrize('failure',['missing_port','worker_timeout'])
 def test_connection_failure_has_explicit_result_without_controls(app,tmp_path,monkeypatch,failure):
-    from prevex_hmi.gui.worker import MonitoringWorker
+    from dev_support import MonitoringWorker
     settings=load_settings(tmp_path/'settings.json');settings['mode']='hardware';settings['connection']['port']='COM4'
     error='COM4 is no longer available' if failure=='missing_port' else 'Identification timed out; no valid Modbus response'
     def available(_):

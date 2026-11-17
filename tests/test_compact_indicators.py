@@ -5,8 +5,8 @@ import pytest
 from PySide6.QtWidgets import QLabel
 from prevex_hmi.gui.indicators import IndicatorPanel,presentation
 from prevex_hmi.gui.profile_library import library_config
-from prevex_hmi.gui.window import MainWindow
-from prevex_hmi.devices.configuration import load_settings
+from dev_support import MainWindow
+from dev_support import load_settings
 from test_monitoring import app
 
 

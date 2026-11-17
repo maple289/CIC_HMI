@@ -4,7 +4,8 @@ import copy,json,os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import pytest
 from PySide6.QtWidgets import QApplication
-from prevex_hmi.devices.configuration import default_devices,load_settings
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
 from prevex_hmi.devices.identification import detect,parse_identity,resolve_profile,identity_key
 from prevex_hmi.profiles import profile_for,commands_for,series_for
 from prevex_hmi.profiles.parameters import definitions,encode
@@ -150,7 +151,7 @@ def test_dilution_scale_uses_range_not_firmware(version):
 
 @pytest.mark.parametrize('series',['650','670','690','700'])
 def test_worker_monitors_all_series_with_unknown_firmware_and_exports_identity(app,tmp_path,series):
-    from prevex_hmi.gui.worker import MonitoringWorker
+    from dev_support import MonitoringWorker
     config=config_for(series,'Unknown');settings=load_settings(tmp_path/'settings.json')
     settings.update(devices=[asdict(config)],analyzer_selection=config.family,simulated_family=config.family,simulated_lel_revision='700' if series=='700' else 'legacy')
     worker=MonitoringWorker(settings,tmp_path);updates=[];errors=[]
@@ -184,7 +185,7 @@ def test_control_scope_ignores_firmware_only_but_not_endpoint_changes():
 @pytest.mark.parametrize('firmware',['Unknown','9.99'])
 def test_diagnostic_export_keeps_informational_firmware_without_io(app,tmp_path,monkeypatch,firmware):
     from PySide6.QtWidgets import QFileDialog
-    from prevex_hmi.gui.window import MainWindow
+    from dev_support import MainWindow
     path=tmp_path/'diagnostics.json';settings=load_settings(tmp_path/'settings.json')
     w=MainWindow(settings,tmp_path/'settings.json',tmp_path)
     w.identity=dict(family='LEL',model='SNR675',version=firmware,verified=True)

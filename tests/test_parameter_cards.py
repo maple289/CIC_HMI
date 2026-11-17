@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import time
 import pytest
 from PySide6.QtWidgets import QDialog,QMessageBox
-from prevex_hmi.devices.configuration import default_devices,load_settings
+from prevex_hmi.devices.configuration import default_devices
+from dev_support import load_settings
 from prevex_hmi.devices.identification import detect
 from prevex_hmi.communication.commands import CommandController
 from prevex_hmi.communication.engine import BusEngine
@@ -14,7 +15,7 @@ from prevex_hmi.logging_db.store import Historian
 from prevex_hmi.profiles import profile_for
 from prevex_hmi.profiles.parameters import PARAMETERS,encode,limits
 from prevex_hmi.gui.parameter_editor import ParameterEditor
-from prevex_hmi.gui.window import MainWindow
+from dev_support import MainWindow
 from prevex_hmi.simulator.bus import SimulatedBus
 from test_connection_warning_layout import app
 from test_monitoring import until
