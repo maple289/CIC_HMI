@@ -128,7 +128,7 @@ Build on Windows Python3.12 x64 using requirements-lock.txt:
 & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm build_windows.spec
 ```
 
-Launch `dist/PREVEX-HMI/PREVEX-HMI.exe`; distribute the entire folder, including `_internal`. The build is unsigned. Installer/signing, clean Windows10/11 testing, advanced retention/archival and hardware validation remain release work. No simulator test establishes physical compatibility; see VERIFICATION.md.
+Launch `dist/CIC-HMI/CIC-HMI.exe`; distribute the entire folder, including `_internal`. The build is unsigned. Installer/signing, clean Windows10/11 testing, advanced retention/archival and hardware validation remain release work. No simulator test establishes physical compatibility; see VERIFICATION.md.
 
 ## External analyzer profiles: proposed next step
 

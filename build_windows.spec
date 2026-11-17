@@ -26,10 +26,10 @@ if stage:
     # Third-party hooks may collect editor-only Qt typing stubs as data.
     a.datas=[entry for entry in a.datas if not entry[0].lower().endswith(('.pyi','.pdb','.c','.cpp'))]
 pyz=PYZ(a.pure)
-options=dict(name='PREVEX-HMI',debug=False,bootloader_ignore_signals=False,strip=False,upx=False,
+options=dict(name='CIC-HMI',debug=False,bootloader_ignore_signals=False,strip=False,upx=False,
              console=os.environ.get('PREVEX_BUILD_CONSOLE')=='1',disable_windowed_traceback=bool(stage),icon=icon)
 if onefile:
     exe=EXE(pyz,a.scripts,a.binaries,a.datas,[],**options)
 else:
     exe=EXE(pyz,a.scripts,[],exclude_binaries=True,**options)
-    coll=COLLECT(exe,a.binaries,a.datas,strip=False,upx=False,name='PREVEX-HMI')
+    coll=COLLECT(exe,a.binaries,a.datas,strip=False,upx=False,name='CIC-HMI')

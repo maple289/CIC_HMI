@@ -2,6 +2,10 @@
 
 ## Build choices
 
+The standard executable filename is **CIC-HMI.exe** for development and protected
+builds. One-folder builds use the **CIC-HMI/** distribution folder. This filename
+does not change the PREVEX HMI product identity or existing operator-data location.
+
 Development source remains readable in Git. There is no licensing server, activation,
 machine binding, expiration, telemetry or Internet request in these features.
 Normal monitoring/recording remains offline. Never test builds with a real command.
@@ -79,7 +83,7 @@ no real commands are issued. The protected release instead supports this **disco
 startup check (it never opens a serial port):
 
 ```powershell
-./dist/production-release/PREVEX-HMI.exe --production-smoke-test --data-dir tmp/production-startup
+./dist/production-release/CIC-HMI.exe --production-smoke-test --data-dir tmp/production-startup
 ```
 
 That check verifies hardware-only/disconnected startup and the absence of simulator
@@ -201,15 +205,15 @@ SignTool already available (normally the Windows SDK):
 ```powershell
 # Use the actual code-signing certificate thumbprint from CurrentUser/My.
 # This is the certificate selector; the file signature algorithm is SHA256.
-./scripts/Sign-Release.ps1 -Executable dist/production-release/PREVEX-HMI.exe -CertificateThumbprint YOUR_40_HEX_CERTIFICATE_THUMBPRINT -SignTool 'C:/Program Files (x86)/Windows Kits/10/bin/SDK_VERSION/x64/signtool.exe' -TimestampUrl 'https://YOUR_CERTIFICATE_PROVIDERS_RFC3161_TIMESTAMP_ENDPOINT'
+./scripts/Sign-Release.ps1 -Executable dist/production-release/CIC-HMI.exe -CertificateThumbprint YOUR_40_HEX_CERTIFICATE_THUMBPRINT -SignTool 'C:/Program Files (x86)/Windows Kits/10/bin/SDK_VERSION/x64/signtool.exe' -TimestampUrl 'https://YOUR_CERTIFICATE_PROVIDERS_RFC3161_TIMESTAMP_ENDPOINT'
 
 # Equivalent direct signing command (also useful if local policy blocks .ps1 files):
-& 'C:/path/to/signtool.exe' sign /sha1 YOUR_40_HEX_CERTIFICATE_THUMBPRINT /fd SHA256 /tr 'https://YOUR_PROVIDERS_TIMESTAMP_ENDPOINT' /td SHA256 dist/production-release/PREVEX-HMI.exe
+& 'C:/path/to/signtool.exe' sign /sha1 YOUR_40_HEX_CERTIFICATE_THUMBPRINT /fd SHA256 /tr 'https://YOUR_PROVIDERS_TIMESTAMP_ENDPOINT' /td SHA256 dist/production-release/CIC-HMI.exe
 # Do not change Windows/PowerShell security policy to run these procedures.
 
 # Independent verification of the final executable:
-& 'C:/path/to/signtool.exe' verify /pa /v dist/production-release/PREVEX-HMI.exe
-Get-AuthenticodeSignature dist/production-release/PREVEX-HMI.exe | Format-List Status,StatusMessage,SignerCertificate
+& 'C:/path/to/signtool.exe' verify /pa /v dist/production-release/CIC-HMI.exe
+Get-AuthenticodeSignature dist/production-release/CIC-HMI.exe | Format-List Status,StatusMessage,SignerCertificate
 
 # Regenerate (and optionally sign) the external release manifest LAST:
 .venv/Scripts/python.exe scripts/release_integrity.py create dist/production-release --manifest dist/production-release/release-manifest.json
@@ -228,11 +232,11 @@ no trusted signature is claimed until signing and verification actually succeed.
 
 ```powershell
 .venv/Scripts/python.exe -m pytest -q --junitxml=tmp/test-results.xml
-.venv/Scripts/python.exe scripts/audit_release.py dist/production-release/PREVEX-HMI.exe
+.venv/Scripts/python.exe scripts/audit_release.py dist/production-release/CIC-HMI.exe
 # No analyzer activity; status0 means resource checks passed:
-./dist/production-release/PREVEX-HMI.exe --verify-installation
+./dist/production-release/CIC-HMI.exe --verify-installation
 # Disconnected hardware-only check; use an isolated operator data directory:
-./dist/production-release/PREVEX-HMI.exe --production-smoke-test --data-dir tmp/protected-smoke
+./dist/production-release/CIC-HMI.exe --production-smoke-test --data-dir tmp/protected-smoke
 ```
 
 Run the full source suite with its explicit development harness, native production checks, all four source simulator series,

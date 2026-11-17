@@ -1,3 +1,9 @@
+# Standard executable filename CIC-HMI (2026-11-16)
+
+- Renamed the current portable release to dist/production-release/CIC-HMI.exe and regenerated release-manifest.json with the new filename. Its binary content/SHA-256 is unchanged; the existing internal integrity manifest remains valid. Product/About identity and operator-data locations are unchanged.
+- Set the shared PyInstaller EXE and one-folder collection names to CIC-HMI, updated both CI workflows/artifact paths and current build/signing/operating documentation. Future development and protected builds use CIC-HMI.exe as the standard filename.
+- Verification: nine branding/integrity/packaging tests passed in2.19s (tmp/cic-filename-tests.xml); external manifest verification and native/icon/attribution archive audit passed. The renamed one-file EXE passed disconnected hardware-only startup and all10 internal component checks (tmp/cic-filename-smoke/smoke-report.json), without opening a port. Release remains unsigned. No native/application source changed, so no recompilation or full-suite rerun was required for this filename-only change.
+
 # Hardware-only production release and Diagnostics cleanup (2026-11-16)
 
 - Removed simulator selectors and generation/scale fields from Choose Analyzer Type, Connection Settings and the disconnected connection screen. Auto Detect/LEL/BTU/FID remain. Removed all Diagnostics fault/reading/STATUS injection widgets, containers and GUI event handlers. Renamed only the read button to **Inspect register**; its serialized, read-only FC03 implementation and logging remain unchanged. The inspector now follows the summary/Export Diagnostics JSON controls directly, and the Modbus traffic table expands into the recovered space with its scrollbars retained.

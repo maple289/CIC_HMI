@@ -35,7 +35,7 @@ jobs:
         run: .venv/Scripts/python.exe scripts/build_release.py --kind protected --layout $env:RELEASE_LAYOUT --compiler msvc --output dist/protected-ci
       - name: Audit and test packaged application
         run: |
-          $exe = if ($env:RELEASE_LAYOUT -eq 'onefile') { "$PWD/dist/protected-ci/PREVEX-HMI.exe" } else { "$PWD/dist/protected-ci/PREVEX-HMI/PREVEX-HMI.exe" }
+          $exe = if ($env:RELEASE_LAYOUT -eq 'onefile') { "$PWD/dist/protected-ci/CIC-HMI.exe" } else { "$PWD/dist/protected-ci/CIC-HMI/CIC-HMI.exe" }
           .venv/Scripts/python.exe scripts/audit_release.py $exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $app = Start-Process -FilePath $exe -ArgumentList @('--production-smoke-test', '--data-dir', "$PWD/tmp/protected-smoke") -WindowStyle Hidden -PassThru -Wait
@@ -58,6 +58,6 @@ jobs:
       - name: Upload unsigned protected release
         uses: actions/upload-artifact@v4
         with:
-          name: PREVEX-HMI-protected-${{ inputs.layout }}
+          name: CIC-HMI-protected-${{ inputs.layout }}
           path: dist/protected-ci/
           retention-days: 14
